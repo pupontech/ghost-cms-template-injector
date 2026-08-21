@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghost Preset Toolbar</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        min-width: 280px;
+        padding: 12px 14px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+      }
+      #gpt-status {
+        font-size: 12px;
+        margin: 0 0 10px;
+        min-height: 16px;
+      }
+      #gpt-status[role='alert'] {
+        color: #b3261e;
+      }
+      ul#gpt-preset-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #gpt-preset-list button {
+        width: 100%;
+        text-align: left;
+        font-size: 13px;
+        padding: 8px 10px;
+        border: 1px solid rgba(128, 128, 128, 0.4);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      #gpt-preset-list button:hover:not(:disabled) {
+        border-color: rgba(128, 128, 128, 0.8);
+      }
+      #gpt-preset-list button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ghost Preset Toolbar</h1>
+    <p id="gpt-status" role="status">Detecting editor…</p>
+    <ul id="gpt-preset-list"></ul>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
