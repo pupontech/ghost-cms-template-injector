@@ -15,6 +15,7 @@ await build({
     'src/ui-toolbar-main.ts',
     'src/options-main.ts',
     'src/setup-main.ts',
+    'src/main-bridge-main.ts',
   ],
   outdir: 'dist',
   bundle: true,
@@ -35,13 +36,15 @@ renameSync('dist/ui-popup-main.js', 'dist/popup.js');
 renameSync('dist/ui-toolbar-main.js', 'dist/toolbar.js');
 renameSync('dist/options-main.js', 'dist/options.js');
 renameSync('dist/setup-main.js', 'dist/setup.js');
+renameSync('dist/main-bridge-main.js', 'dist/bridge.js');
 renameSync('dist/background-main.js.map', 'dist/background.js.map');
 renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
 renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
 renameSync('dist/ui-toolbar-main.js.map', 'dist/toolbar.js.map');
 renameSync('dist/options-main.js.map', 'dist/options.js.map');
 renameSync('dist/setup-main.js.map', 'dist/setup.js.map');
+renameSync('dist/main-bridge-main.js.map', 'dist/bridge.js.map');
 
 console.log(
-  'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js dist/options.js dist/setup.js written',
+  'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js dist/options.js dist/setup.js dist/bridge.js written',
 );

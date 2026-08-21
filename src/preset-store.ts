@@ -174,6 +174,16 @@ export async function listPresets(): Promise<Preset[]> {
 }
 
 /**
+ * Load a single validated preset by id (bundled seeds + chrome.storage.local
+ * overrides). Returns null when no preset matches — callers surface a blocked
+ * outcome rather than throwing on an unknown id.
+ */
+export async function loadPreset(id: string): Promise<Preset | null> {
+  const presets = await listPresets();
+  return presets.find((p) => p.id === id) ?? null;
+}
+
+/**
  * Validate and upsert one preset by id (atomic single-key write).
  * Throws without writing anything when validation fails.
  */

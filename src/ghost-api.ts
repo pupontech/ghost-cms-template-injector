@@ -217,6 +217,26 @@ export class GhostAdminClient {
     return match;
   }
 
+  /**
+   * Resolve a snippet's serialized Lexical body by exact name — used to supply
+   * a `body` action value for `content.source: ghost-snippet` presets. The
+   * matcher runs locally over the validated plural `snippets[]` response; no
+   * NQL filter is constructed from preset text.
+   */
+  async getSnippetLexical(name: string): Promise<string> {
+    const snippet = await this.findSnippetByName(name);
+    if (typeof snippet.lexical !== 'string') {
+      throw new GhostApiError('SNIPPET_NO_LEXICAL', 0, [
+        { message: `snippet "${name}" has no lexical body` },
+      ]);
+    }
+    return snippet.lexical;
+  }
+
+  async listSnippets(): Promise<GhostSnippetRecord[]> {
+    return extractPlural<GhostSnippetRecord>('snippets', await this.#request('snippets'));
+  }
+
   async #update(resource: 'posts' | 'pages', input: UpdateInput): Promise<GhostPostRecord> {
     if (!input.updated_at) {
       throw new TypeError('ghost-api: mutation requires optimistic-concurrency updated_at');

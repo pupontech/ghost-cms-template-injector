@@ -1,115 +1,112 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initContentScript } from '../helpers/fake-dom';
 import { createContentScript } from '../../src/content-script';
+import type { ContentScriptDeps } from '../../src/content-script';
+import type { PageBridgeEnv } from '../../src/page-bridge';
 
-describe('content-script scaffold', () => {
+function makeDeps(overrides: Partial<ContentScriptDeps> = {}): ContentScriptDeps {
+  const base: ContentScriptDeps = {
+    isGhostAdminPage: () => true,
+    addRuntimeMessageListener: () => {},
+    createBridgeEnv: (): PageBridgeEnv => ({
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      postMessage: () => {},
+      setTimeoutFn: () => 0,
+      clearTimeoutFn: () => {},
+    }),
+    getAdminApiBase: () => ({ base: 'https://ghost.test/ghost/api/admin/' }),
+    createApiClient: () => ({}) as never,
+    ...overrides,
+  };
+  return base;
+}
+
+/** Wire the isolated bridge to an in-process responder that answers discover. */
+function makeDepsWithDiscover(): ContentScriptDeps {
+  let onMainMessage: ((event: MessageEvent) => void) | null = null;
+  const isolatedEnv: PageBridgeEnv = {
+    addEventListener: (cb) => {
+      onMainMessage = cb;
+    },
+    removeEventListener: () => {},
+    postMessage: (message) => {
+      const reply = {
+        v: 1,
+        source: 'ghost-preset-toolbar/page-bridge/v1',
+        nonce: (message as { nonce: string }).nonce,
+        ok: true,
+        result: { supported: true, capability: { canNativeSave: true } },
+      };
+      onMainMessage?.(new MessageEvent('message', { data: reply }));
+    },
+    setTimeoutFn: (fn) => setTimeout(fn, 0) as unknown,
+    clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  };
+  return makeDeps({ createBridgeEnv: () => isolatedEnv });
+}
+
+describe('content-script Phase-5 orchestration', () => {
   it('does nothing on non-Ghost-admin pages', () => {
     const addListener = vi.fn();
-    const cs = createContentScript({
-      isGhostAdminPage: () => false,
-      addRuntimeMessageListener: addListener,
-    });
+    const cs = createContentScript(
+      makeDeps({ isGhostAdminPage: () => false, addRuntimeMessageListener: addListener }),
+    );
     cs.init();
     expect(addListener).not.toHaveBeenCalled();
   });
 
-  it('on a Ghost admin page installs exactly one isolated-world listener and stays inert', () => {
+  it('on a Ghost admin page installs exactly one isolated-world listener', () => {
     const addListener = vi.fn();
-    const cs = createContentScript({
-      isGhostAdminPage: () => true,
-      addRuntimeMessageListener: addListener,
-    });
+    const cs = createContentScript(makeDeps({ addRuntimeMessageListener: addListener }));
     cs.init();
     expect(addListener).toHaveBeenCalledTimes(1);
   });
 
   it('init is idempotent', () => {
     let count = 0;
-    const cs = createContentScript({
-      isGhostAdminPage: () => true,
-      addRuntimeMessageListener: () => {
-        count += 1;
-      },
-    });
+    const cs = createContentScript(
+      makeDeps({
+        addRuntimeMessageListener: () => {
+          count += 1;
+        },
+      }),
+    );
     cs.init();
     cs.init();
     expect(count).toBe(1);
-    void initContentScript;
   });
 
-  it('replies UNSUPPORTED_CAPABILITY to any bridge probe until Phase 3 implements the contract', async () => {
-    const cs = createContentScript({
-      isGhostAdminPage: () => true,
-      addRuntimeMessageListener: () => {},
-    });
-    const reply = await cs.handleMessage({ type: 'bridge/discover' });
-    expect(reply).toEqual({ ok: false, error: 'UNSUPPORTED_CAPABILITY' });
+  it('replies with SOURCE_MISMATCH to a non-popup message', async () => {
+    const cs = createContentScript(makeDeps());
+    const reply = await cs.handleMessage({ source: 'evil', op: 'discover' });
+    expect(reply).toMatchObject({ ok: false, error: 'SOURCE_MISMATCH' });
   });
 
-  it('onMessage listener invokes the handler and replies via sendResponse (returns true)', async () => {
-    // The controller's listener callback must actually invoke handleMessage
-    // (previously it ignored the return value) and surface the reply.
-    let captured:
-      | ((message: unknown, sendResponse: (r: unknown) => void) => Promise<unknown> | unknown)
-      | null = null;
-    const cs = createContentScript({
-      isGhostAdminPage: () => true,
-      addRuntimeMessageListener: (cb) => {
-        captured = cb;
-      },
-    });
-    cs.init();
-    expect(typeof captured).toBe('function');
-    const reply = await (captured as unknown as (m: unknown) => Promise<unknown>)({
-      type: 'bridge/discover',
-    });
-    expect(reply).toEqual({ ok: false, error: 'UNSUPPORTED_CAPABILITY' });
+  it('replies UNKNOWN_OP for an unsupported popup operation', async () => {
+    const cs = createContentScript(makeDeps());
+    const reply = await cs.handleMessage({ source: 'ghost-preset-toolbar/popup/v1', op: 'nope' });
+    expect(reply).toMatchObject({ ok: false, error: 'UNKNOWN_OP' });
   });
 
-  it('content-script-main listener keeps the channel open (returns true) and delivers the reply to sendResponse', async () => {
-    // Run the real entry point against a stubbed chrome + Ghost Admin location
-    // so we can capture the chrome.runtime.onMessage listener and assert its
-    // wiring. init() only registers when isGhostAdminPage() is true, so the
-    // location pathname must look like a Ghost Admin page.
-    const listeners: Array<(...args: unknown[]) => unknown> = [];
-    const store = globalThis as unknown as {
-      chrome?: unknown;
-      location?: { pathname: string };
-    };
-    store.chrome = {
-      runtime: {
-        onMessage: {
-          addListener: (fn: (...args: unknown[]) => unknown) => listeners.push(fn),
-        },
-      },
-    };
-    store.location = { pathname: '/ghost/settings' };
-
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync('src/content-script-main.ts', 'utf8');
-    // The entry must keep the channel open for the async reply...
-    expect(source).toMatch(/return true;/);
-    // ...and must actually invoke the handler rather than ignoring it.
-    expect(source).toMatch(/cb\(message/);
-
-    // Re-import the entry so its top-level bootstrap registers the listener.
-    vi.resetModules();
-    await import('../../src/content-script-main');
-    vi.resetModules();
-
-    expect(listeners.length).toBeGreaterThan(0);
-    const listener = listeners[0]!;
-
-    let replied: unknown = 'not-called';
-    const returned = listener({ type: 'bridge/discover' }, {}, (r: unknown) => {
-      replied = r;
+  it('discover delegates to the bridge and returns the capability', async () => {
+    const cs = createContentScript(makeDepsWithDiscover());
+    const reply = (await cs.handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'discover',
+    })) as Record<string, unknown>;
+    expect(reply.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(reply.ok).toBe(true);
+    expect((reply.result as Record<string, unknown>)['capability']).toMatchObject({
+      canNativeSave: true,
     });
-    expect(returned).toBe(true);
-    // Allow the async sendResponse microtask to settle.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(replied).toEqual({ ok: false, error: 'UNSUPPORTED_CAPABILITY' });
+  });
 
-    Reflect.deleteProperty(store, 'chrome');
-    Reflect.deleteProperty(store, 'location');
+  it('apply refuses a request missing presetId', async () => {
+    const cs = createContentScript(makeDeps());
+    const reply = await cs.handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'apply',
+    });
+    expect(reply).toMatchObject({ ok: false, error: 'MISSING_PRESET_ID' });
   });
 });

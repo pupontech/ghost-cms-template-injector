@@ -47,6 +47,7 @@ export interface HostPermissionDeps {
       matches: string[];
       js: string[];
       runAt: 'document_idle' | 'document_start' | 'document_end';
+      world?: 'ISOLATED' | 'MAIN';
     }>,
   ) => Promise<void>;
   /** Remove previously-registered content scripts by id (idempotent). */
@@ -58,6 +59,9 @@ export interface HostPermissionDeps {
 
 /** Files injected into the matched Ghost Admin pages. */
 export const CONTENT_SCRIPT_FILES = ['dist/content-script.js', 'dist/toolbar.js'] as const;
+
+/** MAIN-world bridge file injected with `world: 'MAIN'` (Ghost internals). */
+export const MAIN_WORLD_BRIDGE_FILE = 'dist/bridge.js';
 
 /** Stable registration id so (re)registration is idempotent. */
 export const CONTENT_SCRIPT_REGISTRATION_ID = 'ghost-preset-toolbar-enabled';
@@ -168,6 +172,16 @@ export function createHostPermission(deps: HostPermissionDeps): {
           matches: [match],
           js: [...CONTENT_SCRIPT_FILES],
           runAt: 'document_idle',
+        },
+        {
+          // MAIN-world bridge: reaches Ghost's live Ember/Lexical internals.
+          // Runs in the page's MAIN world (not the isolated content-script
+          // world) so it can own the native save transaction.
+          id: `${CONTENT_SCRIPT_REGISTRATION_ID}-main`,
+          matches: [match],
+          js: [MAIN_WORLD_BRIDGE_FILE],
+          runAt: 'document_idle',
+          world: 'MAIN',
         },
       ]);
     } catch (err) {
