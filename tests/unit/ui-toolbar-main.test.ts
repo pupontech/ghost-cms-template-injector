@@ -236,3 +236,34 @@ describe('initToolbar — apply delegation through the mounted toolbar', () => {
     expect(status.textContent).toBe('');
   });
 });
+
+describe('initToolbar — apply uses chrome.runtime.sendMessage (no chrome.tabs)', () => {
+  it('delegates through chrome.runtime.sendMessage in the browser bootstrap path', async () => {
+    // Simulate the real content-script bootstrap: chrome global present,
+    // chrome.runtime.sendMessage wired, no chrome.tabs. Re-import the module so
+    // its top-level bootstrap runs against our stubbed chrome.
+    const runtimeSend = vi.fn().mockResolvedValue(undefined);
+    const store = globalThis as unknown as { chrome?: unknown };
+    store.chrome = {
+      runtime: { sendMessage: (msg: unknown) => runtimeSend(msg) },
+    };
+
+    // Import the module fresh so the `if (isBrowserContext())` block executes.
+    vi.resetModules();
+    const mod = await import('../../src/ui-toolbar-main');
+    expect(typeof mod.initToolbar).toBe('function');
+
+    // The browser bootstrap path (the one that matters for F1) wires
+    // chrome.runtime.sendMessage directly. The static source must contain no
+    // runtime chrome.tabs method access (a content script without the `tabs`
+    // permission would throw). The built dist artifact is additionally asserted
+    // by validate-manifest.mjs (no `chrome.tabs` anywhere in the bundle).
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync('src/ui-toolbar-main.ts', 'utf8');
+    expect(source).not.toMatch(/chrome\.tabs\.(sendMessage|query|get)/);
+    expect(source).toMatch(/chrome\.runtime\.sendMessage/);
+
+    Reflect.deleteProperty(store, 'chrome');
+    vi.resetModules();
+  });
+});

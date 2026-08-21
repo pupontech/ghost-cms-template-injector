@@ -14,10 +14,13 @@
  *    editor screen (list/unknown) fully removes the toolbar from the document.
  *  - Apply is delegated by sending the SAME `PopupMessage` the popup sends to
  *    the content script (fixed `source`, `op: 'apply'`). Because the toolbar is
- *    injected as its own content script, it reaches the content script's apply
- *    handler through `chrome.tabs.sendMessage` to the active tab — identical to
- *    the popup's delivery path — so the long-lived apply transaction survives
- *    toolbar closure and no editor state is owned here.
+ *    injected as its own content script co-resident with the main content
+ *    script, it reaches that content script through `chrome.runtime.sendMessage`
+ *    (the content-script-available API) — identical to the popup's protocol —
+ *    so the long-lived apply transaction survives toolbar closure and no editor
+ *    state is owned here. `chrome.tabs` is intentionally NOT used: the toolbar
+ *    only holds `storage` (+`scripting`) permissions and has no `tabs`
+ *    permission, so `chrome.tabs` would be undefined at runtime.
  *  - Accessibility: the root is `role="toolbar"` with an accessible label, the
  *    status region is `role="status"` `aria-live="polite"`, and each preset
  *    button carries an `aria-label` equal to the preset name.
@@ -167,9 +170,8 @@ export async function initToolbar(env: ToolbarEnv): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 declare const chrome: {
-  tabs: {
-    query: (info: { active: boolean; currentWindow: boolean }) => Promise<Array<{ id?: number }>>;
-    sendMessage: (tabId: number, message: PopupMessage) => Promise<unknown>;
+  runtime: {
+    sendMessage: (message: PopupMessage) => Promise<unknown>;
   };
 };
 
@@ -189,11 +191,13 @@ if (isBrowserContext()) {
       getHref: () => win.location.href,
       getHash: () => win.location.hash,
       onHashChange: (cb) => win.addEventListener('hashchange', cb),
+      // The toolbar is a content script co-resident with the main content
+      // script. It delegates apply via chrome.runtime.sendMessage (the
+      // content-script-available API) rather than chrome.tabs.* — the manifest
+      // does NOT grant the `tabs` permission, so chrome.tabs is undefined in
+      // the runtime and would make apply throw.
       async sendMessage(message: PopupMessage) {
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        const id = tabs[0]?.id;
-        if (typeof id !== 'number') throw new Error('No active Ghost Admin tab found.');
-        return chrome.tabs.sendMessage(id, message);
+        return chrome.runtime.sendMessage(message);
       },
       listPresets: () =>
         import('./preset-store').then((m) =>

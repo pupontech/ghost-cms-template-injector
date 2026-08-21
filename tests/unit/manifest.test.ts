@@ -23,24 +23,26 @@ describe('manifest.json (MV3 baseline)', () => {
     expect(asText.includes('*://')).toBe(false);
     expect(asText.includes('<all_urls>')).toBe(false);
     expect(manifest.host_permissions ?? []).toEqual([]);
-    expect(manifest.permissions).toEqual(['storage']);
+    // Permissions are scoped: storage for persistence, scripting for dynamic
+    // content-script registration. No `tabs`, no broad host grant up front.
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'scripting']));
+    expect(manifest.permissions).not.toContain('tabs');
+    // The optional grant is scoped to a Ghost Admin pattern; registration is
+    // dynamic (after consent), so the static content_scripts array is empty.
+    expect(manifest.optional_host_permissions ?? []).toContain('https://*/ghost/*');
+    expect(manifest.content_scripts ?? []).toEqual([]);
+    expect(typeof manifest.setup_page).toBe('string');
   });
 
-  it('permits only scoped Ghost Admin content_scripts matches (no remote code)', () => {
+  it('has no static content_scripts (registration is dynamic after consent)', () => {
     const asText = JSON.stringify(manifest);
     expect(asText.includes('<all_urls>')).toBe(false);
     expect(asText.includes('*://')).toBe(false);
-    // Every content_scripts match must be a scoped Ghost Admin path; no entry
-    // may load remote code. This is the security gate (no broad host access,
-    // no hosted logic) for the injected toolbar/popup.
-    const GHOST_MATCH_RE = /^https:\/\/[^:*?/]+\/ghost\/\*$/;
-    const isScoped = (m: string) => GHOST_MATCH_RE.test(m) || m === 'https://*/ghost/*';
-    for (const cs of manifest.content_scripts ?? []) {
-      for (const m of cs.matches ?? []) {
-        expect(isScoped(m)).toBe(true);
-      }
-      expect(cs.js?.some((j: string) => /^https?:/.test(j)) ?? false).toBe(false);
-    }
+    // No static content_scripts are shipped; the injected toolbar/popup are
+    // registered at runtime via chrome.scripting.registerContentScripts for the
+    // user's exact, consent-granted origin. This is the security gate (no
+    // broad host access, no hosted logic) for the injected surface.
+    expect(manifest.content_scripts ?? []).toEqual([]);
   });
 
   it('contains no secrets or remote code hosts', () => {

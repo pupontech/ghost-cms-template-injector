@@ -14,6 +14,7 @@ await build({
     'src/ui-popup-main.ts',
     'src/ui-toolbar-main.ts',
     'src/options-main.ts',
+    'src/setup-main.ts',
   ],
   outdir: 'dist',
   bundle: true,
@@ -32,16 +33,15 @@ renameSync('dist/background-main.js', 'dist/background.js');
 renameSync('dist/content-script-main.js', 'dist/content-script.js');
 renameSync('dist/ui-popup-main.js', 'dist/popup.js');
 renameSync('dist/ui-toolbar-main.js', 'dist/toolbar.js');
+renameSync('dist/options-main.js', 'dist/options.js');
+renameSync('dist/setup-main.js', 'dist/setup.js');
 renameSync('dist/background-main.js.map', 'dist/background.js.map');
 renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
 renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
 renameSync('dist/ui-toolbar-main.js.map', 'dist/toolbar.js.map');
-renameSync('dist/options-main.js', 'dist/options.js');
-renameSync('dist/background-main.js.map', 'dist/background.js.map');
-renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
-renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
 renameSync('dist/options-main.js.map', 'dist/options.js.map');
+renameSync('dist/setup-main.js.map', 'dist/setup.js.map');
 
 console.log(
-  'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js dist/options.js written',
+  'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js dist/options.js dist/setup.js written',
 );

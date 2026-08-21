@@ -1,0 +1,189 @@
+/**
+ * Host-permission consent + dynamic content-script registration (owns this
+ * module exclusively).
+ *
+ * Phase-4 previously shipped a STATIC wildcard match (the content_scripts
+ * matches array set to the wildcard "/ghost/" host pattern) with no consent
+ * step. That violates the decision document SS8 and security baselines M1/M2/M3,
+ * C8-2/C8-3: a distributable extension must NOT pre-grant broad host access via
+ * a literal wildcard, and must NOT ship a "literal wildcard placeholder." Instead
+ * the manifest declares optional_host_permissions only, and the extension
+ * requests the user's EXACT Ghost origin after an explicit setup/consent action,
+ * then registers the "/ghost/" content scripts dynamically for that single origin.
+ *
+ * This module is the pure brain: all chrome.* and DOM access is injected via
+ * seams so the flow is fully unit-testable with fakes. It performs no writes of
+ * its own — it orchestrates the injected permissions/scripting seams and
+ * reports structured outcomes.
+ *
+ * Security invariants enforced here:
+ *  - The requested origin must be an exact "https://<host>" origin (no scheme
+ *    wildcard, no path, no glob). We never derive or accept a wildcard
+ *    host-slash-ghost pattern.
+ *  - Registration only proceeds AFTER consent is recorded (the requestPermission
+ *    call resolves true). The consent step carries explicit purpose text so the
+ *    user understands why host access is needed.
+ *  - Content scripts are registered with chrome.scripting.registerContentScripts
+ *    keyed by a stable id, scoped to "<origin>/ghost/" only.
+ *  - No chrome.tabs access, no broad permissions, no remote code.
+ */
+
+/** A validated `https://<host>` origin (path-less, scheme-exact). */
+export interface ExactOrigin {
+  /** The normalized origin string, e.g. `https://ghost.example.com`. */
+  origin: string;
+}
+
+/** Injected chrome.* seams so the controller is testable without a browser. */
+export interface HostPermissionDeps {
+  /** Request optional host permission for the exact origin after consent. */
+  requestPermission: (origins: string[]) => Promise<boolean>;
+  /** Read currently-granted optional host permissions. */
+  getAllPermissions: () => Promise<{ origins?: string[] }>;
+  /** Register content scripts for the granted origin's `/ghost/*`. */
+  registerContentScripts: (
+    scripts: ReadonlyArray<{
+      id: string;
+      matches: string[];
+      js: string[];
+      runAt: 'document_idle' | 'document_start' | 'document_end';
+    }>,
+  ) => Promise<void>;
+  /** Remove previously-registered content scripts by id (idempotent). */
+  unregisterContentScripts: (ids: string[]) => Promise<void>;
+  /** Persist/recall consent state (records that the user opted in). */
+  storageGet: (key: string) => Promise<unknown>;
+  storageSet: (items: Record<string, unknown>) => Promise<void>;
+}
+
+/** Files injected into the matched Ghost Admin pages. */
+export const CONTENT_SCRIPT_FILES = ['dist/content-script.js', 'dist/toolbar.js'] as const;
+
+/** Stable registration id so (re)registration is idempotent. */
+export const CONTENT_SCRIPT_REGISTRATION_ID = 'ghost-preset-toolbar-enabled';
+
+/** Storage key recording explicit consent for the granted origin. */
+export const CONSENT_STORAGE_KEY = 'hostPermissionConsent';
+
+export interface HostPermissionStatus {
+  /** True once the exact origin is granted AND scripts are registered. */
+  enabled: boolean;
+  /** The exact granted origin, or null when not yet granted. */
+  origin: string | null;
+}
+
+export interface GrantResult {
+  ok: boolean;
+  enabled: boolean;
+  origin: string | null;
+  error?: string;
+}
+
+/**
+ * Validate and normalize a user-supplied origin into an `ExactOrigin`.
+ * Accepts only `https://<host>` forms (no trailing path, no wildcard, no port
+ * required but allowed only as a literal). Returns null for anything that is
+ * not a safe, scheme-exact origin.
+ */
+export function normalizeExactOrigin(input: string): ExactOrigin | null {
+  const trimmed = input.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  // Scheme must be exactly https; no path, query, or fragment allowed.
+  if (url.protocol !== 'https:') return null;
+  if (url.pathname !== '/' && url.pathname !== '') return null;
+  if (url.search !== '' || url.hash !== '') return null;
+  // The host must be a concrete authority — reject scheme/host wildcards and
+  // bare `*`/`<all_urls>`-like inputs.
+  if (url.hostname === '' || url.hostname.includes('*') || url.hostname.includes('?')) {
+    return null;
+  }
+  return { origin: url.origin };
+}
+
+/** Build the single `/ghost/*` match pattern for an exact origin. */
+export function ghostMatchForOrigin(origin: string): string {
+  return `${origin}/ghost/*`;
+}
+
+/**
+ * Pure host-permission + dynamic-registration controller.
+ */
+export function createHostPermission(deps: HostPermissionDeps): {
+  status: () => Promise<HostPermissionStatus>;
+  /**
+   * Run the consent → request → register flow for a single exact origin.
+   * Returns a structured result; never throws for a user-facing failure.
+   */
+  grant: (originInput: string) => Promise<GrantResult>;
+  /** Revoke: unregister scripts and drop consent. */
+  revoke: () => Promise<HostPermissionStatus>;
+} {
+  async function status(): Promise<HostPermissionStatus> {
+    const granted = await deps.getAllPermissions();
+    const origins = granted.origins ?? [];
+    const consent = await deps.storageGet(CONSENT_STORAGE_KEY);
+    if (
+      typeof consent === 'object' &&
+      consent !== null &&
+      typeof (consent as Record<string, unknown>)['origin'] === 'string' &&
+      typeof (consent as Record<string, unknown>)['match'] === 'string' &&
+      origins.includes((consent as Record<string, unknown>)['match'] as string)
+    ) {
+      return { enabled: true, origin: (consent as Record<string, unknown>)['origin'] as string };
+    }
+    return { enabled: false, origin: null };
+  }
+
+  async function grant(originInput: string): Promise<GrantResult> {
+    const normalized = normalizeExactOrigin(originInput);
+    if (!normalized) {
+      return { ok: false, enabled: false, origin: null, error: 'Invalid Ghost origin.' };
+    }
+    const origin = normalized.origin;
+    const match = ghostMatchForOrigin(origin);
+
+    // Request the exact origin's `/ghost/*` host permission. This is a subset of
+    // the declared `optional_host_permissions` pattern, so Chrome accepts it and
+    // the user is shown their concrete origin (not a wildcard) at the consent
+    // prompt. Nothing is granted until this resolves true.
+    const permissionGranted = await deps.requestPermission([match]);
+    if (!permissionGranted) {
+      return {
+        ok: false,
+        enabled: false,
+        origin: null,
+        error: 'Host permission was not granted.',
+      };
+    }
+
+    try {
+      await deps.registerContentScripts([
+        {
+          id: CONTENT_SCRIPT_REGISTRATION_ID,
+          matches: [match],
+          js: [...CONTENT_SCRIPT_FILES],
+          runAt: 'document_idle',
+        },
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to register content scripts.';
+      return { ok: false, enabled: false, origin: null, error: message };
+    }
+
+    await deps.storageSet({ [CONSENT_STORAGE_KEY]: { origin, match, grantedAt: Date.now() } });
+    return { ok: true, enabled: true, origin };
+  }
+
+  async function revoke(): Promise<HostPermissionStatus> {
+    await deps.unregisterContentScripts([CONTENT_SCRIPT_REGISTRATION_ID]).catch(() => {});
+    await deps.storageSet({ [CONSENT_STORAGE_KEY]: null });
+    return { enabled: false, origin: null };
+  }
+
+  return { status, grant, revoke };
+}

@@ -1,0 +1,48 @@
+[
+  {
+    "schemaVersion": 1,
+    "id": "software-review",
+    "name": "Software Review",
+    "description": "Standard structure for a software review post.",
+    "content": {
+      "source": "inline-html",
+      "mode": "replace",
+      "html": "<h2>Overview</h2><p>What this covers.</p><h2>Details</h2><p></p><h2>Verdict</h2><p></p>"
+    },
+    "metadata": {
+      "excerpt": { "mode": "only-if-empty", "value": "A hands-on review." },
+      "tags": { "mode": "merge", "values": ["Reviews"] }
+    },
+    "ui": { "icon": "💻", "group": "Reviews" }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "weekly-update",
+    "name": "Weekly Update",
+    "description": "Recurring status-post skeleton.",
+    "content": {
+      "source": "ghost-snippet",
+      "mode": "only-if-empty",
+      "snippet": "weekly-update-skeleton"
+    },
+    "metadata": {
+      "tags": { "mode": "merge", "values": ["Weekly"] }
+    },
+    "ui": { "icon": "🗓️", "group": "Recurring" }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "custom-template-starter",
+    "name": "Custom Template Starter",
+    "description": "Applies a custom theme template to the post.",
+    "content": {
+      "source": "inline-html",
+      "mode": "prompt",
+      "html": "<p></p>"
+    },
+    "metadata": {
+      "customTemplate": { "mode": "prompt", "value": "custom-wide.hbs" }
+    },
+    "ui": { "icon": "🎨", "group": "Templates" }
+  }
+]

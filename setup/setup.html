@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghost Preset Toolbar — Setup</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        padding: 16px 20px;
+        max-width: 680px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      p#setup-status {
+        font-size: 13px;
+        margin: 8px 0;
+        min-height: 18px;
+      }
+      p#setup-status[role='alert'] {
+        color: #b3261e;
+      }
+      fieldset {
+        border: 1px solid rgba(128, 128, 128, 0.4);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin: 12px 0;
+      }
+      legend {
+        font-size: 13px;
+        padding: 0 6px;
+      }
+      p.purpose {
+        font-size: 13px;
+        margin: 0 0 10px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 4px;
+      }
+      input#setup-origin {
+        font: inherit;
+        padding: 6px 8px;
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(128, 128, 128, 0.5);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      button {
+        font: inherit;
+        padding: 6px 12px;
+        border: 1px solid rgba(128, 128, 128, 0.5);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ghost Preset Toolbar — Setup</h1>
+    <p id="setup-status" role="status">Loading…</p>
+
+    <fieldset>
+      <legend>Connect to your Ghost Admin</legend>
+      <p class="purpose">
+        This extension needs access to your Ghost Admin origin to inject the preset toolbar and
+        apply presets. Enter the exact origin you use to open Ghost Admin (for example
+        <code>https://ghost.example.com</code>). Access is requested only for that single origin and
+        only after you click “Enable”. No other sites are touched, and no long-lived secret is
+        stored.
+      </p>
+      <label for="setup-origin">Ghost Admin origin</label>
+      <input
+        id="setup-origin"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="https://ghost.example.com"
+      />
+      <div class="actions">
+        <button id="setup-enable" type="button">Enable</button>
+        <button id="setup-disable" type="button">Disable</button>
+      </div>
+    </fieldset>
+
+    <script type="module" src="setup.js"></script>
+  </body>
+</html>
