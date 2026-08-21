@@ -1,14 +1,19 @@
 #!/usr/bin/env node
-// Production build for the Phase-1 scaffold: typecheck is run by the caller
+// Production build for the Ghost Preset Toolbar: typecheck is run by the caller
 // (`npm run build`), then entry points are bundled with esbuild (already a
 // transitive dependency of vitest, but we require it explicitly) into dist/.
 import { build } from 'esbuild';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, renameSync } from 'node:fs';
 
 mkdirSync('dist', { recursive: true });
 
 await build({
-  entryPoints: ['src/background-main.ts', 'src/content-script-main.ts', 'src/ui-popup-main.ts'],
+  entryPoints: [
+    'src/background-main.ts',
+    'src/content-script-main.ts',
+    'src/ui-popup-main.ts',
+    'src/ui-toolbar-main.ts',
+  ],
   outdir: 'dist',
   bundle: true,
   format: 'esm',
@@ -22,12 +27,15 @@ await build({
 });
 
 // Rename to the names referenced by manifest.json.
-import { renameSync } from 'node:fs';
 renameSync('dist/background-main.js', 'dist/background.js');
 renameSync('dist/content-script-main.js', 'dist/content-script.js');
 renameSync('dist/ui-popup-main.js', 'dist/popup.js');
+renameSync('dist/ui-toolbar-main.js', 'dist/toolbar.js');
 renameSync('dist/background-main.js.map', 'dist/background.js.map');
 renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
 renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
+renameSync('dist/ui-toolbar-main.js.map', 'dist/toolbar.js.map');
 
-console.log('build: dist/background.js dist/content-script.js dist/popup.js written');
+console.log(
+  'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js written',
+);

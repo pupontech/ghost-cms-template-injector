@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Ghost Preset Toolbar",
   "version": "0.1.0",
-  "description": "Preset toolbar for Ghost Admin. Phase-4: popup editor detection and apply delegation.",
+  "description": "Preset toolbar for Ghost Admin. Phase-4: popup editor detection, options CRUD, and an optional injected preset toolbar.",
   "minimum_chrome_version": "116",
   "action": {
     "default_title": "Ghost Preset Toolbar",
@@ -12,6 +12,14 @@
     "service_worker": "dist/background.js",
     "type": "module"
   },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://*/ghost/*"],
+      "js": ["dist/content-script.js", "dist/toolbar.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "permissions": ["storage"],
   "host_permissions": []
 }
