@@ -77,6 +77,19 @@ check(
 if (!existsSync('dist')) {
   errors.push('dist/ missing — run the production build first');
 } else {
+  // Content-script bundles run WITHOUT the `tabs` permission, so chrome.tabs
+  // is undefined at runtime and must never be referenced there (F1). The
+  // service worker legitimately uses `chrome.tabs.sendMessage` for the Phase-5
+  // same-tab relay — that API works with only the message host permission
+  // already granted, so it is explicitly permitted for the SW bundle.
+  const contentScriptBundles = new Set([
+    'content-script.js',
+    'toolbar.js',
+    'popup.js',
+    'options.js',
+    'setup.js',
+    'bridge.js',
+  ]);
   for (const f of readdirSync('dist')) {
     const fp = path.join('dist', f);
     if (!statSync(fp).isFile()) continue;
@@ -85,10 +98,12 @@ if (!existsSync('dist')) {
     check(!/sk-[A-Za-z0-9]|api[_-]?key\s*[:=]/i.test(text), `possible secret pattern in ${fp}`);
     check(!text.includes('<all_urls>'), `<all_urls> in built artifact ${fp}`);
     // F1: content scripts must not reach for chrome.tabs (undefined at runtime).
-    check(
-      !/\bchrome\.tabs\b/.test(text),
-      `chrome.tabs usage in built artifact ${fp} (use chrome.runtime)`,
-    );
+    if (contentScriptBundles.has(f)) {
+      check(
+        !/\bchrome\.tabs\b/.test(text),
+        `chrome.tabs usage in content-script bundle ${fp} (use chrome.runtime)`,
+      );
+    }
     // F2: no static wildcard host injection baked into the bundle.
     check(
       !text.includes('https://*/ghost/*'),
