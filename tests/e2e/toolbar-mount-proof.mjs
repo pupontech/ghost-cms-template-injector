@@ -23,9 +23,10 @@ const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(DIR, '..', '..');
 const PORT = process.env.SPIKE_CDP_PORT ?? 9351;
 
-const wsMod = await import(
-  'file:///root/ghost-research/ghost/node_modules/.pnpm/ws@8.21.0/node_modules/ws/index.js'
-).catch(() => import('ws'));
+const wsMod =
+  await import('file:///root/ghost-research/ghost/node_modules/.pnpm/ws@8.21.0/node_modules/ws/index.js').catch(
+    () => import('ws'),
+  );
 const WebSocket = wsMod.default ?? wsMod.WebSocket;
 
 const chromium = spawn(
@@ -46,9 +47,8 @@ chromium.stderr.on('data', () => {});
 let browserWs;
 for (let i = 0; i < 50; i++) {
   try {
-    browserWs = (
-      await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json()
-    ).webSocketDebuggerUrl;
+    browserWs = (await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json())
+      .webSocketDebuggerUrl;
     break;
   } catch {
     await new Promise((r) => setTimeout(r, 200));
@@ -112,24 +112,17 @@ await sleep(400);
 // fetch` surfaced from toolbar.js).
 const consoleErrors = [];
 await cdp('Runtime.enable');
-await send(
-  'Runtime.addBinding',
-  { name: '__gptCapture', sessionId },
-  sessionId,
-);
+await send('Runtime.addBinding', { name: '__gptCapture', sessionId }, sessionId);
 bws.on('message', (data) => {
   const m = JSON.parse(data.toString());
   if (m.method === 'Runtime.consoleAPICalled' || m.method === 'Runtime.exceptionThrown') {
     const text =
       m.method === 'Runtime.exceptionThrown'
-        ? m.params.exceptionDetails?.exception?.description ??
+        ? (m.params.exceptionDetails?.exception?.description ??
           m.params.exceptionDetails?.text ??
-          'exception'
+          'exception')
         : (m.params.args ?? []).map((a) => a.value ?? a.description ?? '').join(' ');
-    if (
-      /error|fail|exception/i.test(String(text)) ||
-      m.method === 'Runtime.exceptionThrown'
-    ) {
+    if (/error|fail|exception/i.test(String(text)) || m.method === 'Runtime.exceptionThrown') {
       consoleErrors.push(String(text));
     }
   }
