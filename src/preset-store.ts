@@ -11,6 +11,21 @@
  *   - fail-closed reads (corrupt/invalid stored data falls back to seeds);
  *   - bounded imports via the C5 size limit;
  *   - no secrets or credentials stored — presets are content templates only.
+ *
+ * SEED-LOADING INVARIANT (release blocker t_f2218c98): the bundled seed array
+ * is inlined at build time (`BUNDLED_SEED_PRESETS`, substituted via esbuild
+ * `define` in scripts/build.mjs from the real presets/presets.json). A content
+ * script (dist/toolbar.js / dist/content-script.js) runs in the page's
+ * ISOLATED world; fetching `chrome.runtime.getURL('presets/presets.json')`
+ * there is treated by Chromium as a cross-origin web request to the extension
+ * origin and is blocked (net::ERR_FAILED / chrome-extension://invalid/) unless
+ * the file is listed in `web_accessible_resources` — which the minimal
+ * permission contract deliberately omits (no broad surface). Inlining removes
+ * the runtime fetch entirely: the seed is part of the bundle, so a content
+ * script can load defaults with no network/extension-resource request. In
+ * Node/test there is no `BUNDLED_SEED_PRESETS` (esbuild define is build-only),
+ * so we fall back to reading the file from disk relative to cwd; that path is
+ * never taken in a browser bundle.
  */
 
 import {
@@ -20,6 +35,15 @@ import {
   validatePresets,
   type Preset,
 } from './preset-schema';
+
+/**
+ * Build-time-inlined bundled seed array. Compiled out to `undefined` in a
+ * normal (non-define) TypeScript compile, and replaced with the real
+ * presets/presets.json contents by esbuild `define` during `npm run build`.
+ * The value is a JSON string (so `define` can substitute it as a string
+ * literal) and is parsed lazily on first use.
+ */
+declare const BUNDLED_SEED_PRESETS: string | undefined;
 
 /** Single chrome.storage.local key holding the whole user preset document. */
 export const STORAGE_KEY = 'presetStore';
@@ -42,9 +66,19 @@ function getLocalStorage(): chrome.storage.StorageArea {
 }
 
 /**
- * Load the packaged defaults from presets/presets.json. The file ships inside
- * the extension package and is validated once per session; results are cached
- * in memory only. Storage is never written by this loader (read-only seed).
+ * Load the packaged defaults from the build-time-inlined seed preset array.
+ *
+ * `BUNDLED_SEED_PRESETS` is substituted at build time (esbuild `define`) with
+ * the JSON contents of presets/presets.json, so the seed is embedded directly
+ * in the bundle. This eliminates the runtime `fetch(getURL('presets/...'))`
+ * that content scripts are forbidden from performing (Chromium blocks a
+ * content-script fetch of an extension resource unless it is listed in
+ * `web_accessible_resources`, which the minimal-permission contract omits).
+ *
+ * In Node/tests `BUNDLED_SEED_PRESETS` is undefined (esbuild `define` only runs
+ * during `npm run build`), so we fall back to reading the file from disk
+ * relative to cwd — the same read-only seed array, validated before caching.
+ * Storage is never written by this loader (read-only seed).
  */
 export async function loadBundledDefaults(): Promise<Preset[]> {
   if (bundledDefaults) return bundledDefaults;
@@ -55,42 +89,26 @@ export async function loadBundledDefaults(): Promise<Preset[]> {
 }
 
 /**
- * Read the packaged presets/presets.json seed file.
+ * Read the packaged presets/presets.json seed.
  *
- * The browser bundle (content script / toolbar) is executed by Chrome as a
- * *classic* script via `chrome.scripting.registerContentScripts`, which forbids
- * module-only syntax. `import.meta.url` is therefore illegal here, so we
- * resolve the packaged file through `chrome.runtime.getURL` (the correct,
- * extension-native URL resolver) instead of a module-relative URL.
+ * In a production browser bundle, the seed is already inlined as a JSON string
+ * (`BUNDLED_SEED_PRESETS`), so there is no network/extension-resource request
+ * at runtime — this is the fix for the release-blocking content-script fetch
+ * failure (t_f2218c98).
  *
- * In Node/tests there is no `chrome.runtime`, so we fall back to reading the
- * file directly from disk relative to the Node process working directory
- * (the repo root, where `presets/` lives). The result is identical: the
- * read-only seed array, validated before caching.
+ * In Node/test, `BUNDLED_SEED_PRESETS` is `undefined`, so we read the packaged
+ * file directly from disk relative to process.cwd() (the repo root, where
+ * `presets/` lives). The result is identical: the read-only seed array.
  */
 async function readBundledPresetsRaw(): Promise<unknown> {
-  const isNodeLike =
-    typeof process !== 'undefined' &&
-    typeof (process as { versions?: { node?: string } }).versions?.node === 'string';
-
-  if (!isNodeLike) {
-    const { chrome } = globalThis as {
-      chrome?: { runtime?: { getURL?: (p: string) => string } };
-    };
-    const getURL = chrome?.runtime?.getURL;
-    if (!getURL) {
-      throw new Error('preset-store: chrome.runtime.getURL unavailable in browser context');
-    }
-    const response = await fetch(getURL('presets/presets.json'));
-    if (!response.ok) {
-      throw new Error(`preset-store: bundled presets/presets.json unreadable (${response.status})`);
-    }
-    return response.json();
+  const inlined = typeof BUNDLED_SEED_PRESETS !== 'undefined' ? BUNDLED_SEED_PRESETS : undefined;
+  if (inlined) {
+    return JSON.parse(inlined) as unknown;
   }
 
   // Test/Node fallback: read the packaged file directly from disk. `presets/`
   // ships at the package root, so resolve relative to process.cwd() (the repo
-  // root under vitest).
+  // root under vitest). This path is never taken in a built browser bundle.
   const { readFileSync } = await import('node:fs');
   const { resolve } = await import('node:path');
   const file = resolve(process.cwd(), 'presets', 'presets.json');

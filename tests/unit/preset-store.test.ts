@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_IMPORT_BYTES, PRESET_SCHEMA_VERSION, type Preset } from '../../src/preset-schema';
 import {
   STORAGE_KEY,
@@ -209,5 +209,66 @@ describe('importPresets / exportPresets — bounded, validated round-trip', () =
     expect(doc.presets).toEqual(bundledSeedPresets());
     expect(doc.version).toBe(1);
     expect(storage.api.set).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * REGRESSION (release blocker t_f2218c98): a content script (dist/toolbar.js)
+ * runs in the page's ISOLATED world. The original code fetched
+ * `chrome.runtime.getURL('presets/presets.json')` at runtime; Chromium blocks
+ * that fetch (net::ERR_FAILED / chrome-extension://invalid/) unless the file is
+ * in `web_accessible_resources`, which the minimal-permission contract omits.
+ * The seed must therefore be INLINED into the bundle (BUNDLED_SEED_PRESETS,
+ * substituted at build time) so a content script loads defaults with no
+ * extension-resource fetch.
+ *
+ * This test simulates the real content-script runtime: a `chrome` global is
+ * present, `process` is absent (so the Node disk-read branch is unavailable),
+ * and `BUNDLED_SEED_PRESETS` mirrors what esbuild `define` injects. It asserts
+ * listPresets() resolves from the inlined seed and never calls
+ * chrome.runtime.getURL or fetch. On the OLD code this fails (throws while
+ * fetching the blocked extension resource), proving the regression is covered.
+ */
+describe('content-script runtime loads inlined seeds with no extension-resource fetch', () => {
+  const savedProcess = globalThis.process;
+  let savedSeed: unknown;
+
+  beforeAll(async () => {
+    // Simulate the content-script world: no Node `process`, a `chrome` global,
+    // and the build-time `BUNDLED_SEED_PRESETS` define reflected as a global.
+    (globalThis as { process?: unknown }).process = undefined;
+    savedSeed = (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS;
+    (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS =
+      JSON.stringify(bundledSeedPresets());
+  });
+
+  afterAll(() => {
+    (globalThis as { process?: unknown }).process = savedProcess;
+    (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS = savedSeed;
+  });
+
+  it('resolves bundled defaults from the inlined seed without fetching the packaged file', async () => {
+    const getURL = vi.fn((p: string) => `chrome-extension://invalid/${p}`);
+    (globalThis as { chrome?: unknown }).chrome = {
+      storage: { local: { get: async () => ({}), set: async () => {} } },
+      runtime: { getURL },
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() =>
+        Promise.reject(new Error('fetch must not be used in a content script')),
+      );
+
+    // Fresh module instance so the seed cache is cold and the content-script
+    // branch (not the Node disk-read branch) is actually exercised.
+    vi.resetModules();
+    const mod = await import('../../src/preset-store');
+    const presets = await mod.listPresets();
+
+    expect(presets.map((p) => p.id)).toEqual(bundledSeedPresets().map((p) => p.id));
+    expect(getURL).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    (globalThis as { chrome?: unknown }).chrome = undefined;
   });
 });

@@ -13,9 +13,27 @@
 //     declare their scripts as `type: "module"` in their HTML/manifest, so they
 //     keep ESM output as required by their runtimes.
 import { build } from 'esbuild';
-import { mkdirSync, renameSync } from 'node:fs';
+import { mkdirSync, renameSync, readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 mkdirSync('dist', { recursive: true });
+
+// Inline the packaged seed preset JSON into every bundle at build time. This
+// removes the runtime `fetch(chrome.runtime.getURL('presets/presets.json'))`
+// that a content script (dist/toolbar.js / dist/content-script.js) is forbidden
+// from performing — Chromium blocks a content-script fetch of an extension
+// resource unless it is listed in `web_accessible_resources`, which the minimal
+// permission contract omits (release blocker t_f2218c98). With the seed
+// embedded, a content script loads defaults with zero network/extension-resource
+// requests. esbuild `define` substitutes the token as a string literal; in
+// Node/test `BUNDLED_SEED_PRESETS` stays undefined and the disk-read fallback
+// runs instead.
+const seedJson = existsSync('presets/presets.json')
+  ? readFileSync(resolve('presets', 'presets.json'), 'utf8').trim()
+  : '[]';
+const bundledSeedDefine = {
+  BUNDLED_SEED_PRESETS: JSON.stringify(seedJson),
+};
 
 // Shared esbuild options. `external` keeps node: builtins out of the browser
 // graph; preset-store only references them inside its never-browser Node/test
@@ -24,6 +42,7 @@ const shared = {
   bundle: true,
   target: 'chrome116',
   external: ['node:fs', 'node:url', 'node:path'],
+  define: bundledSeedDefine,
   sourcemap: 'external',
   minify: true,
   legalComments: 'none',

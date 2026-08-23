@@ -80,3 +80,46 @@ describe('dynamically registered bundles are classic-script parseable', () => {
     });
   }
 });
+
+/**
+ * REGRESSION (release blocker t_f2218c98): content scripts must not fetch the
+ * packaged `presets/presets.json` at runtime — Chromium blocks a content-script
+ * fetch of an extension resource (net::ERR_FAILED) unless it is listed in
+ * `web_accessible_resources`, which the minimal-permission contract omits. The
+ * seed must be INLINED into the bundle at build time. This guard inspects the
+ * real built classic bundles and asserts the seed preset is embedded (only for
+ * bundles that consume presets) and no runtime
+ * `chrome.runtime.getURL('presets/presets.json')` fetch path remains.
+ */
+describe('built classic bundles inline the seed (no content-script fetch)', () => {
+  beforeAll(() => {
+    execFileSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'pipe' });
+  }, 120_000);
+
+  // Only these classic bundles consume preset-store and therefore must inline
+  // the seed. The MAIN-world bridge (dist/bridge.js) never imports preset-store.
+  const SEED_BUNDLES = ['content-script.js', 'toolbar.js'] as const;
+
+  for (const file of SEED_BUNDLES) {
+    it(`${file} embeds the inlined seed`, () => {
+      const code = readFileSync(path.join(DIST, file), 'utf8');
+      // The seed id from the shipped presets.json must be present (inlined).
+      expect(code, `${file} must inline the bundled seed preset`).toContain('software-review');
+    });
+  }
+
+  for (const file of CLASSIC_BUNDLES) {
+    it(`${file} performs no runtime presets fetch`, () => {
+      const code = readFileSync(path.join(DIST, file), 'utf8');
+      // The residual `presets/presets.json` reference (if any) must be only the
+      // static error-message string, never a runtime getURL+fetch of it.
+      const fetchPresets =
+        /chrome\.runtime\.getURL\(\s*['"]presets\/presets\.json['"]\s*\)/.test(code) ||
+        /fetch\(\s*[^)]*presets\/presets\.json[^)]*\)/.test(code);
+      expect(
+        fetchPresets,
+        `${file} must not fetch presets/presets.json at runtime (content-script blocker)`,
+      ).toBe(false);
+    });
+  }
+});
