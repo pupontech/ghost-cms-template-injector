@@ -48,26 +48,53 @@ function getLocalStorage(): chrome.storage.StorageArea {
  */
 export async function loadBundledDefaults(): Promise<Preset[]> {
   if (bundledDefaults) return bundledDefaults;
-  const url = new URL('../presets/presets.json', import.meta.url);
-  let raw: unknown;
-  const isNodeLike =
-    typeof process !== 'undefined' &&
-    typeof (process as { versions?: { node?: string } }).versions?.node === 'string';
-  if (isNodeLike) {
-    // Test/Node fallback: read the packaged file directly from disk.
-    const { readFileSync } = await import('node:fs');
-    const { fileURLToPath } = await import('node:url');
-    raw = JSON.parse(readFileSync(fileURLToPath(url), 'utf8'));
-  } else {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`preset-store: bundled presets/presets.json unreadable (${response.status})`);
-    }
-    raw = await response.json();
-  }
+  const raw = await readBundledPresetsRaw();
   const presets = validatePresets(asArray(raw));
   bundledDefaults = presets;
   return presets;
+}
+
+/**
+ * Read the packaged presets/presets.json seed file.
+ *
+ * The browser bundle (content script / toolbar) is executed by Chrome as a
+ * *classic* script via `chrome.scripting.registerContentScripts`, which forbids
+ * module-only syntax. `import.meta.url` is therefore illegal here, so we
+ * resolve the packaged file through `chrome.runtime.getURL` (the correct,
+ * extension-native URL resolver) instead of a module-relative URL.
+ *
+ * In Node/tests there is no `chrome.runtime`, so we fall back to reading the
+ * file directly from disk relative to the Node process working directory
+ * (the repo root, where `presets/` lives). The result is identical: the
+ * read-only seed array, validated before caching.
+ */
+async function readBundledPresetsRaw(): Promise<unknown> {
+  const isNodeLike =
+    typeof process !== 'undefined' &&
+    typeof (process as { versions?: { node?: string } }).versions?.node === 'string';
+
+  if (!isNodeLike) {
+    const { chrome } = globalThis as {
+      chrome?: { runtime?: { getURL?: (p: string) => string } };
+    };
+    const getURL = chrome?.runtime?.getURL;
+    if (!getURL) {
+      throw new Error('preset-store: chrome.runtime.getURL unavailable in browser context');
+    }
+    const response = await fetch(getURL('presets/presets.json'));
+    if (!response.ok) {
+      throw new Error(`preset-store: bundled presets/presets.json unreadable (${response.status})`);
+    }
+    return response.json();
+  }
+
+  // Test/Node fallback: read the packaged file directly from disk. `presets/`
+  // ships at the package root, so resolve relative to process.cwd() (the repo
+  // root under vitest).
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const file = resolve(process.cwd(), 'presets', 'presets.json');
+  return JSON.parse(readFileSync(file, 'utf8'));
 }
 
 function asArray(raw: unknown): Preset[] {
