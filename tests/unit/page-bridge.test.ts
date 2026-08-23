@@ -81,6 +81,48 @@ describe('page-bridge isolated-side client (C3)', () => {
     }
   });
 
+  it('does NOT resolve on its own outbound request echoed back (no response echo)', async () => {
+    const target = new EventTarget();
+    const bridge = createPageBridge({
+      addEventListener: (cb: Listener) => {
+        target.addEventListener('message', cb as EventListener);
+      },
+      removeEventListener: (cb: Listener) => {
+        target.removeEventListener('message', cb as EventListener);
+      },
+      postMessage: (message: unknown) => {
+        const req = message as { nonce: string; op: string };
+        // Echo the exact outbound REQUEST back into the same window listener,
+        // replicating the real self-message a postMessage from the same document
+        // delivers to its own listener. This is the C3 echo race: before the fix
+        // the loose source check let this through and resolved SOURCE_MISMATCH.
+        queueMicrotask(() =>
+          target.dispatchEvent(new MessageEvent('message', { data: { ...req } })),
+        );
+        // The genuine responder reply arrives on a later microtask.
+        queueMicrotask(() =>
+          queueMicrotask(() =>
+            target.dispatchEvent(
+              new MessageEvent('message', {
+                data: {
+                  v: 1,
+                  source: BRIDGE_SOURCE_ID,
+                  nonce: req.nonce,
+                  ok: true,
+                  result: { echoed: false },
+                },
+              }),
+            ),
+          ),
+        );
+      },
+      setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
+      clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    });
+    const reply = await bridge.request('discover', {});
+    expect(reply).toEqual({ ok: true, result: { echoed: false } });
+  });
+
   it('ignores responses from a foreign source or stale nonce', async () => {
     const target = new EventTarget();
     const foreign = new EventTarget();

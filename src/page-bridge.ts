@@ -16,6 +16,7 @@ import {
   BRIDGE_SOURCE_ID,
   createBridgeRequest,
   isBridgeRequest,
+  isBridgeResponse,
   validateBridgeResponse,
   type BridgeErrorCode,
   type BridgeOperation,
@@ -55,17 +56,14 @@ export function createPageBridge(env: PageBridgeEnv): PageBridge {
     if (listener) return;
     listener = (event: MessageEvent) => {
       const data: unknown = event.data;
-      // Accept only messages carrying our bridge identity; validateBridgeResponse
-      // re-checks source, version, and nonce and fails closed.
-      if (
-        typeof data !== 'object' ||
-        data === null ||
-        (data as Record<string, unknown>)['source'] !== BRIDGE_SOURCE_ID
-      ) {
-        return;
-      }
-      const nonce = (data as Record<string, unknown>)['nonce'];
-      if (typeof nonce !== 'string') return;
+      // The client accepts ONLY response-shaped messages. Its own outbound
+      // request is also stamped with our source/nonce, so the loose
+      // source check allowed it through and raced the real responder reply
+      // with a SOURCE_MISMATCH. Requiring a valid response shape (via
+      // isBridgeResponse) drops the self-echo; validateBridgeResponse still
+      // re-checks nonce and fails closed.
+      if (!isBridgeResponse(data)) return;
+      const nonce = data.nonce;
       const resolve = pending.get(nonce);
       if (!resolve) return; // stale or unknown nonce — ignore, fail closed via timeout
       pending.delete(nonce);
