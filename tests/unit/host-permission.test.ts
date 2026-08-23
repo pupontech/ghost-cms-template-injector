@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   CONTENT_SCRIPT_REGISTRATION_ID,
+  MAIN_WORLD_REGISTRATION_ID,
   createHostPermission,
   ghostMatchForOrigin,
   normalizeExactOrigin,
@@ -152,7 +153,28 @@ describe('createHostPermission — consent flow', () => {
     const { deps, calls } = makeDeps();
     const hp = createHostPermission(deps);
     const status = await hp.revoke();
-    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([CONTENT_SCRIPT_REGISTRATION_ID]);
+    // Both the isolated id and the MAIN-world id are unregistered (see the
+    // dedicated C8 test below for the full assertion).
+    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([
+      CONTENT_SCRIPT_REGISTRATION_ID,
+      MAIN_WORLD_REGISTRATION_ID,
+    ]);
+    expect(status).toEqual({ enabled: false, origin: null });
+  });
+
+  it('revoke unregisters BOTH the isolated and MAIN-world scripts (C8)', async () => {
+    const { deps, calls } = makeDeps();
+    const hp = createHostPermission(deps);
+    const status = await hp.revoke();
+    // grant() registers two scripts keyed by the isolated id and the MAIN-world
+    // id (`...-main`). revoke() must remove both so the MAIN bridge does not
+    // linger after the user disables the toolbar (release defect C8).
+    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([
+      CONTENT_SCRIPT_REGISTRATION_ID,
+      MAIN_WORLD_REGISTRATION_ID,
+    ]);
+    // The MAIN-world id is the isolated id with the `-main` suffix.
+    expect(MAIN_WORLD_REGISTRATION_ID).toBe(`${CONTENT_SCRIPT_REGISTRATION_ID}-main`);
     expect(status).toEqual({ enabled: false, origin: null });
   });
 });

@@ -66,6 +66,9 @@ export const MAIN_WORLD_BRIDGE_FILE = 'dist/bridge.js';
 /** Stable registration id so (re)registration is idempotent. */
 export const CONTENT_SCRIPT_REGISTRATION_ID = 'ghost-preset-toolbar-enabled';
 
+/** MAIN-world bridge registration id (isolated id + `-main` suffix). */
+export const MAIN_WORLD_REGISTRATION_ID = `${CONTENT_SCRIPT_REGISTRATION_ID}-main`;
+
 /** Storage key recording explicit consent for the granted origin. */
 export const CONSENT_STORAGE_KEY = 'hostPermissionConsent';
 
@@ -196,7 +199,7 @@ export function createHostPermission(deps: HostPermissionDeps): {
           // MAIN-world bridge: reaches Ghost's live Ember/Lexical internals.
           // Runs in the page's MAIN world (not the isolated content-script
           // world) so it can own the native save transaction.
-          id: `${CONTENT_SCRIPT_REGISTRATION_ID}-main`,
+          id: MAIN_WORLD_REGISTRATION_ID,
           matches: [match],
           js: [MAIN_WORLD_BRIDGE_FILE],
           runAt: 'document_idle',
@@ -213,7 +216,13 @@ export function createHostPermission(deps: HostPermissionDeps): {
   }
 
   async function revoke(): Promise<HostPermissionStatus> {
-    await deps.unregisterContentScripts([CONTENT_SCRIPT_REGISTRATION_ID]).catch(() => {});
+    // Both the isolated content script and the MAIN-world bridge were
+    // registered under two distinct ids in grant(). Unregister both, or the
+    // MAIN bridge lingers after the user disables the toolbar (release
+    // defect C8). Each unregister is idempotent and non-fatal on its own.
+    await deps
+      .unregisterContentScripts([CONTENT_SCRIPT_REGISTRATION_ID, MAIN_WORLD_REGISTRATION_ID])
+      .catch(() => {});
     await deps.storageSet({ [CONSENT_STORAGE_KEY]: null });
     return { enabled: false, origin: null };
   }
