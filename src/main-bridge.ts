@@ -140,7 +140,10 @@ export function createGhostMainBridge(): {
     },
     getLexical(): string | null {
       const rec = getRecord(getEditorController(findEmberOwner()));
-      const v = rec?.get?.('lexical') ?? null;
+      // Ember model attribute is camelCase (`lexical`); snake_case is the
+      // serializer key only. Prefer the real attribute, fall back defensively.
+      const v =
+        rec?.get?.('lexical') ?? (rec as Record<string, unknown> | null)?.['lexical'] ?? null;
       return typeof v === 'string' ? v : null;
     },
     isBodyEmpty(): boolean {
@@ -156,12 +159,20 @@ export function createGhostMainBridge(): {
     },
     getExcerpt(): string | null {
       const rec = getRecord(getEditorController(findEmberOwner()));
-      const v = rec?.get?.('custom_excerpt') ?? rec?.get?.('customExcerpt') ?? null;
+      // Ghost 6.60 post model defines camelCase attrs (customExcerpt);
+      // `custom_excerpt` exists only on the wire, never on the record.
+      const v =
+        rec?.get?.('customExcerpt') ??
+        (rec as Record<string, unknown> | null)?.['customExcerpt'] ??
+        null;
       return typeof v === 'string' ? v : null;
     },
     getCustomTemplate(): string | null {
       const rec = getRecord(getEditorController(findEmberOwner()));
-      const v = rec?.get?.('custom_template') ?? rec?.get?.('customTemplate') ?? null;
+      const v =
+        rec?.get?.('customTemplate') ??
+        (rec as Record<string, unknown> | null)?.['customTemplate'] ??
+        null;
       return typeof v === 'string' ? v : null;
     },
     getTags(): string[] {
@@ -174,8 +185,10 @@ export function createGhostMainBridge(): {
       const ctrl = getEditorController(owner);
       const rec = getRecord(ctrl);
       if (!rec) throw new Error('live record unavailable for setField');
+      // Ghost 6.60 Ember attrs are camelCase; snake_case keys are serializer
+      // output only. Setting snake_case creates a junk plain property that
+      // Ember Data never serializes (the real headed partial-apply defect).
       if (field === 'tags') {
-        const owner = findEmberOwner();
         const store = owner ? getStore(owner) : null;
         if (!store) throw new Error('Ember store unavailable for tag relation');
         const names = Array.isArray(value) ? value : [String(value)];
@@ -186,9 +199,9 @@ export function createGhostMainBridge(): {
         });
         rec.set?.('tags', records);
       } else if (field === 'excerpt') {
-        rec.set?.('custom_excerpt', value as string);
+        rec.set?.('customExcerpt', value as string);
       } else {
-        rec.set?.('custom_template', value as string);
+        rec.set?.('customTemplate', value as string);
       }
     },
     setLexical(lexical: string): void {
@@ -196,6 +209,14 @@ export function createGhostMainBridge(): {
       const rec = getRecord(ctrl);
       if (!rec) throw new Error('live record unavailable for setLexical');
       rec.set?.('lexical', lexical);
+      // beforeSaveTask (controllers/lexical-editor.js) overwrites
+      // `post.lexical` with `post.lexicalScratch || null` right before every
+      // native save, so a body written only to the attribute is clobbered
+      // (new post ⇒ lexicalScratch null ⇒ blank Lexical root persisted).
+      // lexicalScratch is a plain property on the real post model; mirror
+      // the controller's own updateScratch so the save pipeline persists
+      // exactly what we applied.
+      (rec as unknown as Record<string, unknown>)['lexicalScratch'] = lexical;
     },
     async nativeSave(): Promise<{ updatedAt: string | null }> {
       const ctrl = getEditorController(findEmberOwner());
@@ -234,11 +255,13 @@ export function createGhostMainBridge(): {
       const ctrl = getEditorController(findEmberOwner());
       const rec = getRecord(ctrl);
       if (!rec) return null;
-      // Snapshot the mutable fields the apply may touch.
+      // Snapshot the mutable fields the apply may touch (camelCase Ember attrs).
       return {
         lexical: rec.get?.('lexical') ?? null,
-        custom_excerpt: rec.get?.('custom_excerpt') ?? null,
-        custom_template: rec.get?.('custom_template') ?? null,
+        lexicalScratch:
+          (rec as unknown as { lexicalScratch?: string | null }).lexicalScratch ?? null,
+        customExcerpt: rec.get?.('customExcerpt') ?? null,
+        customTemplate: rec.get?.('customTemplate') ?? null,
         tags: (rec.get?.('tags') as Array<{ name?: string }> | undefined) ?? [],
         id: rec.get?.('id') ?? rec.id ?? null,
         updated_at: rec.get?.('updated_at') ?? rec.get?.('updatedAt') ?? null,
@@ -250,9 +273,13 @@ export function createGhostMainBridge(): {
       const ctrl = getEditorController(findEmberOwner());
       const rec = getRecord(ctrl);
       if (!rec) throw new Error('live record unavailable for rollback');
-      if ('lexical' in snap) rec.set?.('lexical', snap['lexical']);
-      if ('custom_excerpt' in snap) rec.set?.('custom_excerpt', snap['custom_excerpt']);
-      if ('custom_template' in snap) rec.set?.('custom_template', snap['custom_template']);
+      if ('lexical' in snap) {
+        rec.set?.('lexical', snap['lexical']);
+        // keep the save-time scratch mirror consistent (see setLexical)
+        (rec as unknown as Record<string, unknown>)['lexicalScratch'] = snap['lexical'];
+      }
+      if ('customExcerpt' in snap) rec.set?.('customExcerpt', snap['customExcerpt']);
+      if ('customTemplate' in snap) rec.set?.('customTemplate', snap['customTemplate']);
       if ('tags' in snap) rec.set?.('tags', snap['tags']);
     },
   };

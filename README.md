@@ -1,9 +1,13 @@
-# Ghost Preset Toolbar — Phase-1 scaffold
+# Ghost Preset Toolbar — release candidate (browser evidence pending)
 
-Minimal MV3 TypeScript Chromium extension foundation. This scaffold has **no active
-behavior**: no preset logic, no Ghost API client, no MAIN-world bridge, no storage
-writes, no UI. Later phases build on these contracts (see
-`docs/architecture-contract.md` in the parent repository).
+MV3 TypeScript Chromium extension for applying validated presets to Ghost Admin
+posts and pages. It includes preset storage and options CRUD, API dependency
+resolution, a capability-gated MAIN-world bridge, native-save transaction glue,
+popup and optional injected toolbar UI, and explicit host-permission setup.
+
+This is **not yet accepted for release**: automated gates pass, but the required
+real Ghost/browser matrix is still blocked. See `docs/release-status.md` before
+using this candidate beyond disposable QA.
 
 ## Requirements
 
@@ -19,19 +23,30 @@ npm run verify     # format:check, lint, typecheck, tests, manifest validation, 
 
 ## Layout
 
-- `manifest.json` — MV3 manifest; `storage` permission only, no host permissions, no remote code.
-- `src/background.ts` / `src/background-main.ts` — inert service worker (one `onInstalled` listener, no side effects).
-- `src/content-script.ts` / `src/content-script-main.ts` — isolated-world content script on `/ghost/` paths; fail-closes all bridge probes with `UNSUPPORTED_CAPABILITY` until the Phase-3 bridge exists.
+- `manifest.json` — MV3 manifest with `storage`/`scripting`, no static host permission, and optional explicit Ghost-origin permission.
+- `src/background.ts` / `src/background-main.ts` — service worker and fixed same-tab popup-to-content-script relay.
+- `src/content-script.ts` / `src/content-script-main.ts` — isolated-world orchestrator that fails closed when the bridge capability is unsupported.
+- `src/main-bridge.ts` / `src/main-bridge-main.ts` — narrowly scoped MAIN-world bridge protocol for supported Ghost editor capabilities.
+- `src/apply-pipeline.ts`, `src/ghost-api.ts`, `src/ghost-state.ts` — validated dependency resolution and one native-save apply transaction.
+- `src/preset-store.ts`, `options/`, `popup/`, `setup/` — local preset persistence, options/import-export, popup, and explicit permission UI.
 - `scripts/build.mjs` — esbuild production bundle into `dist/`.
 - `scripts/validate-manifest.mjs` — manifest + built-artifact security checks.
 - `tests/unit/` — Vitest unit baseline.
 
-## Loading in Chromium (development)
+## Loading in Chromium for disposable QA
 
 ```bash
 npm run build
 # chrome://extensions → Developer mode → Load unpacked → select this directory
 ```
+
+Then open the extension setup page, enter the exact HTTPS Ghost Admin origin,
+and choose Enable. This explicitly requests access and dynamically registers the
+content script for that origin's `/ghost/*` pages; reload Ghost Admin afterward.
+
+Use a disposable, authenticated Ghost installation and record only redacted
+evidence in `docs/manual-test-matrix.md`. Do not enter or export cookies, API
+tokens, CSRF values, or other credentials.
 
 ## Scripts
 
