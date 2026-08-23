@@ -33,7 +33,9 @@ export type BridgeErrorCode =
   | 'SOURCE_MISMATCH'
   | 'TIMEOUT'
   | 'BUSY'
-  | 'APPLY_FAILED';
+  | 'APPLY_FAILED'
+  /** Request arrived while the MAIN bridge is dormant (no capability active). */
+  | 'CAPABILITY_REQUIRED';
 
 export interface BridgeRequest {
   v: number;
@@ -133,6 +135,7 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
         'TIMEOUT',
         'BUSY',
         'APPLY_FAILED',
+        'CAPABILITY_REQUIRED',
       ].includes(r['error'])
     );
   }
@@ -157,4 +160,40 @@ export function validateBridgeResponse<R = unknown>(
     return { ok: true, result: response.result as R };
   }
   return { ok: false, error: response.error };
+}
+
+/* ------------------------------------------------------------------ */
+/* Capability handshake (C8 revoke hardening)                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Identity string for the one-time capability ACTIVATION message sent from the
+ * isolated world to the MAIN bridge. The MAIN bridge is dormant by default and
+ * answers NOTHING (not even `discover`) until it receives this activation with
+ * the exact per-enable token minted in the extension context. When the user
+ * disables the toolbar, a matching DEACTIVATE message (same token) puts the
+ * bridge back to sleep; any other message shape is ignored entirely.
+ *
+ * The token is scoped per enable cycle: each grant() mints a fresh random
+ * value in the extension's isolated/service-worker context (never derivable
+ * from page code), and a stale token from a previous enable cannot reactivate
+ * a dormant or already-activated bridge.
+ */
+export const BRIDGE_CAPABILITY_SOURCE = 'ghost-preset-toolbar/page-bridge-capability/v1';
+
+export interface BridgeCapabilityMessage {
+  capSource: string;
+  action: 'activate' | 'deactivate';
+  token: string;
+}
+
+/** Structural check for the capability handshake envelope (no token compare). */
+export function isBridgeCapabilityEnvelope(value: unknown): value is BridgeCapabilityMessage {
+  if (typeof value !== 'object' || value === null) return false;
+  const m = value as Record<string, unknown>;
+  return (
+    m['capSource'] === BRIDGE_CAPABILITY_SOURCE &&
+    (m['action'] === 'activate' || m['action'] === 'deactivate') &&
+    typeof m['token'] === 'string'
+  );
 }
