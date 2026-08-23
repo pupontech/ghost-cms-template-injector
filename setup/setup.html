@@ -82,19 +82,20 @@
     <fieldset>
       <legend>Connect to your Ghost Admin</legend>
       <p class="purpose">
-        This extension needs access to your Ghost Admin origin to inject the preset toolbar and
-        apply presets. Enter the exact origin you use to open Ghost Admin (for example
-        <code>https://ghost.example.com</code>). Access is requested only for that single origin and
-        only after you click “Enable”. No other sites are touched, and no long-lived secret is
-        stored.
+        This extension needs access to your Ghost Admin installation to inject the preset toolbar
+        and apply presets. Enter the URL you use to open Ghost Admin — with or without a
+        subdirectory (for example <code>https://ghost.example.com</code> or
+        <code>https://example.com/blog</code>). Access is requested only for that exact
+        installation’s <code>/ghost/*</code> path and only after you click “Enable”. No other sites
+        are touched, and no long-lived secret is stored.
       </p>
-      <label for="setup-origin">Ghost Admin origin</label>
+      <label for="setup-origin">Ghost Admin installation URL</label>
       <input
         id="setup-origin"
         type="text"
         autocomplete="off"
         spellcheck="false"
-        placeholder="https://ghost.example.com"
+        placeholder="https://example.com/blog"
       />
       <div class="actions">
         <button id="setup-enable" type="button">Enable</button>
@@ -102,6 +103,6 @@
       </div>
     </fieldset>
 
-    <script type="module" src="setup.js"></script>
+    <script type="module" src="../dist/setup.js"></script>
   </body>
 </html>

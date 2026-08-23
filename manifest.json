@@ -17,5 +17,5 @@
   "content_scripts": [],
   "permissions": ["storage", "scripting"],
   "host_permissions": [],
-  "optional_host_permissions": ["https://*/ghost/*"]
+  "optional_host_permissions": ["https://*/*"]
 }

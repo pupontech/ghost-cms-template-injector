@@ -14,7 +14,7 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
     expect(html).toContain('<html lang="en">');
     expect(html).toMatch(/id="gpt-status" role="status"/);
     expect(html).toContain('<ul id="gpt-preset-list"></ul>');
-    expect(html).toContain('<script type="module" src="popup.js"></script>');
+    expect(html).toContain('<script type="module" src="../dist/popup.js"></script>');
     expect(read('src/ui-popup-main.ts')).toContain("button.setAttribute('type', 'button')");
   });
 
@@ -56,10 +56,10 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
     expect(manifest.content_scripts).toEqual([]);
     // The optional grant is scoped to a Ghost Admin pattern (not a literal
     // wildcard placeholder) and a consent/setup surface must exist.
-    expect(manifest.optional_host_permissions ?? []).toEqual(['https://*/ghost/*']);
+    expect(manifest.optional_host_permissions ?? []).toEqual(['https://*/*']);
     expect(manifest.setup_page).toBe('setup/setup.html');
     // The setup surface and dynamically-registered bundle must exist.
-    expect(read('setup/setup.html')).toContain('type="module" src="setup.js"');
+    expect(read('setup/setup.html')).toContain('type="module" src="../dist/setup.js"');
     // Source must reference the dynamic registration primitives.
     const setupSource = read('src/host-permission.ts');
     expect(setupSource).toContain('requestPermission');

@@ -51,18 +51,56 @@ check(
     manifest.optional_host_permissions.length >= 1,
   'optional_host_permissions must declare at least one scoped pattern',
 );
-// Every optional_host_permissions entry must be a scoped https Ghost Admin
-// pattern ending in /ghost/* — no scheme wildcard, no <all_urls>.
+// The optional grant must be declared so Chrome can show a narrow per-install
+// consent (an exact `<origin>[/<subdir>]/ghost/*` request is a subset of
+// `https://*/*`). Nothing is granted statically; the setup flow requests only
+// the user's concrete installation pattern.
 for (const p of manifest.optional_host_permissions ?? []) {
   check(
-    /^https:\/\/\*\/ghost\/\*$/.test(p),
-    `optional_host_permissions entry must be a scoped Ghost Admin pattern (https://*/ghost/*), got: ${p}`,
+    /^https:\/\/\*\/\*$/.test(p),
+    `optional_host_permissions entry must be https://*/*, got: ${p}`,
   );
 }
 check(
   typeof manifest.setup_page === 'string' && manifest.setup_page === 'setup/setup.html',
   'setup_page must point to setup/setup.html (consent surface)',
 );
+
+// PACKAGING INVARIANT: every extension page (popup/options/setup) and every
+// manifest-referenced script URL must resolve to a packaged dist/ output.
+// This is the guard for the release defect where setup/setup.html referenced a
+// sibling setup.js that was never emitted.
+function resolveManifestUrl(fromDir, url) {
+  return path.relative('.', path.join(fromDir, url));
+}
+const pageScriptRefs = [];
+const htmlFiles = ['setup/setup.html', 'popup/popup.html', 'options/options.html'];
+for (const htmlFile of htmlFiles) {
+  if (!existsSync(htmlFile)) {
+    errors.push(`extension page missing: ${htmlFile}`);
+    continue;
+  }
+  const html = readFileSync(htmlFile, 'utf8');
+  for (const m of html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)) {
+    pageScriptRefs.push([htmlFile, resolveManifestUrl(path.dirname(htmlFile), m[1])]);
+  }
+}
+const manifestUrls = [
+  manifest.background?.service_worker,
+  ...(manifest.content_scripts ?? []).flatMap((cs) => [...(cs.js ?? []), ...(cs.css ?? [])]),
+].filter(Boolean);
+for (const u of manifestUrls) pageScriptRefs.push(['manifest.json', u]);
+if (!existsSync('dist')) {
+  // Only enforce existence when a build has been produced at all; the full
+  // build+validate pipeline runs after `npm run build`.
+} else {
+  for (const [refSource, resolved] of pageScriptRefs) {
+    check(
+      existsSync(resolved),
+      `${refSource} references script "${resolved}" that is not a packaged output`,
+    );
+  }
+}
 
 const asText = JSON.stringify(manifest);
 check(!asText.includes('<all_urls>'), 'no <all_urls>');

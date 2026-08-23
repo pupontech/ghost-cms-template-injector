@@ -65,8 +65,8 @@ describe('normalizeExactOrigin', () => {
     expect(normalizeExactOrigin('<all_urls>')).toBeNull();
   });
 
-  it('rejects origins with a path or query', () => {
-    expect(normalizeExactOrigin('https://ghost.example.com/ghost')).toBeNull();
+  it('rejects origins with a non-Ghost path or query', () => {
+    expect(normalizeExactOrigin('https://ghost.example.com/blog')).toBeNull();
     expect(normalizeExactOrigin('https://ghost.example.com?x=1')).toBeNull();
   });
 });

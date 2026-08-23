@@ -84,12 +84,13 @@ export interface GrantResult {
 }
 
 /**
- * Validate and normalize a user-supplied origin into an `ExactOrigin`.
- * Accepts only `https://<host>` forms (no trailing path, no wildcard, no port
- * required but allowed only as a literal). Returns null for anything that is
- * not a safe, scheme-exact origin.
+ * Validate and normalize a user-supplied Ghost installation/Admin URL into a
+ * concrete installation base. Accepts `https://<host>[/<subdir>]` forms with
+ * an optional subdirectory (e.g. `https://localhost:2368/blog`), a trailing
+ * slash, or an explicit `/ghost` suffix. Rejects anything unsafe or
+ * non-concrete: non-HTTPS, wildcards, query strings, fragments.
  */
-export function normalizeExactOrigin(input: string): ExactOrigin | null {
+export function normalizeInstallation(input: string): ExactOrigin | null {
   const trimmed = input.trim();
   let url: URL;
   try {
@@ -97,19 +98,37 @@ export function normalizeExactOrigin(input: string): ExactOrigin | null {
   } catch {
     return null;
   }
-  // Scheme must be exactly https; no path, query, or fragment allowed.
+  // Scheme must be exactly https; no query or fragment allowed.
   if (url.protocol !== 'https:') return null;
-  if (url.pathname !== '/' && url.pathname !== '') return null;
   if (url.search !== '' || url.hash !== '') return null;
-  // The host must be a concrete authority — reject scheme/host wildcards and
-  // bare `*`/`<all_urls>`-like inputs.
   if (url.hostname === '' || url.hostname.includes('*') || url.hostname.includes('?')) {
     return null;
   }
+  // Normalize the installation path: drop the trailing slash, then a trailing
+  // `/ghost` component (the Admin URL may point directly at the admin app).
+  let pathname = url.pathname.replace(/\/+$/, '');
+  if (/(^|\/)ghost$/.test(pathname)) pathname = pathname.slice(0, -'/ghost'.length);
+  return { origin: `${url.origin}${pathname}` };
+}
+
+/**
+ * Validate a legacy path-less input. Kept for callers that need strict
+ * origin-only validation (no subdirectory).
+ */
+export function normalizeExactOrigin(input: string): ExactOrigin | null {
+  const normalized = normalizeInstallation(input);
+  if (!normalized) return null;
+  let url: URL;
+  try {
+    url = new URL(normalized.origin);
+  } catch {
+    return null;
+  }
+  if (url.pathname !== '' && url.pathname !== '/') return null;
   return { origin: url.origin };
 }
 
-/** Build the single `/ghost/*` match pattern for an exact origin. */
+/** Build the scoped `/ghost/*` match pattern for an installation base. */
 export function ghostMatchForOrigin(origin: string): string {
   return `${origin}/ghost/*`;
 }
@@ -144,7 +163,7 @@ export function createHostPermission(deps: HostPermissionDeps): {
   }
 
   async function grant(originInput: string): Promise<GrantResult> {
-    const normalized = normalizeExactOrigin(originInput);
+    const normalized = normalizeInstallation(originInput);
     if (!normalized) {
       return { ok: false, enabled: false, origin: null, error: 'Invalid Ghost origin.' };
     }

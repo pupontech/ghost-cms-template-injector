@@ -29,7 +29,7 @@ describe('manifest.json (MV3 baseline)', () => {
     expect(manifest.permissions).not.toContain('tabs');
     // The optional grant is scoped to a Ghost Admin pattern; registration is
     // dynamic (after consent), so the static content_scripts array is empty.
-    expect(manifest.optional_host_permissions ?? []).toContain('https://*/ghost/*');
+    expect(manifest.optional_host_permissions ?? []).toEqual(['https://*/*']);
     expect(manifest.content_scripts ?? []).toEqual([]);
     expect(typeof manifest.setup_page).toBe('string');
   });
