@@ -2,7 +2,8 @@
 
 ## Candidate
 
-- Candidate commit before publication hygiene: `45f7fc0`
+- Final private-main candidate: the current `main` HEAD
+- Genuine headed lifecycle implementation/evidence lineage: `45f7fc0`
 - Compatibility target exercised: Ghost 6.60
 - Chromium: 151.0.7922.169
 - Extension platform: Manifest V3
