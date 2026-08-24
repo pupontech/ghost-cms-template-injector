@@ -21,6 +21,7 @@
  */
 
 import type { ApplicationPlan, PlanAction } from './preset-engine';
+import { isSerializedLexical } from './preset-schema';
 export type { ApplicationPlan, PlanAction };
 
 /* ------------------------------------------------------------------ */
@@ -318,8 +319,11 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
         this.#surface.setField('tags', Array.isArray(action.value) ? action.value : []);
         break;
       case 'body':
-        if (typeof action.value !== 'string') {
-          throw new GhostStateException('APPLY_FAILED', 'body value must be serialized lexical');
+        if (!isSerializedLexical(action.value)) {
+          throw new GhostStateException(
+            'APPLY_FAILED',
+            'body value must be structurally valid serialized Lexical; refusing to submit invalid lexical',
+          );
         }
         this.#surface.setLexical(action.value);
         break;

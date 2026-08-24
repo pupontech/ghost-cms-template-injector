@@ -74,7 +74,11 @@ const presetSoftwareReview: Preset = {
   schemaVersion: 1,
   id: 'software-review',
   name: 'Software Review',
-  content: { source: 'inline-html', mode: 'replace', html: '<p>body</p>' },
+  content: {
+    source: 'inline-lexical',
+    mode: 'replace',
+    lexical: '{"root":{"children":[],"type":"root","version":1}}',
+  },
   metadata: {
     excerpt: { mode: 'only-if-empty', value: 'A hands-on review.' },
     tags: { mode: 'merge', values: ['Reviews'] },
@@ -176,7 +180,11 @@ describe('Phase-5 atomic apply pipeline', () => {
       schemaVersion: 1,
       id: 'custom-template-starter',
       name: 'Custom Template Starter',
-      content: { source: 'inline-html', mode: 'prompt', html: '<p></p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'prompt',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
       metadata: { customTemplate: { mode: 'prompt', value: 'custom-wide.hbs' } },
     };
     const deps = depsWith({ adapter, preset: promptPreset });
@@ -193,7 +201,11 @@ describe('Phase-5 atomic apply pipeline', () => {
       schemaVersion: 1,
       id: 'custom-template-starter',
       name: 'Custom Template Starter',
-      content: { source: 'inline-html', mode: 'prompt', html: '<p></p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'prompt',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
       metadata: { customTemplate: { mode: 'prompt', value: 'custom-wide.hbs' } },
     };
     const deps = depsWith({ adapter, preset: promptPreset });

@@ -19,7 +19,11 @@ const basePreset = (overrides: Record<string, unknown> = {}): Record<string, unk
   schemaVersion: 1,
   id: 'test-preset',
   name: 'Test Preset',
-  content: { source: 'inline-html', mode: 'replace', html: '<p>Hello</p>' },
+  content: {
+    source: 'inline-lexical',
+    mode: 'replace',
+    lexical: '{"root":{"children":[],"type":"root","version":1}}',
+  },
   ...overrides,
 });
 
@@ -98,6 +102,34 @@ describe('C4 — dependency validation aborts before any field is planned', () =
 });
 
 describe('body modes (C5 — replace | only-if-empty | prompt only)', () => {
+  it('blocks inline HTML because the live Lexical setter accepts serialized Lexical only', () => {
+    const preset = validatePreset({
+      ...basePreset(),
+      content: { source: 'inline-html', mode: 'replace', html: '<p>x</p>' },
+    });
+    const plan = planPresetApplication(preset, createEditorSnapshot(), createPlanContext());
+    expect(plan.status).toBe('blocked');
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.problems.join('\n')).toMatch(/inline html.*lexical|conversion/i);
+  });
+
+  it('resolves a Ghost snippet to its serialized Lexical body instead of its name', () => {
+    const preset = validatePreset({
+      ...basePreset(),
+      content: { source: 'ghost-snippet', mode: 'replace', snippet: 'review-snippet' },
+    });
+    const plan = planPresetApplication(
+      preset,
+      createEditorSnapshot(),
+      createPlanContext({
+        snippets: ['review-snippet'],
+        snippetLexical: { 'review-snippet': '{"root":{"children":[],"type":"root","version":1}}' },
+      }),
+    );
+    expect(plan.status).toBe('ready');
+    expect(plan.actions.find((a) => a.field === 'body')?.value).toMatch(/^\{"root"/);
+  });
+
   it('plans a set for replace mode regardless of current state', () => {
     const plan = planPresetApplication(
       validatePreset(basePreset()),
@@ -111,7 +143,11 @@ describe('body modes (C5 — replace | only-if-empty | prompt only)', () => {
   it('skips only-if-empty when the live body is not empty', () => {
     const preset = validatePreset({
       ...basePreset(),
-      content: { source: 'inline-html', mode: 'only-if-empty', html: '<p>x</p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'only-if-empty',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
     });
     const plan = planPresetApplication(
       preset,
@@ -124,7 +160,11 @@ describe('body modes (C5 — replace | only-if-empty | prompt only)', () => {
   it('applies only-if-empty when the live body is empty', () => {
     const preset = validatePreset({
       ...basePreset(),
-      content: { source: 'inline-html', mode: 'only-if-empty', html: '<p>x</p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'only-if-empty',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
     });
     const plan = planPresetApplication(
       preset,
@@ -137,7 +177,11 @@ describe('body modes (C5 — replace | only-if-empty | prompt only)', () => {
   it('marks prompt mode as needing a user answer, not a silent write', () => {
     const preset = validatePreset({
       ...basePreset(),
-      content: { source: 'inline-html', mode: 'prompt', html: '<p>x</p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'prompt',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
     });
     const plan = planPresetApplication(
       preset,
@@ -281,7 +325,11 @@ describe('plan completeness and status aggregation (C4)', () => {
   it('emits exactly one action per requested field, in schema order: body, excerpt, customTemplate, tags', () => {
     const preset = validatePreset({
       ...basePreset(),
-      content: { source: 'inline-html', mode: 'replace', html: '<p>b</p>' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'replace',
+        lexical: '{"root":{"children":[],"type":"root","version":1}}',
+      },
       metadata: {
         excerpt: { mode: 'replace', value: 'e' },
         customTemplate: { mode: 'replace', value: 't.hbs' },

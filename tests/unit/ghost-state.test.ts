@@ -149,6 +149,36 @@ describe('C4 planApply validation', () => {
 });
 
 describe('C4 apply → save → verify (single native transaction)', () => {
+  it('rejects HTML body actions before setLexical or native save', async () => {
+    const surface = capableSurface();
+    const adapter = createGhostStateAdapter(surface);
+
+    await expect(
+      adapter.apply(
+        readyPlan([{ field: 'body', op: 'set', status: 'apply', value: '<p>body</p>' }]),
+      ),
+    ).rejects.toMatchObject({
+      code: 'APPLY_FAILED',
+      message: expect.stringMatching(/invalid lexical/i),
+    });
+    expect(surface.setLexical).not.toHaveBeenCalled();
+    expect(surface.nativeSave).not.toHaveBeenCalled();
+    expect(surface.restoreRollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects structurally invalid serialized Lexical before native save', async () => {
+    const surface = capableSurface();
+    const adapter = createGhostStateAdapter(surface);
+
+    await expect(
+      adapter.apply(
+        readyPlan([{ field: 'body', op: 'set', status: 'apply', value: '{"root":{}}' }]),
+      ),
+    ).rejects.toMatchObject({ code: 'APPLY_FAILED' });
+    expect(surface.setLexical).not.toHaveBeenCalled();
+    expect(surface.nativeSave).not.toHaveBeenCalled();
+  });
+
   it('mutates live fields, invokes exactly one native save, and returns clean state', async () => {
     const surface = capableSurface();
     const adapter = createGhostStateAdapter(surface);
@@ -172,9 +202,18 @@ describe('C4 apply → save → verify (single native transaction)', () => {
     const surface = capableSurface();
     const adapter = createGhostStateAdapter(surface);
     await adapter.apply(
-      readyPlan([{ field: 'body', op: 'set', status: 'apply', value: '{"root":{}}' }]),
+      readyPlan([
+        {
+          field: 'body',
+          op: 'set',
+          status: 'apply',
+          value: '{"root":{"children":[],"type":"root","version":1}}',
+        },
+      ]),
     );
-    expect(surface.setLexical).toHaveBeenCalledWith('{"root":{}}');
+    expect(surface.setLexical).toHaveBeenCalledWith(
+      '{"root":{"children":[],"type":"root","version":1}}',
+    );
   });
 });
 

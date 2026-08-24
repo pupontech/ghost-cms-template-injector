@@ -35,6 +35,38 @@ export interface BodyContent {
   lexical?: string;
 }
 
+/**
+ * Minimum structural contract accepted by Ghost's Lexical serializer. This is
+ * deliberately not a hand-written HTML converter or a full node-schema clone:
+ * it only proves that a value is serialized Lexical JSON with a root node and
+ * node-shaped children. Ghost itself remains authoritative for node details.
+ */
+export function isSerializedLexical(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim().length === 0) return false;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const root = parsed?.['root'];
+    if (!isRecord(root) || root['type'] !== 'root' || typeof root['version'] !== 'number') {
+      return false;
+    }
+    const isNode = (node: unknown): boolean => {
+      if (
+        !isRecord(node) ||
+        typeof node['type'] !== 'string' ||
+        typeof node['version'] !== 'number'
+      ) {
+        return false;
+      }
+      const children = node['children'];
+      return children === undefined || (Array.isArray(children) && children.every(isNode));
+    };
+    const children = root['children'];
+    return Array.isArray(children) && children.every(isNode);
+  } catch {
+    return false;
+  }
+}
+
 export interface ExcerptField {
   mode: (typeof METADATA_MODES)[number];
   value: string;

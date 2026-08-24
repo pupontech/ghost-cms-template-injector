@@ -206,7 +206,7 @@ export class GhostAdminClient {
 
   /** Exact local-name snippet lookup over a validated plural snippets[] (C6). */
   async findSnippetByName(name: string): Promise<GhostSnippetRecord> {
-    const body = await this.#request('snippets');
+    const body = await this.#request('snippets', '?limit=all&formats=lexical');
     const snippets = extractPlural<GhostSnippetRecord>('snippets', body);
     const match = snippets.find((s) => s.name === name);
     if (!match) {
@@ -234,7 +234,10 @@ export class GhostAdminClient {
   }
 
   async listSnippets(): Promise<GhostSnippetRecord[]> {
-    return extractPlural<GhostSnippetRecord>('snippets', await this.#request('snippets'));
+    return extractPlural<GhostSnippetRecord>(
+      'snippets',
+      await this.#request('snippets', '?limit=all&formats=lexical'),
+    );
   }
 
   async #update(resource: 'posts' | 'pages', input: UpdateInput): Promise<GhostPostRecord> {

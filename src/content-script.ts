@@ -81,11 +81,19 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       const [snippets, templates] = await Promise.all([
         client
           .listSnippets()
-          .then((list) => list.map((s) => s.name ?? ''))
-          .catch(() => []),
+          .then((list) => ({
+            names: list.map((s) => s.name ?? ''),
+            lexical: Object.fromEntries(
+              list
+                .filter((s) => typeof s.name === 'string' && typeof s.lexical === 'string')
+                .map((s) => [s.name as string, s.lexical as string]),
+            ),
+          }))
+          .catch(() => null),
         client.getActiveThemeTemplates().catch(() => []),
       ]);
-      return { snippets, templates };
+      if (!snippets) return {};
+      return { snippets: snippets.names, snippetLexical: snippets.lexical, templates };
     } catch {
       return {};
     }

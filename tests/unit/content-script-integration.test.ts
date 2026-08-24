@@ -83,7 +83,11 @@ const softwareReview = {
   schemaVersion: 1 as const,
   id: 'software-review',
   name: 'Software Review',
-  content: { source: 'inline-html' as const, mode: 'replace' as const, html: '<p>body</p>' },
+  content: {
+    source: 'inline-lexical' as const,
+    mode: 'replace' as const,
+    lexical: '{"root":{"children":[],"type":"root","version":1}}',
+  },
   metadata: {
     excerpt: { mode: 'only-if-empty' as const, value: 'A hands-on review.' },
     tags: { mode: 'merge' as const, values: ['Reviews'] },

@@ -17,6 +17,7 @@ import type {
   Preset,
   TagsField,
 } from './preset-schema';
+import { isSerializedLexical } from './preset-schema';
 
 /** Live per-field state captured by a C4 `snapshot` on the open editor. */
 export interface EditorSnapshot {
@@ -31,6 +32,8 @@ export interface EditorSnapshot {
 export interface PlanContext {
   /** Exact snippet names available locally (validated plural snippets[]). */
   snippets?: string[];
+  /** Exact-name lookup to the snippet's serialized Lexical body. */
+  snippetLexical?: Record<string, string>;
   /**
    * Active-theme custom template filenames (blank-slug templates[] entries),
    * including `.hbs`. Absent/empty means the allowlist is unknown and any
@@ -108,31 +111,41 @@ export function normalizeTagValues(values: readonly string[]): string[] {
   return result;
 }
 
-function planBody(content: BodyContent, snapshot: EditorSnapshot): PlanAction {
+function planBody(
+  content: BodyContent,
+  snapshot: EditorSnapshot,
+  context: PlanContext,
+): PlanAction {
   const mode: BodyMode = content.mode;
   if (!BODY_MODES.includes(mode)) {
-    // The validator already rejects other modes; fail closed defensively.
     throw new TypeError(`preset-engine: unsupported body mode "${mode}"`);
+  }
+  const lexical =
+    content.source === 'inline-lexical'
+      ? content.lexical
+      : content.source === 'ghost-snippet'
+        ? context.snippetLexical?.[content.snippet ?? '']
+        : undefined;
+  if (!lexical || !isSerializedLexical(lexical)) {
+    throw new TypeError(
+      content.source === 'inline-html'
+        ? 'inline HTML cannot be applied to the live Lexical editor without an official conversion path'
+        : 'body source did not resolve to structurally valid serialized Lexical',
+    );
   }
   if (mode === 'prompt') {
     return {
       field: 'body',
       op: 'skip',
       status: 'prompt',
-      value: content.snippet ?? content.html ?? content.lexical ?? '',
+      value: lexical,
       question: 'Replace the current post body with this preset’s content?',
     };
   }
   if (mode === 'only-if-empty' && !snapshot.bodyEmpty) {
     return { field: 'body', op: 'skip', status: 'skip', reason: 'body is not empty' };
   }
-  // replace, or only-if-empty with an empty live body: one whole-body set.
-  return {
-    field: 'body',
-    op: 'set',
-    status: 'apply',
-    value: content.snippet ?? content.html ?? content.lexical ?? '',
-  };
+  return { field: 'body', op: 'set', status: 'apply', value: lexical };
 }
 
 function planExcerpt(field: ExcerptField, snapshot: EditorSnapshot): PlanAction {
@@ -242,7 +255,19 @@ export function planPresetApplication(
       problems.push(`content.source: snippet allowlist unavailable for "${wanted}"`);
     } else if (!snippets.includes(wanted)) {
       problems.push(`content.source: snippet "${wanted}" not found`);
+    } else if (!context.snippetLexical || !isSerializedLexical(context.snippetLexical[wanted])) {
+      problems.push(
+        `content.source: snippet "${wanted}" did not resolve to valid serialized Lexical`,
+      );
     }
+  } else if (preset.content.source === 'inline-html') {
+    problems.push(
+      'content.source: inline HTML is unsupported for live Lexical writes; provide inline-lexical or a Ghost snippet',
+    );
+  } else if (!isSerializedLexical(preset.content.lexical)) {
+    problems.push(
+      'content.source: inline-lexical payload is not structurally valid serialized Lexical',
+    );
   }
 
   if (preset.metadata?.customTemplate) {
@@ -266,7 +291,18 @@ export function planPresetApplication(
   }
 
   // ---- Phase B: plan every requested field in schema order.
-  const actions: PlanAction[] = [planBody(preset.content, snapshot)];
+  let body: PlanAction;
+  try {
+    body = planBody(preset.content, snapshot, context);
+  } catch (error) {
+    return freezePlan({
+      presetId: preset.id,
+      status: 'blocked',
+      actions: [],
+      problems: [error instanceof Error ? error.message : 'body source could not be resolved'],
+    });
+  }
+  const actions: PlanAction[] = [body];
 
   const metadata = preset.metadata;
   if (metadata?.excerpt) actions.push(planExcerpt(metadata.excerpt, snapshot));

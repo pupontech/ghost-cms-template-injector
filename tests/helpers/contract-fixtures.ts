@@ -10,7 +10,8 @@ export const postFixture = {
   title: 'Fixture post',
   custom_excerpt: 'A deterministic post excerpt.',
   custom_template: 'custom-review.hbs',
-  lexical: '{"root":{"children":[],"type":"root","version":1}}',
+  lexical:
+    '{"root":{"children":[],"direction":null,"format":"","indent":0,"type":"root","version":1}}',
   tags: [{ name: 'Existing' }],
   updated_at: '2026-01-01T00:00:00.000Z',
 } as const;
@@ -23,7 +24,8 @@ export const pageFixture = {
   title: 'Fixture page',
   custom_excerpt: 'A deterministic page excerpt.',
   custom_template: 'custom-landing.hbs',
-  lexical: '{"root":{"children":[],"type":"root","version":1}}',
+  lexical:
+    '{"root":{"children":[],"direction":null,"format":"","indent":0,"type":"root","version":1}}',
   tags: [],
   updated_at: '2026-01-01T00:00:00.000Z',
 } as const;
@@ -31,7 +33,8 @@ export const pageFixture = {
 export const snippetFixture = {
   id: 'snippet-fixture-001',
   name: 'review-snippet',
-  lexical: '{"root":{"children":[{"type":"paragraph"}],"type":"root","version":1}}',
+  lexical:
+    '{"root":{"children":[{"children":[],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":null,"format":"","indent":0,"type":"root","version":1}}',
   mobiledoc: null,
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:00:00.000Z',

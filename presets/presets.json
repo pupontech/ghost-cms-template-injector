@@ -5,9 +5,9 @@
     "name": "Software Review",
     "description": "Standard structure for a software review post.",
     "content": {
-      "source": "inline-html",
+      "source": "inline-lexical",
       "mode": "replace",
-      "html": "<h2>Overview</h2><p>What this covers.</p><h2>Details</h2><p></p><h2>Verdict</h2><p></p>"
+      "lexical": "{\"root\":{\"children\":[{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1}],\"direction\":null,\"format\":\"\",\"indent\":0,\"type\":\"root\",\"version\":1}}"
     },
     "metadata": {
       "excerpt": { "mode": "only-if-empty", "value": "A hands-on review." },
@@ -36,9 +36,9 @@
     "name": "Custom Template Starter",
     "description": "Applies a custom theme template to the post.",
     "content": {
-      "source": "inline-html",
+      "source": "inline-lexical",
       "mode": "prompt",
-      "html": "<p></p>"
+      "lexical": "{\"root\":{\"children\":[],\"direction\":null,\"format\":\"\",\"indent\":0,\"type\":\"root\",\"version\":1}}"
     },
     "metadata": {
       "customTemplate": { "mode": "prompt", "value": "custom-wide.hbs" }
