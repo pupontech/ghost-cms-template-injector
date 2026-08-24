@@ -71,7 +71,8 @@ export type DiscoverOutcome =
 export interface GhostSnapshot {
   resourceType: GhostResourceType;
   resourceId: string | null;
-  /** Live metadata — excerpt and custom template exactly as stored. */
+  /** Live metadata — title, excerpt, and custom template exactly as stored. */
+  title: string | null;
   excerpt: string | null;
   customTemplate: string | null;
   /** Tags in live relation display order. */
@@ -121,11 +122,12 @@ export interface GhostLiveSurface {
   /** Lexical state as serialized JSON, or null if none reachable. */
   getLexical(): string | null;
   isBodyEmpty(): boolean;
+  getTitle(): string | null;
   getExcerpt(): string | null;
   getCustomTemplate(): string | null;
   getTags(): string[];
   /** Mutate a single field on the live record. Rejects unsupported fields. */
-  setField(field: 'excerpt' | 'customTemplate' | 'tags', value: string | string[]): void;
+  setField(field: 'excerpt' | 'customTemplate' | 'tags' | 'title', value: string | string[]): void;
   /** Replace live Lexical state (body). Rejects when unsupported. */
   setLexical(lexical: string): void;
   /** Invoke exactly one Ghost-native save transaction. Resolves on clean. */
@@ -253,6 +255,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     return {
       resourceType: this.#surface.getResourceType(),
       resourceId: this.#surface.getResourceId(),
+      title: this.#surface.getTitle(),
       excerpt: this.#surface.getExcerpt(),
       customTemplate: this.#surface.getCustomTemplate(),
       tags: this.#surface.getTags(),
@@ -324,6 +327,9 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     switch (action.field) {
       case 'excerpt':
         this.#surface.setField('excerpt', String(action.value ?? ''));
+        break;
+      case 'title':
+        this.#surface.setField('title', String(action.value ?? ''));
         break;
       case 'customTemplate':
         this.#surface.setField('customTemplate', String(action.value ?? ''));

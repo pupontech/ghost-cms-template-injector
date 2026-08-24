@@ -52,6 +52,7 @@ export interface OptionsView {
   form: {
     id: RenderInput;
     name: RenderInput;
+    title: RenderInput;
     description: RenderInput;
     source: RenderInput;
     mode: RenderInput;
@@ -188,6 +189,8 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   const preset = item.preset;
   // Visible fields
   view.form.name.value = preset.name;
+  view.form.title.value = preset.metadata?.title?.value ?? '';
+  view.form.excerpt.value = preset.metadata?.excerpt?.value ?? '';
   view.form.tags.value = preset.metadata?.tags?.values.join(', ') ?? '';
   view.form.body.value =
     preset.content.source === 'inline-html'
@@ -205,8 +208,7 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   view.form.group.value = preset.ui?.group ?? '';
   view.form.icon.value = preset.ui?.icon ?? '';
   view.form.tagMode.value = preset.metadata?.tags?.mode ?? 'merge';
-  view.form.excerpt.value = preset.metadata?.excerpt?.value ?? '';
-  view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'replace';
+  view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'only-if-empty';
   view.form.customTemplate.value = preset.metadata?.customTemplate?.value ?? '';
   view.form.customTemplateMode.value = preset.metadata?.customTemplate?.mode ?? 'replace';
   updateBodyEditor(view);
@@ -258,6 +260,10 @@ export function readFormPreset(view: OptionsView): unknown {
   if (icon) ui['icon'] = icon;
   if (Object.keys(ui).length > 0) preset['ui'] = ui;
   const metadata: Record<string, unknown> = {};
+  const title = view.form.title.value.trim();
+  if (title.length > 0) {
+    metadata['title'] = { mode: 'replace', value: title };
+  }
   const excerpt = view.form.excerpt.value;
   if (excerpt.length > 0) {
     metadata['excerpt'] = { mode: view.form.excerptMode.value.trim(), value: excerpt };
@@ -376,6 +382,7 @@ if (isBrowserContext()) {
     const form = {
       id: input('opt-id') as RenderInput,
       name: input('opt-name') as RenderInput,
+      title: input('opt-title') as RenderInput,
       description: input('opt-description') as RenderInput,
       source: input('opt-source') as RenderInput,
       mode: input('opt-mode') as RenderInput,
@@ -421,7 +428,7 @@ if (isBrowserContext()) {
           form.source.value = 'inline-text';
           form.mode.value = 'replace';
           form.tagMode.value = 'merge';
-          form.excerptMode.value = 'replace';
+          form.excerptMode.value = 'only-if-empty';
           form.customTemplateMode.value = 'replace';
         },
       },

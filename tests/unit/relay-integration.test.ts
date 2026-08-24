@@ -125,6 +125,7 @@ function makeSurface(): GhostLiveSurface {
     getLexical: () => '{"root":{"children":[]}}',
     isBodyEmpty: () => true,
     getExcerpt: () => null,
+    getTitle: () => null,
     getCustomTemplate: () => null,
     getTags: () => [],
     setField: () => {},

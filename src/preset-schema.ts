@@ -97,10 +97,19 @@ export interface TagsField {
   values: string[];
 }
 
+/** Post title write. Ghost titles are plain strings with a generous bound. */
+export interface TitleField {
+  /** Titles always replace; there is no meaningful merge for a title. */
+  mode: 'replace';
+  value: string;
+}
+
 export interface PresetMetadata {
   excerpt?: ExcerptField;
   customTemplate?: CustomTemplateField;
   tags?: TagsField;
+  /** Optional post title write (replace mode only). */
+  title?: TitleField;
 }
 
 export interface PresetUi {
@@ -224,6 +233,18 @@ function validateTags(raw: Record<string, unknown>): TagsField {
   return { mode: mode as TagMode, values: values as string[] };
 }
 
+function validateTitle(raw: Record<string, unknown>): TitleField {
+  const mode = raw['mode'];
+  if (mode !== 'replace') {
+    fail('metadata.title.mode', "must be 'replace' (titles have no merge/only-if-empty)");
+  }
+  const value = raw['value'];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    fail('metadata.title.value', 'must be a non-empty string');
+  }
+  return { mode: 'replace', value };
+}
+
 function validateMetadata(raw: unknown): PresetMetadata {
   if (!isRecord(raw)) fail('metadata', 'must be an object');
 
@@ -237,6 +258,8 @@ function validateMetadata(raw: unknown): PresetMetadata {
       metadata.customTemplate = validateCustomTemplate(value);
     } else if (key === 'tags') {
       metadata.tags = validateTags(value);
+    } else if (key === 'title') {
+      metadata.title = validateTitle(value);
     } else {
       fail('metadata', `unknown field "${key}" (fail closed)`);
     }

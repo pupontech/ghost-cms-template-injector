@@ -70,6 +70,7 @@ function toEditorSnapshot(s: GhostSnapshot): EditorSnapshot {
     bodyEmpty: s.bodyEmpty,
     excerpt: s.excerpt,
     customTemplate: s.customTemplate,
+    title: s.title ?? null,
     tags: s.tags,
   };
 }

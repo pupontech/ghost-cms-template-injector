@@ -27,6 +27,7 @@ function formView(): OptionsView {
   const form = {
     id: input(),
     name: input('Review'),
+    title: input(),
     description: input(),
     source: input('inline-text'),
     mode: input('replace'),
@@ -106,5 +107,46 @@ describe('simplified options form', () => {
     fillFormForEdit(view, item);
     const roundTrip = readFormPreset(view) as Preset;
     expect(roundTrip).toEqual(preset);
+  });
+
+  it('captures an optional post title as a replace-mode title field', () => {
+    const view = formView();
+    view.form.title.value = 'My Review Title';
+    const preset = readFormPreset(view) as {
+      metadata?: { title?: { mode: string; value: string } };
+    };
+    expect(preset.metadata?.title).toEqual({ mode: 'replace', value: 'My Review Title' });
+  });
+
+  it('omits the title field when left empty', () => {
+    const view = formView();
+    view.form.title.value = '   ';
+    const preset = readFormPreset(view) as { metadata?: { title?: unknown } };
+    expect(preset.metadata?.title).toBeUndefined();
+  });
+
+  it('rehydrates a saved title and excerpt when editing', () => {
+    const view = formView();
+    const preset: Preset = {
+      schemaVersion: 1,
+      id: 'titled',
+      name: 'Titled',
+      content: { source: 'inline-text', mode: 'replace', text: 'Body' },
+      metadata: {
+        title: { mode: 'replace', value: 'Saved title' },
+        excerpt: { mode: 'only-if-empty', value: 'Saved excerpt' },
+      },
+    };
+    fillFormForEdit(view, {
+      id: preset.id,
+      name: preset.name,
+      source: preset.content.source,
+      mode: preset.content.mode,
+      preset,
+      seeded: false,
+    });
+    expect(view.form.title.value).toBe('Saved title');
+    expect(view.form.excerpt.value).toBe('Saved excerpt');
+    expect(readFormPreset(view)).toEqual(preset);
   });
 });

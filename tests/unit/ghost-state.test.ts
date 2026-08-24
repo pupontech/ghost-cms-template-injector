@@ -18,6 +18,7 @@ function capableSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSur
     getLexical: () => '{"root":{}}',
     isBodyEmpty: () => true,
     getExcerpt: () => null,
+    getTitle: () => null,
     getCustomTemplate: () => null,
     getTags: () => [],
     setField: vi.fn(),
@@ -76,6 +77,7 @@ describe('C4 live snapshot', () => {
   it('captures type, id, metadata, tags, lexical, dirty, and updated_at', () => {
     const surface = capableSurface({
       getExcerpt: () => 'sum',
+      getTitle: () => 'Old Title',
       getCustomTemplate: () => 'tpl.hbs',
       getTags: () => ['A', 'B'],
       getLexical: () => '{"nodes":[]}',

@@ -16,6 +16,7 @@ import type {
   ExcerptField,
   Preset,
   TagsField,
+  TitleField,
 } from './preset-schema';
 import { isSerializedLexical } from './preset-schema';
 import { plainTextToLexical } from './plain-text-lexical';
@@ -25,6 +26,8 @@ export interface EditorSnapshot {
   bodyEmpty: boolean;
   excerpt: string | null;
   customTemplate: string | null;
+  /** Live post title, or null when not reachable. */
+  title: string | null;
   /** Existing tag display names in live relation order. */
   tags: string[];
 }
@@ -43,7 +46,7 @@ export interface PlanContext {
   templates?: string[];
 }
 
-export type PlannedField = 'body' | 'excerpt' | 'customTemplate' | 'tags';
+export type PlannedField = 'body' | 'excerpt' | 'customTemplate' | 'tags' | 'title';
 
 export type PlanActionOp = 'set' | 'skip';
 
@@ -75,6 +78,7 @@ export function createEditorSnapshot(overrides: Partial<EditorSnapshot> = {}): E
     bodyEmpty: true,
     excerpt: null,
     customTemplate: null,
+    title: null,
     tags: [],
     ...overrides,
   });
@@ -170,6 +174,11 @@ function planExcerpt(field: ExcerptField, snapshot: EditorSnapshot): PlanAction 
     };
   }
   return { field: 'excerpt', op: 'set', status: 'apply', value: field.value };
+}
+
+function planTitle(field: TitleField, _snapshot: EditorSnapshot): PlanAction {
+  // Titles always replace; the schema enforces mode === 'replace'.
+  return { field: 'title', op: 'set', status: 'apply', value: field.value };
 }
 
 function planCustomTemplate(field: CustomTemplateField, context: PlanContext): PlanAction {
@@ -322,6 +331,7 @@ export function planPresetApplication(
   const actions: PlanAction[] = [body];
 
   const metadata = preset.metadata;
+  if (metadata?.title) actions.push(planTitle(metadata.title, snapshot));
   if (metadata?.excerpt) actions.push(planExcerpt(metadata.excerpt, snapshot));
   if (metadata?.customTemplate) {
     actions.push(planCustomTemplate(metadata.customTemplate, context));

@@ -27,6 +27,7 @@ function view(): OptionsView {
     form: {
       id: input(),
       name: input(),
+      title: input(),
       description: input(),
       source: input(),
       mode: input(),

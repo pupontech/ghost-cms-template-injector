@@ -25,6 +25,7 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
     getLexical: () => '{"root":{"children":[]}}',
     isBodyEmpty: () => true,
     getExcerpt: () => null,
+    getTitle: () => null,
     getCustomTemplate: () => null,
     getTags: () => [],
     setField: vi.fn(),

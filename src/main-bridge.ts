@@ -157,6 +157,18 @@ export function createGhostMainBridge(): {
         return false;
       }
     },
+    getTitle(): string | null {
+      const owner = findEmberOwner();
+      const ctrl = getEditorController(owner);
+      const rec = getRecord(ctrl);
+      // Ghost keeps the unsaved title in the controller's titleScratch (plain
+      // property); the record attribute is `title`.
+      const scratch = ctrl as unknown as Record<string, unknown> | null;
+      const s = scratch?.['titleScratch'];
+      if (typeof s === 'string') return s;
+      const v = rec?.get?.('title') ?? (rec as Record<string, unknown> | null)?.['title'] ?? null;
+      return typeof v === 'string' ? v : null;
+    },
     getExcerpt(): string | null {
       const rec = getRecord(getEditorController(findEmberOwner()));
       // Ghost 6.60 post model defines camelCase attrs (customExcerpt);
@@ -180,7 +192,10 @@ export function createGhostMainBridge(): {
       const tags = (rec?.get?.('tags') as Array<{ name?: string }> | undefined) ?? [];
       return tags.map((t) => t?.name ?? '').filter((n) => n.length > 0);
     },
-    setField(field: 'excerpt' | 'customTemplate' | 'tags', value: string | string[]): void {
+    setField(
+      field: 'excerpt' | 'customTemplate' | 'tags' | 'title',
+      value: string | string[],
+    ): void {
       const owner = findEmberOwner();
       const ctrl = getEditorController(owner);
       const rec = getRecord(ctrl);
@@ -203,6 +218,14 @@ export function createGhostMainBridge(): {
         rec.set?.('tags', records);
       } else if (field === 'excerpt') {
         rec.set?.('customExcerpt', value as string);
+      } else if (field === 'title') {
+        // Title writes mirror the controller's own updateTitleScratch: the
+        // editor binds to titleScratch, and beforeSaveTask persists the
+        // scratch into post.title at native-save time. Writing only the
+        // record attribute would be clobbered by the save pipeline.
+        const v = value as string;
+        rec.set?.('title', v);
+        if (ctrl) (ctrl as unknown as Record<string, unknown>)['titleScratch'] = v;
       } else {
         rec.set?.('customTemplate', value as string);
       }
@@ -263,6 +286,12 @@ export function createGhostMainBridge(): {
         lexical: rec.get?.('lexical') ?? null,
         lexicalScratch:
           (rec as unknown as { lexicalScratch?: string | null }).lexicalScratch ?? null,
+        title:
+          (getEditorController(findEmberOwner()) as unknown as Record<string, unknown> | null)?.[
+            'titleScratch'
+          ] ??
+          rec.get?.('title') ??
+          null,
         customExcerpt: rec.get?.('customExcerpt') ?? null,
         customTemplate: rec.get?.('customTemplate') ?? null,
         tags: (rec.get?.('tags') as Array<{ name?: string }> | undefined) ?? [],
@@ -282,6 +311,11 @@ export function createGhostMainBridge(): {
         (rec as unknown as Record<string, unknown>)['lexicalScratch'] = snap['lexical'];
       }
       if ('customExcerpt' in snap) rec.set?.('customExcerpt', snap['customExcerpt']);
+      if ('title' in snap) {
+        rec.set?.('title', snap['title']);
+        const ctrl2 = getEditorController(findEmberOwner());
+        if (ctrl2) (ctrl2 as unknown as Record<string, unknown>)['titleScratch'] = snap['title'];
+      }
       if ('customTemplate' in snap) rec.set?.('customTemplate', snap['customTemplate']);
       if ('tags' in snap) rec.set?.('tags', snap['tags']);
     },

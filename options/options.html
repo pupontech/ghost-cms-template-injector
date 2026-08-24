@@ -124,6 +124,12 @@
       </div>
 
       <div>
+        <label for="opt-title">Post title (optional)</label>
+        <input id="opt-title" type="text" autocomplete="off" placeholder="My review of…" />
+        <small>Replaces the post's current title when the preset is applied.</small>
+      </div>
+
+      <div>
         <label for="opt-body">Template text</label>
         <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
         <small id="opt-body-help"
@@ -136,6 +142,17 @@
         <label for="opt-tags">Tags (comma-separated)</label>
         <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
         <small>Existing post tags are kept and these are added to them.</small>
+      </div>
+
+      <div>
+        <label for="opt-excerpt">Custom excerpt (optional)</label>
+        <input
+          id="opt-excerpt"
+          type="text"
+          maxlength="300"
+          placeholder="A short summary shown in listings and search results."
+        />
+        <small>Up to 300 characters. Only applied when the post has no excerpt yet.</small>
       </div>
 
       <div class="actions">
@@ -164,7 +181,7 @@
 
     <!-- Hidden advanced inputs keep legacy/round-trip fields alive without
          cluttering the UI. They are filled on edit and submitted on save so an
-         older preset's snippet/excerpt/template/mode settings are preserved
+         older preset's snippet/template/mode settings are preserved
          verbatim unless the owner re-creates them through import. -->
     <div hidden aria-hidden="true">
       <input id="opt-id" type="text" />
@@ -189,7 +206,6 @@
         <option value="only-if-empty">only-if-empty</option>
         <option value="prompt">prompt</option>
       </select>
-      <input id="opt-excerpt" type="text" maxlength="300" />
       <select id="opt-excerpt-mode">
         <option value="replace">replace</option>
         <option value="only-if-empty">only-if-empty</option>
