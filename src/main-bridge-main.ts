@@ -30,6 +30,7 @@ import {
   isBridgeRequest,
   isBridgeCapabilityEnvelope,
   type BridgeCapabilityMessage,
+  type BridgeRequest,
   type BridgeResponse,
 } from './bridge-protocol';
 import { createCapabilityGate } from './capability-gate';
@@ -56,54 +57,37 @@ function isBrowserContext(): boolean {
 export function installMainBridge(
   handle: (message: unknown) => BridgeReply | Promise<BridgeReply>,
 ): void {
-  const gate = createCapabilityGate({
-    // The gate never mints its own token: activation succeeds only when the
-    // candidate matches the token the ISOLATED world proved possession of via
-    // the activation envelope. randomToken is unused by design here; see
-    // capability-gate.ts — activate() requires exact equality with the token
-    // carried by the handshake message while dormant. To keep the pure gate's
-    // mint-comparison semantics, we wrap it: the accepted token is whatever
-    // the extension world sent first while dormant.
-    randomToken: () => '',
-  });
-  // The pure gate compares against deps.randomToken(); for the MAIN world we
-  // instead track the accepted token directly (first activation wins) using a
-  // thin adapter around the same state machine semantics.
-  let acceptedToken: string | null = null;
-  let consumedToken: string | null = null;
-  const isActive = () => acceptedToken !== null;
-  const guard = (request: Parameters<ReturnType<typeof createCapabilityGate>['guard']>[0]) =>
-    isActive() ? { kind: 'allow', request } : { kind: 'reject' };
+  // The single source of truth for the bridge's alive/dormant state. The MAIN
+  // world never mints the token — only the isolated world does — so we inject
+  // a candidate-minter that is never used by the responder path; activation
+  // succeeds only when the isolated world posts a fresh, never-seen token.
+  const gate = createCapabilityGate();
 
   function onCapability(msg: BridgeCapabilityMessage): void {
     if (msg.action === 'activate') {
-      // One handshake per enable cycle. Refuse activation when:
-      //  - already active (token already set for this cycle), OR
-      //  - the token was already consumed by a prior deactivation (a stale
-      //    token from a previous enable cycle cannot reactivate).
-      if (acceptedToken === null && consumedToken !== msg.token && msg.token.length >= 16) {
-        acceptedToken = msg.token;
-      }
+      // Record the posted token as active only if we are dormant and the token
+      // is a fresh, never-before-seen value (the gate enforces the length
+      // floor and refuses already-consumed/stale tokens). One handshake per
+      // enable cycle; a replay cannot re-activate.
+      gate.activate(msg.token);
       return;
     }
-    // deactivate: only the currently-active token may put the bridge to sleep,
-    // and it is then consumed so a replay of the same token cannot re-activate.
-    if (acceptedToken !== null && msg.token === acceptedToken) {
-      acceptedToken = null;
-      consumedToken = msg.token;
-    }
+    // deactivate: only the currently-active token puts the bridge to sleep,
+    // and it is then remembered as consumed so a replay cannot re-activate.
+    gate.deactivate(msg.token);
   }
 
-  async function handleGated(data: unknown): Promise<BridgeReply> {
-    if (!isActive()) {
-      // Dormant by default: answer NOTHING — not even a reject. A silent bridge
-      // gives a probing page no signal that the bridge exists, which is the
-      // strongest revoke posture and exactly matches the "no bridge response"
-      // acceptance criterion. Activation (capability handshake) is the only
-      // thing that transitions this realm to a responsive state.
-      return undefined as unknown as BridgeReply;
-    }
-    return (await handle(data)) as BridgeReply;
+  async function handleGated(data: unknown): Promise<BridgeReply | undefined> {
+    // Single decision point is the gate's `guard`: dormant ⇒ reject. On the
+    // wire a reject is rendered as SILENCE (no reply at all — not even a
+    // CAPABILITY_REQUIRED error), so a probing page gets no signal that the
+    // bridge exists; that is the strongest revoke posture and exactly matches
+    // the "no bridge response" acceptance criterion. Activation (capability
+    // handshake above) is the only thing that transitions this realm to a
+    // responsive state.
+    const decision = gate.guard(data as BridgeRequest);
+    if (decision.kind === 'reject') return undefined;
+    return (await handle(decision.request)) as BridgeReply;
   }
 
   const listener = (event: MessageEvent): void => {
@@ -126,17 +110,18 @@ export function installMainBridge(
 
   globalThis.addEventListener('message', listener as EventListener);
 
-  // Document teardown: drop every reference so a BFCache restore cannot revive
-  // an activated bridge from a previous enable cycle.
+  // Document teardown: deactivate (consuming the token) and remove the listener
+  // so a BFCache restore / target reuse cannot revive an activated bridge from
+  // a previous enable cycle. A fresh enable always mints a NEW token, which is
+  // not consumed, so it re-activates cleanly.
   globalThis.addEventListener('pagehide', () => {
-    acceptedToken = null;
-    consumedToken = null;
+    gate.deactivate(gate.currentToken() ?? '');
+    globalThis.removeEventListener('message', listener as EventListener);
   });
 
   // Test/evidence introspection hook (no page-reachable capability).
-  (globalThis as Record<string, unknown>)['__ghostPresetToolbarBridgeActive'] = () => isActive();
-  void guard;
-  void gate;
+  (globalThis as Record<string, unknown>)['__ghostPresetToolbarBridgeActive'] = () =>
+    gate.isActive();
 }
 
 type BridgeReply = BridgeResponse;

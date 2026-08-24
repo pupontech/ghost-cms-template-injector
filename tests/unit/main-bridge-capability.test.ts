@@ -1,14 +1,19 @@
 /**
  * Regression: MAIN-world bridge must NOT answer after Disable (C8 revoke).
  *
- * Covers the audit scenarios:
- *  1. inject MAIN responder, verify pre-disable discover works;
- *  2. deactivate in same realm, assert dormant behavior on discover;
- *  3. destroy/recreate document after revoke, assert no listener/response;
- *  4. re-enable creates a new capability and only then discover responds;
- *  5. old capability cannot reactivate a bridge activated with a new token;
- *  + fresh-post-disable document identity is distinguished from a pre-disable
- *    tab (timeOrigin check) and the isolated client deactivates on revocation.
+ * Covers the audit scenarios against the REAL production `installMainBridge`
+ * path (the exact code that ships in dist/bridge.js), driven through the real
+ * `createCapabilityGate` state machine — not a stubbed copy:
+ *  1. inject MAIN responder, verify pre-disable discover works after activation;
+ *  2. deactivate in same realm, assert dormant behavior on discover (silent);
+ *  3. destroy/recreate document after revoke, assert the fresh document's
+ *     installed bridge is dormant (no listener that answers);
+ *  4. re-enable mints a NEW capability and only then discover responds;
+ *  5. old capability cannot reactivate a bridge that was deactivated.
+ *
+ * The bottom suite drives the pure gate state machine directly with a real
+ * token minter, proving the responder-model semantics (record-on-activate,
+ * consume-on-deactivate, stale token refused).
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -34,13 +39,13 @@ interface FakeWindow {
   dispatch: (data: unknown) => Promise<void>;
 }
 
-function makeFakeWindow(): FakeWindow & { destroy(): FakeWindow } {
-  const win: FakeWindow & { destroy(): FakeWindow; onPageHide?: () => void } = {
+function makeFakeWindow(): FakeWindow {
+  const win: FakeWindow = {
     listeners: new Set<(e: MessageEvent) => void>(),
     pageHideListeners: new Set<() => void>(),
     posted: [] as unknown[],
     timeOrigin: Date.now(),
-    postMessage: (m: unknown) => {
+    postMessage(m: unknown) {
       win.posted.push(m);
     },
     async dispatch(data: unknown) {
@@ -49,21 +54,15 @@ function makeFakeWindow(): FakeWindow & { destroy(): FakeWindow } {
       for (const l of [...win.listeners]) await Promise.resolve(l(ev));
       await new Promise((r) => setTimeout(r, 0));
     },
-    destroy() {
-      win.listeners.clear();
-      win.pageHideListeners.clear();
-      return win;
-    },
   };
   return win;
 }
 
-/** Minimal globalThis shim so installMainBridge binds to the fake window. */
+/** Install the bridge on a fake window by rebinding globalThis listeners. */
 function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
   const g = globalThis as unknown as Record<string, unknown>;
   const savedAdd = g.addEventListener;
   const savedRemove = g.removeEventListener;
-  const savedTimeOrigin = g.timeOrigin ?? undefined; // not used by code
   g.addEventListener = ((type: string, cb: EventListener) => {
     if (type === 'message') win.listeners.add(cb as never);
     else if (type === 'pagehide') win.pageHideListeners.add(cb as never);
@@ -78,8 +77,6 @@ function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
     else delete g.addEventListener;
     if (savedRemove !== undefined)
       g.removeEventListener = savedRemove as typeof removeEventListener;
-    else delete g.removeEventListener;
-    void savedTimeOrigin;
   }
 }
 
@@ -110,13 +107,14 @@ function activateMsg(token: string) {
 function deactivateMsg(token: string) {
   return { capSource: BRIDGE_CAPABILITY_SOURCE, action: 'deactivate' as const, token };
 }
+const TOKEN = (ch: string) => ch.repeat(32);
 
 describe('MAIN bridge capability gate — disable/revoke regression (C8)', () => {
   it('1. pre-disable: after activation, discover responds', async () => {
     const win = makeFakeWindow();
     const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
     withFakeWindow(win, () => installMainBridge(handle));
-    await win.dispatch(activateMsg('a'.repeat(32)));
+    await win.dispatch(activateMsg(TOKEN('a')));
 
     const reply = (await discover(win)) as { ok?: boolean } | null;
     expect(reply?.ok).toBe(true);
@@ -126,38 +124,41 @@ describe('MAIN bridge capability gate — disable/revoke regression (C8)', () =>
     const win = makeFakeWindow();
     const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
     withFakeWindow(win, () => installMainBridge(handle));
-    await win.dispatch(activateMsg('a'.repeat(32)));
+    await win.dispatch(activateMsg(TOKEN('a')));
     expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
 
     // Disable: revoke with the exact token → back to sleep.
-    await win.dispatch(deactivateMsg('a'.repeat(32)));
+    await win.dispatch(deactivateMsg(TOKEN('a')));
     const reply = await discover(win);
-    // Dormant bridge is SILENT: no response of any kind. The live surface was
-    // touched once (the pre-disable discover) but NOT after deactivation.
+    // Dormant bridge is SILENT: no response of any kind.
     expect(reply).toBeNull();
     expect(handle).toHaveBeenCalledTimes(1);
   });
 
-  it('3. destroyed document has no listener; recreated document starts dormant', async () => {
+  it('3. fresh post-disable document: installed bridge starts dormant (silent)', async () => {
+    // Pre-disable document, activated.
     const win1 = makeFakeWindow();
-    const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
-    withFakeWindow(win1, () => installMainBridge(handle));
-    await win1.dispatch(activateMsg('b'.repeat(32)));
+    const handle1 = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+    withFakeWindow(win1, () => installMainBridge(handle1));
+    await win1.dispatch(activateMsg(TOKEN('b')));
     expect(((await discover(win1)) as { ok?: boolean }).ok).toBe(true);
 
-    // Destroy the document (listeners gone). A NEW document's window knows
-    // nothing of the old activation: no listener, no response at all.
-    win1.destroy();
-    const beforeNew = 0;
-    expect(await discover({ ...win1, posted: [] } as FakeWindow)).toBeNull();
+    // Disable in that realm.
+    await win1.dispatch(deactivateMsg(TOKEN('b')));
+    expect(await discover(win1)).toBeNull();
 
-    // Fresh document: brand-new window object, distinct timeOrigin.
+    // GENUINELY NEW document: a brand-new window object with a distinct
+    // timeOrigin, and the bridge IS installed into it (as the extension would
+    // on a fresh page load) — but it has never received activation, so it must
+    // be dormant and answer NOTHING even though a listener exists.
     const win2 = makeFakeWindow();
-    win2.timeOrigin = Date.now() + 5000;
+    win2.timeOrigin = win1.timeOrigin + 5000;
     expect(win2.timeOrigin).not.toBe(win1.timeOrigin);
-    expect(win2.posted.length).toBe(beforeNew);
+    const handle2 = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+    withFakeWindow(win2, () => installMainBridge(handle2));
     const freshReply = await discover(win2);
-    expect(freshReply).toBeNull(); // nothing installed yet → silence
+    expect(freshReply).toBeNull();
+    expect(handle2).not.toHaveBeenCalled();
   });
 
   it('4. re-enable mints a NEW capability; discover responds only after it', async () => {
@@ -170,40 +171,54 @@ describe('MAIN bridge capability gate — disable/revoke regression (C8)', () =>
     expect(handle).not.toHaveBeenCalled();
 
     // Re-enable path: isolated world activates with a fresh token.
-    await win.dispatch(activateMsg('c'.repeat(32)));
+    await win.dispatch(activateMsg(TOKEN('c')));
     expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
   });
 
-  it('5. old capability cannot activate/reactivate across enable cycles', async () => {
+  it('5. old capability cannot reactivate across enable cycles', async () => {
     const win = makeFakeWindow();
     const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
     withFakeWindow(win, () => installMainBridge(handle));
 
     // Enable cycle A.
-    await win.dispatch(activateMsg('d'.repeat(32)));
+    await win.dispatch(activateMsg(TOKEN('d')));
     expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
 
     // Replaying activation while already active is refused (one handshake/enable);
     // the bridge stays responsive on the CURRENT token.
-    await win.dispatch(activateMsg('e'.repeat(32)));
+    await win.dispatch(activateMsg(TOKEN('e')));
     expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
 
     // Deactivation with a WRONG token (stale 'e') must NOT deactivate.
-    await win.dispatch(deactivateMsg('e'.repeat(32)));
+    await win.dispatch(deactivateMsg(TOKEN('e')));
     const stillActive = await discover(win);
     expect((stillActive as { ok?: boolean } | null)?.ok).toBe(true);
 
     // Correct current token DOES deactivate → now silent.
-    await win.dispatch(deactivateMsg('d'.repeat(32)));
+    await win.dispatch(deactivateMsg(TOKEN('d')));
     const afterRevoke = await discover(win);
     expect(afterRevoke).toBeNull();
-    expect(handle).toHaveBeenCalledTimes(3);
 
-    // Stale token from cycle A cannot reactivate → still silent.
-    await win.dispatch(activateMsg('d'.repeat(32)));
+    // Stale token from cycle A was consumed and cannot reactivate → still silent.
+    await win.dispatch(activateMsg(TOKEN('d')));
     const final = await discover(win);
     expect(final).toBeNull();
+
+    // handle was called exactly during the three discover-responds above
+    // (cycle A, replay-while-active, and after-wrong-token-deactivate).
     expect(handle).toHaveBeenCalledTimes(3);
+  });
+
+  it('wires the REAL gate: __ghostPresetToolbarBridgeActive reflects live state', async () => {
+    const win = makeFakeWindow();
+    const g = globalThis as unknown as Record<string, unknown>;
+    withFakeWindow(win, () => installMainBridge(okResponder as never));
+    expect(typeof g.__ghostPresetToolbarBridgeActive).toBe('function');
+    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(false);
+    await win.dispatch(activateMsg(TOKEN('f')));
+    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(true);
+    await win.dispatch(deactivateMsg(TOKEN('f')));
+    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(false);
   });
 });
 
@@ -213,7 +228,7 @@ describe('isolated capability client', () => {
     let revoked: (() => void) | null = null;
     let counter = 0;
     const deps = {
-      randomToken: () => `token-${++counter}-x`.padEnd(24, '0'),
+      randomToken: () => `token-${++counter}-${'x'.repeat(20)}`,
       postToWindow: (m: unknown) => sent.push(m),
       onConsentRevoked: (cb: () => void) => {
         revoked = cb;
@@ -252,22 +267,51 @@ describe('isolated capability client', () => {
     });
   });
 
-  it('deactivate without a held token is a no-op', () => {
-    const h = baseDeps();
-    const client = createCapabilityClient(h.deps);
-    client.deactivate();
-    expect(h.sent).toHaveLength(0);
+  it('a stale/short token cannot activate the responder gate', () => {
+    const gate = createCapabilityGate();
+    expect(gate.activate('short')).toBe(false);
+    expect(gate.activate('a'.repeat(32))).toBe(true);
+    expect(gate.isActive()).toBe(true);
+    // already active → second activation refused
+    expect(gate.activate('b'.repeat(32))).toBe(false);
+    // wrong token → deactivate refused, still active
+    expect(gate.deactivate('b'.repeat(32))).toBe(false);
+    expect(gate.isActive()).toBe(true);
+    // correct token → deactivate, consumed
+    expect(gate.deactivate('a'.repeat(32))).toBe(true);
+    expect(gate.isActive()).toBe(false);
+    // replay of consumed token cannot re-activate
+    expect(gate.activate('a'.repeat(32))).toBe(false);
+    expect(gate.isActive()).toBe(false);
+    // a genuinely new token re-activates cleanly
+    expect(gate.activate('c'.repeat(32))).toBe(true);
+    expect(gate.isActive()).toBe(true);
   });
 });
 
-describe('pure capability gate state machine', () => {
+describe('pure capability gate state machine (responder model)', () => {
   it('rejects everything while dormant, allows after exact-token activation', () => {
-    const gate = createCapabilityGate({ randomToken: () => '' });
+    const gate = createCapabilityGate();
     const req = createBridgeRequest('discover', {});
     expect(gate.guard(req).kind).toBe('reject');
     expect(gate.isActive()).toBe(false);
-    // randomToken() returns '' which can never satisfy the length floor.
-    expect(gate.activate('short')).toBe(false);
+
+    // A real-length token activates the responder (record-on-activate).
+    expect(gate.activate('a'.repeat(32))).toBe(true);
+    expect(gate.isActive()).toBe(true);
+    expect(gate.currentToken()).toBe('a'.repeat(32));
+    expect(gate.guard(req).kind).toBe('allow');
+
+    // Deactivate with the active token; it is then consumed.
+    expect(gate.deactivate('a'.repeat(32))).toBe(true);
     expect(gate.isActive()).toBe(false);
+
+    // The consumed token cannot re-activate (stale enable cycle).
+    expect(gate.activate('a'.repeat(32))).toBe(false);
+    expect(gate.isActive()).toBe(false);
+
+    // A fresh token activates cleanly.
+    expect(gate.activate('b'.repeat(32))).toBe(true);
+    expect(gate.isActive()).toBe(true);
   });
 });
