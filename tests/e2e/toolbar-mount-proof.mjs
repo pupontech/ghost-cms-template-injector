@@ -23,11 +23,7 @@ const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(DIR, '..', '..');
 const PORT = process.env.SPIKE_CDP_PORT ?? 9351;
 
-const wsMod =
-  await import('file:///root/ghost-research/ghost/node_modules/.pnpm/ws@8.21.0/node_modules/ws/index.js').catch(
-    () => import('ws'),
-  );
-const WebSocket = wsMod.default ?? wsMod.WebSocket;
+import WebSocket from 'ws';
 
 const chromium = spawn(
   '/usr/bin/chromium',

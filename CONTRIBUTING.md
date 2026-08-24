@@ -13,7 +13,7 @@ This is a private pre-1.0 project. Keep changes focused, reviewable, and support
 
 ## Required safeguards
 
-- Do not add static or wildcard host permissions.
+- Do not add static host permissions or broad runtime grants. The manifest's optional HTTPS pattern exists only so setup can request one concrete installation; runtime registrations must remain exact-path scoped.
 - Do not add remote executable code.
 - Do not add a `chrome.tabs` dependency to the toolbar path.
 - Preserve root and subdirectory Ghost installations.

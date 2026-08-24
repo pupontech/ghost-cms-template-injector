@@ -8,7 +8,7 @@
  * behave exactly as in production.
  */
 import { spawn } from 'node:child_process';
-import WebSocket from 'file:///root/ghost-research/ghost/node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs';
+import WebSocket from 'ws';
 
 export const DEFAULT_PORT = 9373;
 

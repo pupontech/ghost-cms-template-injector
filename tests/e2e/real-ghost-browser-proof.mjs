@@ -52,11 +52,7 @@ const chromium = spawn(
 );
 chromium.stderr.on('data', () => {});
 
-const wsMod =
-  await import('file:///root/ghost-research/ghost/node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs').catch(
-    () => import('ws'),
-  );
-const WebSocket = wsMod.default ?? wsMod.WebSocket;
+import WebSocket from 'ws';
 
 let browserWs;
 for (let i = 0; i < 50; i++) {
