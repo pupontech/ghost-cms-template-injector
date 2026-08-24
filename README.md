@@ -1,61 +1,79 @@
-# Ghost Preset Toolbar — release candidate (browser evidence pending)
+# Ghost Preset Toolbar
 
-MV3 TypeScript Chromium extension for applying validated presets to Ghost Admin
-posts and pages. It includes preset storage and options CRUD, API dependency
-resolution, a capability-gated MAIN-world bridge, native-save transaction glue,
-popup and optional injected toolbar UI, and explicit host-permission setup.
+A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management, an optional injected toolbar, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
 
-This is **not yet accepted for release**: automated gates pass, but the required
-real Ghost/browser matrix is still blocked. See `docs/release-status.md` before
-using this candidate beyond disposable QA.
+## Security model
+
+- No static host permissions.
+- The user explicitly grants one HTTPS Ghost installation from the setup page.
+- Runtime content scripts are scoped to that installation's `/ghost/*` Admin path.
+- Disabling access unregisters both scripts and makes an already-loaded MAIN-world bridge dormant.
+- Presets stay in `chrome.storage.local`; no API tokens are requested or stored.
+- No remote scripts or remotely hosted executable code.
 
 ## Requirements
 
-- Node.js 20+ (developed on 22), npm 10+
-- Chromium 116+ (manifest `minimum_chrome_version`)
+- Node.js 20 or 22
+- npm 10+
+- Chromium 116+
+- An HTTPS Ghost Admin installation and an authenticated test account
 
-## Setup
-
-```bash
-npm install        # install dev dependencies (lockfile committed)
-npm run verify     # format:check, lint, typecheck, tests, manifest validation, production build
-```
-
-## Layout
-
-- `manifest.json` — MV3 manifest with `storage`/`scripting`, no static host permission, and optional explicit Ghost-origin permission.
-- `src/background.ts` / `src/background-main.ts` — service worker and fixed same-tab popup-to-content-script relay.
-- `src/content-script.ts` / `src/content-script-main.ts` — isolated-world orchestrator that fails closed when the bridge capability is unsupported.
-- `src/main-bridge.ts` / `src/main-bridge-main.ts` — narrowly scoped MAIN-world bridge protocol for supported Ghost editor capabilities.
-- `src/apply-pipeline.ts`, `src/ghost-api.ts`, `src/ghost-state.ts` — validated dependency resolution and one native-save apply transaction.
-- `src/preset-store.ts`, `options/`, `popup/`, `setup/` — local preset persistence, options/import-export, popup, and explicit permission UI.
-- `scripts/build.mjs` — esbuild production bundle into `dist/`.
-- `scripts/validate-manifest.mjs` — manifest + built-artifact security checks.
-- `tests/unit/` — Vitest unit baseline.
-
-## Loading in Chromium for disposable QA
+## Build and verify
 
 ```bash
-npm run build
-# chrome://extensions → Developer mode → Load unpacked → select this directory
+npm ci
+npm run verify
 ```
 
-Then open the extension setup page, enter the exact HTTPS Ghost Admin origin,
-and choose Enable. This explicitly requests access and dynamically registers the
-content script for that origin's `/ghost/*` pages; reload Ghost Admin afterward.
+`npm run verify` runs formatting checks, ESLint, strict TypeScript, a production build, the complete Vitest suite, and manifest/built-artifact validation. The generated extension bundles are placed in `dist/` and are intentionally not committed.
 
-Use a disposable, authenticated Ghost installation and record only redacted
-evidence in `docs/manual-test-matrix.md`. Do not enter or export cookies, API
-tokens, CSRF values, or other credentials.
+## Load the extension
 
-## Scripts
+1. Run `npm ci && npm run build`.
+2. Open `chrome://extensions` in Chromium.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked** and select this repository directory (the directory containing `manifest.json`).
+5. Open the extension's **Details** page and then **Extension options**, or open the setup page from the extension UI.
+6. Enter the public HTTPS base URL of the Ghost installation, including a subdirectory when applicable, for example:
+   - `https://example.com/`
+   - `https://example.com/blog/`
+7. Select **Enable** and accept Chromium's native host-permission prompt.
+8. Reload Ghost Admin.
 
-| Script                            | Purpose                                  |
-| --------------------------------- | ---------------------------------------- |
-| `npm run format` / `format:check` | Prettier                                 |
-| `npm run lint`                    | ESLint (typescript-eslint recommended)   |
-| `npm run typecheck`               | `tsc --noEmit` (strict)                  |
-| `npm test`                        | Vitest unit baseline                     |
-| `npm run manifest:validate`       | Manifest/artifact security validation    |
-| `npm run build`                   | Typecheck + production bundle to `dist/` |
-| `npm run verify`                  | All of the above in order                |
+Do not enter `/ghost/` itself in the setup field; enter the installation base URL. Access is dynamically narrowed to that installation's `/ghost/*` pages.
+
+## Test the release
+
+Follow [`TESTING.md`](TESTING.md) for the owner acceptance procedure. It covers build verification, enabling narrowly scoped access, applying and persisting a preset, Disable behavior in current and new Admin documents, and re-enable behavior.
+
+## Project layout
+
+- `manifest.json` — MV3 manifest with `storage` and `scripting`, no static host permission.
+- `src/background-main.ts` — service worker and popup/content-script relay.
+- `src/content-script-main.ts` — isolated-world orchestration and capability activation/deactivation.
+- `src/main-bridge-main.ts` — dormant-by-default MAIN-world Ghost adapter.
+- `src/apply-pipeline.ts`, `src/ghost-api.ts`, `src/ghost-state.ts` — preset dependency resolution and one native-save transaction.
+- `src/preset-store.ts`, `options/`, `popup/`, `setup/` — preset storage and extension pages.
+- `presets/presets.json` — read-only bundled seed presets.
+- `tests/` — unit, contract, accessibility, and real-browser proof harnesses.
+- `evidence/` — redacted release evidence; never place credentials here.
+
+## Useful commands
+
+| Command                     | Purpose                                  |
+| --------------------------- | ---------------------------------------- |
+| `npm run build`             | Type-check and produce `dist/` bundles   |
+| `npm test`                  | Run the Vitest suite                     |
+| `npm run format:check`      | Check Prettier formatting                |
+| `npm run lint`              | Run ESLint                               |
+| `npm run typecheck`         | Run strict TypeScript checks             |
+| `npm run manifest:validate` | Validate permissions and built artifacts |
+| `npm run verify`            | Run every automated release gate         |
+
+## Privacy
+
+Use a disposable test post/page when possible. Never commit cookies, login details, API tokens, CSRF values, TLS private keys, Chromium profiles, or screenshots containing private content. See [`SECURITY.md`](SECURITY.md).
+
+## Release state
+
+The automated suite and genuine headed Chromium C8 Disable/re-enable lifecycle are green. See [`docs/release-status.md`](docs/release-status.md) and the redacted evidence under `evidence/`. Final release acceptance remains the repository owner's decision after following `TESTING.md`.

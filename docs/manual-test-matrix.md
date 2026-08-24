@@ -59,8 +59,9 @@ Legend: `PASS` means observed and recorded with browser/version/date evidence; `
 
 For each failed or blocked case, record: matrix ID, Ghost/Chromium versions, sanitized console output, sanitized network endpoint (never cookies/tokens), and a screenshot with personal content redacted. The QA card must link the command output and state whether real Ghost/browser evidence was PASS, BLOCKED, or FAIL; do not represent unit/static tests as browser evidence.
 
-## Current run
+## Current verified runs
 
-- Automated tests: completed by the QA worker after implementation assembly (see Kanban handoff).
-- Real Ghost/browser run: ____________________ (must remain `BLOCKED` until a disposable authenticated Ghost + Chromium environment is available).
-- Independent security/privacy review: pending card `t_bb763884`.
+- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 28 test files / 302 tests, and manifest validation.
+- Genuine headed preset-persistence run: PASS for body, custom excerpt, tag, and post-autosave stability; see `evidence/ef2721b1-headed-rerun.md`.
+- Genuine headed C8 lifecycle: PASS for explicit native consent, exact scoped registrations, current/new-document silence after Disable, stale-token rejection, and fresh-capability re-enable; see `evidence/eacca232-headed-revoke-proof.md`.
+- Owner acceptance: pending completion of `TESTING.md` in the owner's environment.

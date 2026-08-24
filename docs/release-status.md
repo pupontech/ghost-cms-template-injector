@@ -1,44 +1,51 @@
-# Release status — pending real-browser evidence
+# Release status — owner acceptance pending
 
 ## Candidate
 
-- Extension integration branch: `wt/t_40b1ed27`
-- Candidate commit: `687815e`
-- Compatibility research target: Ghost `af4af7d`
-- Chromium used for the attempted proof: `151.0.7922.169`
+- Candidate commit before publication hygiene: `45f7fc0`
+- Compatibility target exercised: Ghost 6.60
+- Chromium: 151.0.7922.169
+- Extension platform: Manifest V3
 
 ## Automated verification
 
-On the candidate worktree, `npm run verify` passed:
+The final C8 worktree passed `npm run verify`:
 
 - Prettier format check
 - ESLint
-- TypeScript type check
-- Vitest: 23 files, 262 tests
+- Strict TypeScript check
+- Production build
+- Vitest: 28 files, 302 tests
 - Manifest and built-artifact validation
-- Production bundle build (`dist/background.js`, `dist/content-script.js`, `dist/popup.js`, `dist/toolbar.js`, `dist/options.js`, `dist/setup.js`, and `dist/bridge.js`)
 
-The manifest is MV3 with `storage` and `scripting` permissions, no static host permissions, and optional host permission `https://*/ghost/*`. The setup page asks the user to grant one exact Ghost HTTPS origin before it dynamically registers the content script.
+Focused bridge/capability verification also passed: 5 files, 39 tests.
 
-## Real Ghost/browser gate: BLOCKED
+The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
-The real-browser proof harness, `tests/e2e/real-ghost-browser-proof.mjs`, was run locally against the available Ghost listener and Chromium. It failed before mutation or persistence verification:
+## Real Ghost/browser gates
 
-```text
-lexical editor route reached: false
-Editor route never came up — aborting proof.
-```
+### Preset persistence
 
-No `evidence/live-proof.md` was produced. The manual matrix in `docs/manual-test-matrix.md` remains unfilled. Consequently, this candidate does not yet have the required evidence for saved/unsaved posts and pages, dirty editor state, all body/tag modes, autosave races, recovery, permissions, persistence, and root/subdirectory behavior.
+A genuine headed Chromium run against authenticated Ghost Admin verified that the body, custom excerpt, and tag persisted after the native save and remained correct beyond the subsequent autosave interval. See `evidence/ef2721b1-headed-rerun.md`.
 
-## Installation for the next QA run
+### Disable/re-enable lifecycle
 
-1. Run `npm install` and `npm run build` in the candidate worktree.
-2. In Chromium, open `chrome://extensions`, enable Developer mode, and select **Load unpacked** for the candidate worktree.
-3. Open the extension setup page and explicitly grant the exact HTTPS origin serving Ghost Admin. Reload Ghost Admin afterward.
-4. Use a disposable, authenticated Ghost instance and complete the matrix in `docs/manual-test-matrix.md`, retaining only redacted evidence.
-5. Re-run the real-browser proof or replace it with a validated browser procedure that exercises the actual MV3 isolated content script and MAIN-world bridge.
+A genuine headed Chromium run loaded the actual unpacked extension, used trusted OS-level input and Chromium's native host-consent prompt, and recorded all C8 assertions as true:
 
-## Human acceptance
+- Exactly two registrations scoped to the intended `/ghost/*` installation path
+- Toolbar and capability-gated bridge active before Disable
+- Real setup-page Disable emptied registrations
+- Toolbar removed and the already-loaded bridge became silent
+- Stale capability rejected
+- Genuinely new post-Disable document had no toolbar, handshake, or bridge response
+- Re-enable restored only the scoped registrations and used a fresh capability
 
-The human acceptance card remains intentionally blocked. It must not be completed until the real-browser gate has successful, redacted evidence and the user explicitly accepts the release.
+See `evidence/eacca232-headed-revoke-proof.md`. Capability values, cookies, and credentials are not included in the evidence.
+
+## Independent review
+
+The round-two source/security review is recorded in `evidence/c8-luna-round2-review.md`. Its original headed-evidence blocker was resolved by commits `d1b1a1f` and `45f7fc0`, followed by the genuine all-green C8 run above.
+
+## Remaining gate
+
+Technical verification is complete. Final acceptance remains with the repository owner. Follow `TESTING.md` against the owner's Ghost installation and Chromium environment before treating the private pre-1.0 release as accepted.

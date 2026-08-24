@@ -2,7 +2,7 @@
   "name": "ghost-preset-toolbar",
   "version": "0.1.0",
   "private": true,
-  "description": "MV3 Chromium extension: preset toolbar for Ghost Admin (Phase-1 scaffold).",
+  "description": "Secure MV3 preset toolbar for Ghost Admin posts and pages.",
   "type": "module",
   "scripts": {
     "format": "prettier --write .",
