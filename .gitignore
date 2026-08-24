@@ -21,3 +21,4 @@ browser-profile/
 playwright-report/
 test-results/
 .DS_Store
+.worktrees/

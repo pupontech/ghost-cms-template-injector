@@ -12,7 +12,7 @@
         margin: 0;
         font-family: system-ui, sans-serif;
         padding: 16px 20px;
-        max-width: 920px;
+        max-width: 720px;
       }
       h1 {
         font-size: 18px;
@@ -20,7 +20,7 @@
       }
       h2 {
         font-size: 14px;
-        margin: 20px 0 8px;
+        margin: 24px 0 8px;
       }
       #opt-status {
         font-size: 13px;
@@ -55,12 +55,14 @@
       }
       form {
         display: grid;
-        grid-template-columns: 140px 1fr;
-        gap: 8px 12px;
-        align-items: center;
+        grid-template-columns: 1fr;
+        gap: 10px;
       }
       form label {
         font-size: 13px;
+        font-weight: 600;
+        display: block;
+        margin-bottom: 4px;
       }
       form input,
       form textarea,
@@ -75,13 +77,19 @@
         box-sizing: border-box;
       }
       form textarea {
-        min-height: 80px;
+        min-height: 160px;
+        resize: vertical;
+      }
+      form small {
+        display: block;
+        margin-top: 4px;
+        color: rgba(128, 128, 128, 0.9);
+        font-weight: 400;
       }
       .actions {
-        grid-column: 1 / -1;
         display: flex;
         gap: 8px;
-        margin-top: 6px;
+        margin-top: 4px;
       }
       button {
         font: inherit;
@@ -105,81 +113,30 @@
     <h1>Ghost Preset Toolbar — Options</h1>
     <p id="opt-status" role="status">Loading presets…</p>
 
-    <h2>Presets</h2>
+    <h2>Your presets</h2>
     <ul id="opt-preset-list"></ul>
 
-    <h2>Create / edit preset</h2>
+    <h2>Create a preset</h2>
     <form id="opt-form" aria-label="Create or edit a preset">
-      <label for="opt-id">ID (slug)</label>
-      <input id="opt-id" type="text" autocomplete="off" placeholder="my-preset" />
+      <div>
+        <label for="opt-name">Preset name</label>
+        <input id="opt-name" type="text" autocomplete="off" placeholder="Review checklist" />
+      </div>
 
-      <label for="opt-name">Name</label>
-      <input id="opt-name" type="text" autocomplete="off" />
+      <div>
+        <label for="opt-body">Template text</label>
+        <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
+        <small id="opt-body-help"
+          >Each line becomes a paragraph; blank lines are preserved. Tags such as &lt;b&gt; stay as
+          plain text.</small
+        >
+      </div>
 
-      <label for="opt-description">Description</label>
-      <input id="opt-description" type="text" autocomplete="off" />
-
-      <label for="opt-source">Body source</label>
-      <select id="opt-source">
-        <option value="inline-text">Plain text template</option>
-        <option value="inline-html">inline-html (unsupported for live writes)</option>
-        <option value="ghost-snippet">ghost-snippet</option>
-        <option value="inline-lexical">inline-lexical</option>
-      </select>
-
-      <label for="opt-mode">Body mode</label>
-      <select id="opt-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-
-      <label for="opt-snippet">Snippet name</label>
-      <input id="opt-snippet" type="text" autocomplete="off" />
-
-      <label id="opt-body-label" for="opt-body">Plain text template</label>
-      <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
-      <small id="opt-body-help"
-        >Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain
-        text.</small
-      >
-
-      <label for="opt-group">Group</label>
-      <input id="opt-group" type="text" autocomplete="off" />
-
-      <label for="opt-icon">Icon</label>
-      <input id="opt-icon" type="text" autocomplete="off" />
-
-      <label for="opt-tags">Tags (comma-separated)</label>
-      <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
-
-      <label for="opt-tag-mode">Tag mode</label>
-      <select id="opt-tag-mode">
-        <option value="merge">merge</option>
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-
-      <label for="opt-excerpt">Excerpt</label>
-      <input id="opt-excerpt" type="text" maxlength="300" />
-
-      <label for="opt-excerpt-mode">Excerpt mode</label>
-      <select id="opt-excerpt-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-
-      <label for="opt-custom-template">Custom template (.hbs)</label>
-      <input id="opt-custom-template" type="text" placeholder="custom-review.hbs" />
-
-      <label for="opt-custom-template-mode">Template mode</label>
-      <select id="opt-custom-template-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
+      <div>
+        <label for="opt-tags">Tags (comma-separated)</label>
+        <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
+        <small>Existing post tags are kept and these are added to them.</small>
+      </div>
 
       <div class="actions">
         <button id="opt-save" type="button">Save</button>
@@ -192,7 +149,7 @@
     <textarea
       id="opt-import-area"
       aria-label="Import preset collection as JSON"
-      placeholder='[{"schemaVersion":1,"id":"example","name":"Example","content":{"source":"inline-html","mode":"replace","html":"<p>Hi</p>"}}]'
+      placeholder='[{"schemaVersion":1,"id":"example","name":"Example","content":{"source":"inline-text","mode":"replace","text":"Hi"}}]'
     ></textarea>
     <div class="actions">
       <button id="opt-import" type="button">Import</button>
@@ -203,6 +160,48 @@
     <textarea id="opt-export-area" aria-label="Exported preset collection" readonly></textarea>
     <div class="actions">
       <button id="opt-export" type="button">Export</button>
+    </div>
+
+    <!-- Hidden advanced inputs keep legacy/round-trip fields alive without
+         cluttering the UI. They are filled on edit and submitted on save so an
+         older preset's snippet/excerpt/template/mode settings are preserved
+         verbatim unless the owner re-creates them through import. -->
+    <div hidden aria-hidden="true">
+      <input id="opt-id" type="text" />
+      <input id="opt-description" type="text" />
+      <select id="opt-source">
+        <option value="inline-text">Plain text template</option>
+        <option value="inline-html">inline-html</option>
+        <option value="ghost-snippet">ghost-snippet</option>
+        <option value="inline-lexical">inline-lexical</option>
+      </select>
+      <select id="opt-mode">
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+      <input id="opt-snippet" type="text" />
+      <input id="opt-group" type="text" />
+      <input id="opt-icon" type="text" />
+      <select id="opt-tag-mode">
+        <option value="merge">merge</option>
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+      <input id="opt-excerpt" type="text" maxlength="300" />
+      <select id="opt-excerpt-mode">
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+      <input id="opt-custom-template" type="text" />
+      <select id="opt-custom-template-mode">
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+      <label id="opt-body-label" for="opt-body">Template text</label>
     </div>
 
     <script type="module" src="../dist/options.js"></script>

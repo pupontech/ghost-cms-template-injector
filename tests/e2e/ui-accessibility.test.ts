@@ -29,9 +29,12 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
 
   it('keeps options form labels, status semantics, and untrusted text rendering', () => {
     const html = read('options/options.html');
+    // Visible simplified form: name + template text; the legacy opt-id input is
+    // retained as a hidden round-trip field, so its label lives in the hidden block.
     expect(html).toMatch(/<form id="opt-form" aria-label="Create or edit a preset">/);
-    expect(html).toMatch(/<label for="opt-id">/);
     expect(html).toMatch(/<label for="opt-name">/);
+    expect(html).toMatch(/<label for="opt-body">/);
+    expect(html).toMatch(/<label for="opt-tags">/);
     expect(html).toMatch(/id="opt-import-area"\s+aria-label=/);
     expect(html).toMatch(/id="opt-export-area"\s+aria-label=/);
     const source = read('src/options-main.ts');

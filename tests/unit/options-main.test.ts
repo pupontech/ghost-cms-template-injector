@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  deriveIdFromName,
   readFormPreset,
   fillFormForEdit,
   type OptionsView,
@@ -24,21 +25,21 @@ function input(value = ''): RenderInput {
 
 function formView(): OptionsView {
   const form = {
-    id: input('review'),
+    id: input(),
     name: input('Review'),
-    description: input('desc'),
-    source: input('inline-lexical'),
+    description: input(),
+    source: input('inline-text'),
     mode: input('replace'),
-    body: input('{"root":{"type":"root","version":1,"children":[]}}'),
+    body: input('Intro\n\nDetails'),
     snippet: input(),
     group: input(),
     icon: input(),
     tags: input('Existing, Reviews'),
     tagMode: input('merge'),
-    excerpt: input('An excerpt'),
-    excerptMode: input('only-if-empty'),
-    customTemplate: input('custom-review.hbs'),
-    customTemplateMode: input('prompt'),
+    excerpt: input(),
+    excerptMode: input('replace'),
+    customTemplate: input(),
+    customTemplateMode: input('replace'),
   };
   return {
     form,
@@ -52,13 +53,37 @@ function formView(): OptionsView {
   } as OptionsView;
 }
 
-describe('options form tags', () => {
-  it('rehydrates body and tag metadata when an existing preset is edited', () => {
+describe('simplified options form', () => {
+  it('derives a slug id from the visible name for new presets', () => {
+    expect(deriveIdFromName('Review checklist!')).toBe('review-checklist');
+    expect(deriveIdFromName('   ')).toMatch(/^preset-/);
+  });
+
+  it('creates a preset with only name, template text, and tags', () => {
+    const view = formView();
+    const preset = readFormPreset(view) as {
+      id: string;
+      content: { source: string; text?: string };
+      metadata?: { tags?: unknown };
+      description?: string;
+      ui?: Record<string, string>;
+    };
+    expect(preset.id).toBe('review');
+    expect(preset.content.source).toBe('inline-text');
+    expect(preset.content.text).toBe('Intro\n\nDetails');
+    expect(preset.metadata).toBeDefined();
+    expect(preset.description).toBeUndefined();
+    expect(preset.ui).toBeUndefined();
+  });
+
+  it('editing preserves hidden legacy fields it no longer shows', () => {
     const view = formView();
     const preset: Preset = {
       schemaVersion: 1,
-      id: 'review',
-      name: 'Review',
+      id: 'legacy',
+      name: 'Legacy',
+      description: 'Old description',
+      ui: { group: 'Blog', icon: '📝' },
       content: {
         source: 'inline-lexical',
         mode: 'only-if-empty',
@@ -79,11 +104,7 @@ describe('options form tags', () => {
       seeded: false,
     };
     fillFormForEdit(view, item);
-    const roundTrip = readFormPreset(view) as {
-      content: unknown;
-      metadata: { tags: unknown };
-    };
-    expect(roundTrip.content).toEqual(preset.content);
-    expect(roundTrip.metadata).toEqual(preset.metadata);
+    const roundTrip = readFormPreset(view) as Preset;
+    expect(roundTrip).toEqual(preset);
   });
 });

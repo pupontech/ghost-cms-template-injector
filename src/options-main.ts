@@ -1,12 +1,12 @@
 /**
- * Phase-4 options page entry point (owns this module + options.html only).
+ * Options page entry point (owns this module + options.html only).
  *
- * Thin DOM glue: builds an `OptionsRuntime` over the Phase-2 `preset-store`
- * (so the validated storage/schema/import-bounds contracts stay owned by that
- * module), drives the pure `options-crud` controller, and renders an
- * accessible CRUD + import/export surface. All business rules live in
- * `options-crud.ts`; this file only wires seams and paints validated data as
- * untrusted text (no innerHTML with preset content — XSS-safe by construction).
+ * Simplified owner UI: the visible form is Name + Template text + Tags only.
+ * All other preset fields (description, group, icon, snippet, body mode,
+ * excerpt, custom template) are preserved through hidden inputs so editing a
+ * legacy or imported preset never silently drops its settings. Thin DOM glue
+ * over the Phase-2 `preset-store`; business rules live in `options-crud.ts`;
+ * all preset content is painted as untrusted text (no innerHTML — XSS-safe).
  */
 
 import {
@@ -114,12 +114,12 @@ export function renderPresetRow(
   const label = createEl('span');
   const icon = view.icon ? `${view.icon} ` : '';
   const badge = view.seeded ? ' (default)' : '';
-  const group = view.group ? ` · ${view.group}` : '';
-  setText(label, `${icon}${view.name}${badge}${group}`);
+  setText(label, `${icon}${view.name}${badge}`);
   row.appendChild(label);
 
   const meta = createEl('small');
-  setText(meta, `${view.source} / ${view.mode}`);
+  const tagCount = view.preset.metadata?.tags?.values.length ?? 0;
+  setText(meta, tagCount > 0 ? `${tagCount} tag(s)` : '');
   row.appendChild(meta);
 
   const editBtn = createEl('button');
@@ -138,6 +138,21 @@ export function renderPresetRow(
 }
 
 /* ------------------------------------------------------------------ */
+/* ID derivation                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Derive a slug id from the visible name ("Review checklist" -> "review-checklist"). */
+export function deriveIdFromName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+  return slug.length > 0 ? slug : `preset-${Date.now()}`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Controller wiring                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -152,7 +167,7 @@ export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
   view.listEl.textContent = '';
   if (presets.length === 0) {
     const empty = view.document.createElement('li');
-    setText(empty, 'No presets. Create one below or import a collection.');
+    setText(empty, 'No presets yet. Create one below.');
     view.listEl.appendChild(empty);
     return;
   }
@@ -171,22 +186,24 @@ export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
 
 export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): void {
   const preset = item.preset;
-  view.form.id.value = preset.id;
-  view.form.id.setAttribute('disabled', 'true'); // id is immutable on edit
+  // Visible fields
   view.form.name.value = preset.name;
-  view.form.description.value = preset.description ?? '';
-  view.form.source.value = preset.content.source;
-  view.form.mode.value = preset.content.mode;
-  view.form.snippet.value = preset.content.snippet ?? '';
+  view.form.tags.value = preset.metadata?.tags?.values.join(', ') ?? '';
   view.form.body.value =
     preset.content.source === 'inline-html'
       ? (preset.content.html ?? '')
       : preset.content.source === 'inline-text'
         ? (preset.content.text ?? '')
         : (preset.content.lexical ?? '');
+  // Hidden round-trip fields — preserve everything the simplified UI no longer shows
+  view.form.id.value = preset.id;
+  view.form.id.setAttribute('disabled', 'true'); // id is immutable on edit
+  view.form.description.value = preset.description ?? '';
+  view.form.source.value = preset.content.source;
+  view.form.mode.value = preset.content.mode;
+  view.form.snippet.value = preset.content.snippet ?? '';
   view.form.group.value = preset.ui?.group ?? '';
   view.form.icon.value = preset.ui?.icon ?? '';
-  view.form.tags.value = preset.metadata?.tags?.values.join(', ') ?? '';
   view.form.tagMode.value = preset.metadata?.tags?.mode ?? 'merge';
   view.form.excerpt.value = preset.metadata?.excerpt?.value ?? '';
   view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'replace';
@@ -196,36 +213,24 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
 }
 
 export function updateBodyEditor(view: OptionsView): void {
-  const labels: Record<string, [string, string]> = {
-    'inline-text': [
-      'Plain text template',
-      'Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain text.',
-    ],
-    'inline-html': [
-      'HTML (not applied live)',
-      'HTML is retained for import/export only; live Ghost writes fail closed for this source.',
-    ],
-    'inline-lexical': [
-      'Serialized Lexical JSON',
-      'Advanced source: paste a complete Ghost-compatible Lexical document.',
-    ],
-    'ghost-snippet': [
-      'Inline body value (unused)',
-      'Choose a snippet name above; this field is ignored for Ghost snippets.',
-    ],
-  };
-  const selected: [string, string] = labels[view.form.source.value] ?? [
-    'Plain text template',
-    'Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain text.',
-  ];
-  const [label, help] = selected;
-  if (view.bodyLabel) view.bodyLabel.textContent = label;
+  const help =
+    view.form.source.value === 'inline-lexical'
+      ? 'Advanced source: this template holds serialized Lexical JSON.'
+      : view.form.source.value === 'ghost-snippet'
+        ? 'This preset uses a Ghost snippet; the text field shows its stored value only.'
+        : view.form.source.value === 'inline-html'
+          ? 'Legacy HTML source: retained for import/export only; live writes fail closed.'
+          : 'Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain text.';
   if (view.bodyHelp) view.bodyHelp.textContent = help;
 }
 
 export function readFormPreset(view: OptionsView): unknown {
-  const id = view.form.id.value.trim();
   const name = view.form.name.value.trim();
+  // Editing keeps the loaded id; creating derives one from the name.
+  const id =
+    view.form.id.getAttribute('disabled') !== null && view.form.id.value.trim()
+      ? view.form.id.value.trim()
+      : deriveIdFromName(name);
   const source = view.form.source.value.trim();
   const mode = view.form.mode.value.trim();
   const content: Record<string, unknown> = { source, mode };
@@ -339,11 +344,6 @@ export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
   const { view } = deps;
   view.form.source.addEventListener('change', () => updateBodyEditor(view));
   updateBodyEditor(view);
-  view.form.id.addEventListener('input', () => {
-    // Clear any lingering disabled state left by a previous edit so a new id
-    // can be typed (HTML boolean attribute: only absence enables).
-    if (view.form.id.getAttribute('disabled') !== null) view.form.id.removeAttribute('disabled');
-  });
   // Save/cancel/import/export buttons are resolved by id in the bootstrap.
   const saveBtn = view.document.getElementById('opt-save');
   saveBtn?.addEventListener('click', () => void handleSave(deps));
