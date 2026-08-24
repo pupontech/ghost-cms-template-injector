@@ -73,15 +73,15 @@ describe('listViewPresets — read + seeded flag', () => {
     const { rt } = makeRuntime();
     const views = await listViewPresets(rt);
     expect(views.length).toBeGreaterThan(0);
-    const software = views.find((v) => v.id === 'software-review');
+    const software = views.find((v) => v.id === 'starter-post');
     expect(software?.seeded).toBe(true);
   });
 
   it('marks an edited seed as not seeded and surfaces the new name', async () => {
-    const edited = seed('software-review', { name: 'Edited Review' });
+    const edited = seed('starter-post', { name: 'Edited Review' });
     const { rt } = makeRuntime([edited]);
     const views = await listViewPresets(rt);
-    const v = views.find((x) => x.id === 'software-review');
+    const v = views.find((x) => x.id === 'starter-post');
     expect(v?.seeded).toBe(false);
     expect(v?.name).toBe('Edited Review');
   });
@@ -135,10 +135,10 @@ describe('deletePreset — override-set rewrite (no bundled mutation)', () => {
   });
 
   it('reverts an edited seed back to the bundle (drops only the override)', async () => {
-    const { rt, store } = makeRuntime([seed('software-review', { name: 'Edited' })]);
-    await deletePreset(rt, 'software-review');
+    const { rt, store } = makeRuntime([seed('starter-post', { name: 'Edited' })]);
+    await deletePreset(rt, 'starter-post');
     // The override is gone; the bundled seed is NOT written into the store.
-    expect(store.presets.find((p) => p.id === 'software-review')).toBeUndefined();
+    expect(store.presets.find((p) => p.id === 'starter-post')).toBeUndefined();
     expect(rt.loadBundledDefaults).toHaveBeenCalled();
   });
 

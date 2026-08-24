@@ -1,48 +1,18 @@
 [
   {
     "schemaVersion": 1,
-    "id": "software-review",
-    "name": "Software Review",
-    "description": "Standard structure for a software review post.",
+    "id": "starter-post",
+    "name": "Starter Post",
+    "description": "A minimal starting structure. Edit this preset or create your own.",
     "content": {
-      "source": "inline-lexical",
+      "source": "inline-text",
       "mode": "replace",
-      "lexical": "{\"root\":{\"children\":[{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"heading\",\"tag\":\"h2\",\"version\":1},{\"children\":[],\"direction\":\"ltr\",\"format\":\"\",\"indent\":0,\"type\":\"paragraph\",\"version\":1}],\"direction\":null,\"format\":\"\",\"indent\":0,\"type\":\"root\",\"version\":1}}"
+      "text": "<A short intro sentence that sets up what this post is about.>\n\nFirst point\n<Explain the first idea here in one or two plain sentences.>\n<Add any supporting detail or example.>\n\nSecond point\n<Explain the second idea here in one or two plain sentences.>\n<Tie it back to the main topic of the post.>\n\n<A closing line that wraps up the post or invites a reply.>"
     },
     "metadata": {
-      "excerpt": { "mode": "only-if-empty", "value": "A hands-on review." },
-      "tags": { "mode": "merge", "values": ["Reviews"] }
-    },
-    "ui": { "icon": "💻", "group": "Reviews" }
-  },
-  {
-    "schemaVersion": 1,
-    "id": "weekly-update",
-    "name": "Weekly Update",
-    "description": "Recurring status-post skeleton.",
-    "content": {
-      "source": "ghost-snippet",
-      "mode": "only-if-empty",
-      "snippet": "weekly-update-skeleton"
-    },
-    "metadata": {
-      "tags": { "mode": "merge", "values": ["Weekly"] }
-    },
-    "ui": { "icon": "🗓️", "group": "Recurring" }
-  },
-  {
-    "schemaVersion": 1,
-    "id": "custom-template-starter",
-    "name": "Custom Template Starter",
-    "description": "Applies a custom theme template to the post.",
-    "content": {
-      "source": "inline-lexical",
-      "mode": "prompt",
-      "lexical": "{\"root\":{\"children\":[],\"direction\":null,\"format\":\"\",\"indent\":0,\"type\":\"root\",\"version\":1}}"
-    },
-    "metadata": {
-      "customTemplate": { "mode": "prompt", "value": "custom-wide.hbs" }
-    },
-    "ui": { "icon": "🎨", "group": "Templates" }
+      "title": { "mode": "replace", "value": "<Post title here>" },
+      "excerpt": { "mode": "only-if-empty", "value": "<One-sentence summary of this post.>" },
+      "tags": { "mode": "merge", "values": ["General"] }
+    }
   }
 ]

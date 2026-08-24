@@ -48,7 +48,21 @@ Follow [`TESTING.md`](TESTING.md) for the owner acceptance procedure. It covers 
 
 ## Author body templates in the extension
 
-Open the extension Options page and choose **Plain text template** as the body source. Type ordinary text in the multiline editor and save the preset; each line becomes one Ghost Lexical paragraph, and blank lines become empty paragraphs. CRLF and CR newlines are normalized to LF. Text is never parsed as HTML, so tags such as `<b>` remain literal text. Empty or whitespace-only templates are rejected. Existing `ghost-snippet`, `inline-lexical`, and imported `inline-html` presets continue to round-trip; inline HTML remains intentionally unavailable for live writes.
+The extension ships with one bundled default, **Starter Post**. Make it yours:
+
+1. Open the extension **Options** page.
+2. Under _Presets_, select **Edit** on Starter Post — or just start a new preset.
+3. Fill in:
+   - **Preset name** — anything; the internal id is derived from it.
+   - **Post title** _(optional)_ — applied when the preset runs.
+   - **Template text** — ordinary multiline text (see semantics below).
+   - **Tags** — comma-separated; merged into the post's existing tags.
+   - **Custom excerpt** _(optional)_ — only applied if the post has no excerpt yet.
+4. Select **Save preset**, then apply it from an open Ghost post/page editor.
+
+Template text semantics: each line becomes one Ghost paragraph, and blank lines separate paragraphs. Text is never parsed as HTML or Markdown, so `<b>` and `##` stay literal text — write plain words where you want headings, then apply heading formatting in the Ghost editor. Empty templates are rejected. Your presets live in `chrome.storage.local`; nothing is synced or uploaded.
+
+You can also move presets between machines with **Export** / **Import** (JSON) at the bottom of the Options page.
 
 ## Project layout
 
