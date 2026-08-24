@@ -10,7 +10,6 @@
   chrome.scripting.getRegisteredContentScripts(); capability tokens observed from the
   real production handshake are only compared by SHA-256 digest prefix and never printed.
 
-- enable_native_consent_bubble_accepted: true
 - enable_native_consent_granted: true
 - enable_two_registrations_exactly_scoped: true
 - pre_disable_route_reached: true
