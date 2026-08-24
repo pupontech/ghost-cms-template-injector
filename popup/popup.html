@@ -52,12 +52,18 @@
         opacity: 0.5;
         cursor: default;
       }
+      .gpt-setup-link {
+        display: inline-block;
+        margin-top: 12px;
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
     <h1>Ghost Preset Toolbar</h1>
     <p id="gpt-status" role="status">Detecting editor…</p>
     <ul id="gpt-preset-list"></ul>
+    <a class="gpt-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
     <script type="module" src="../dist/popup.js"></script>
   </body>
 </html>

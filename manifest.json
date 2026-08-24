@@ -13,7 +13,6 @@
     "type": "module"
   },
   "options_page": "options/options.html",
-  "setup_page": "setup/setup.html",
   "content_scripts": [],
   "permissions": ["storage", "scripting"],
   "host_permissions": [],

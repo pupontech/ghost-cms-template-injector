@@ -61,10 +61,23 @@ for (const p of manifest.optional_host_permissions ?? []) {
     `optional_host_permissions entry must be https://*/*, got: ${p}`,
   );
 }
-check(
-  typeof manifest.setup_page === 'string' && manifest.setup_page === 'setup/setup.html',
-  'setup_page must point to setup/setup.html (consent surface)',
-);
+const allowedManifestKeys = new Set([
+  'action',
+  'background',
+  'content_scripts',
+  'description',
+  'host_permissions',
+  'manifest_version',
+  'minimum_chrome_version',
+  'name',
+  'options_page',
+  'optional_host_permissions',
+  'permissions',
+  'version',
+]);
+for (const key of Object.keys(manifest)) {
+  check(allowedManifestKeys.has(key), `unsupported manifest key: ${key}`);
+}
 
 // PACKAGING INVARIANT: every extension page (popup/options/setup) and every
 // manifest-referenced script URL must resolve to a packaged dist/ output.

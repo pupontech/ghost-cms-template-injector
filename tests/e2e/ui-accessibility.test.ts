@@ -45,7 +45,6 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
       host_permissions: string[];
       content_scripts: Array<{ matches: string[]; js: string[] }>;
       optional_host_permissions?: string[];
-      setup_page?: string;
     };
     // No broad/broad default host permission is granted up front.
     expect(manifest.permissions).toEqual(expect.arrayContaining(['storage', 'scripting']));
@@ -54,10 +53,10 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
     // The static wildcard match is gone: content scripts are registered
     // dynamically after explicit consent, so the manifest declares none.
     expect(manifest.content_scripts).toEqual([]);
-    // The optional grant is scoped to a Ghost Admin pattern (not a literal
-    // wildcard placeholder) and a consent/setup surface must exist.
+    // Chromium supports the declared optional pattern, but the setup controller
+    // requests only the user's exact installation /ghost/* path at consent time.
     expect(manifest.optional_host_permissions ?? []).toEqual(['https://*/*']);
-    expect(manifest.setup_page).toBe('setup/setup.html');
+    expect(read('popup/popup.html')).toContain('href="../setup/setup.html"');
     // The setup surface and dynamically-registered bundle must exist.
     expect(read('setup/setup.html')).toContain('type="module" src="../dist/setup.js"');
     // Source must reference the dynamic registration primitives.

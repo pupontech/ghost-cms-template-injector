@@ -31,7 +31,25 @@ describe('manifest.json (MV3 baseline)', () => {
     // dynamic (after consent), so the static content_scripts array is empty.
     expect(manifest.optional_host_permissions ?? []).toEqual(['https://*/*']);
     expect(manifest.content_scripts ?? []).toEqual([]);
-    expect(typeof manifest.setup_page).toBe('string');
+    // `setup_page` is not a Chromium manifest key. The setup surface is linked
+    // from the extension popup instead of being declared through an invented key.
+    expect(manifest.setup_page).toBeUndefined();
+    expect(Object.keys(manifest).sort()).toEqual(
+      [
+        'action',
+        'background',
+        'content_scripts',
+        'description',
+        'host_permissions',
+        'manifest_version',
+        'minimum_chrome_version',
+        'name',
+        'options_page',
+        'optional_host_permissions',
+        'permissions',
+        'version',
+      ].sort(),
+    );
   });
 
   it('has no static content_scripts (registration is dynamic after consent)', () => {
@@ -43,6 +61,12 @@ describe('manifest.json (MV3 baseline)', () => {
     // user's exact, consent-granted origin. This is the security gate (no
     // broad host access, no hosted logic) for the injected surface.
     expect(manifest.content_scripts ?? []).toEqual([]);
+  });
+
+  it('links the consent setup surface from the popup using a normal extension-page URL', () => {
+    const popup = readFileSync(path.join(root, 'popup/popup.html'), 'utf8');
+    expect(popup).toContain('href="../setup/setup.html"');
+    expect(popup).toContain('Setup site access');
   });
 
   it('contains no secrets or remote code hosts', () => {
