@@ -59,6 +59,12 @@ export interface OptionsView {
     snippet: RenderInput;
     group: RenderInput;
     icon: RenderInput;
+    tags: RenderInput;
+    tagMode: RenderInput;
+    excerpt: RenderInput;
+    excerptMode: RenderInput;
+    customTemplate: RenderInput;
+    customTemplateMode: RenderInput;
   };
   importArea: RenderInput;
   exportArea: RenderInput;
@@ -161,13 +167,27 @@ export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
   }
 }
 
-function fillFormForEdit(view: OptionsView, preset: OptionsPresetView): void {
+export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): void {
+  const preset = item.preset;
   view.form.id.value = preset.id;
   view.form.id.setAttribute('disabled', 'true'); // id is immutable on edit
   view.form.name.value = preset.name;
-  if (preset.description !== undefined) view.form.description.value = preset.description;
-  if (preset.group !== undefined) view.form.group.value = preset.group;
-  if (preset.icon !== undefined) view.form.icon.value = preset.icon;
+  view.form.description.value = preset.description ?? '';
+  view.form.source.value = preset.content.source;
+  view.form.mode.value = preset.content.mode;
+  view.form.snippet.value = preset.content.snippet ?? '';
+  view.form.html.value =
+    preset.content.source === 'inline-html'
+      ? (preset.content.html ?? '')
+      : (preset.content.lexical ?? '');
+  view.form.group.value = preset.ui?.group ?? '';
+  view.form.icon.value = preset.ui?.icon ?? '';
+  view.form.tags.value = preset.metadata?.tags?.values.join(', ') ?? '';
+  view.form.tagMode.value = preset.metadata?.tags?.mode ?? 'merge';
+  view.form.excerpt.value = preset.metadata?.excerpt?.value ?? '';
+  view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'replace';
+  view.form.customTemplate.value = preset.metadata?.customTemplate?.value ?? '';
+  view.form.customTemplateMode.value = preset.metadata?.customTemplate?.mode ?? 'replace';
 }
 
 export function readFormPreset(view: OptionsView): unknown {
@@ -197,6 +217,26 @@ export function readFormPreset(view: OptionsView): unknown {
   if (group) ui['group'] = group;
   if (icon) ui['icon'] = icon;
   if (Object.keys(ui).length > 0) preset['ui'] = ui;
+  const metadata: Record<string, unknown> = {};
+  const excerpt = view.form.excerpt.value;
+  if (excerpt.length > 0) {
+    metadata['excerpt'] = { mode: view.form.excerptMode.value.trim(), value: excerpt };
+  }
+  const customTemplate = view.form.customTemplate.value.trim();
+  if (customTemplate.length > 0) {
+    metadata['customTemplate'] = {
+      mode: view.form.customTemplateMode.value.trim(),
+      value: customTemplate,
+    };
+  }
+  const tagValues = view.form.tags.value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  if (tagValues.length > 0) {
+    metadata['tags'] = { mode: view.form.tagMode.value.trim(), values: tagValues };
+  }
+  if (Object.keys(metadata).length > 0) preset['metadata'] = metadata;
   return preset;
 }
 
@@ -306,6 +346,12 @@ if (isBrowserContext()) {
       snippet: input('opt-snippet') as RenderInput,
       group: input('opt-group') as RenderInput,
       icon: input('opt-icon') as RenderInput,
+      tags: input('opt-tags') as RenderInput,
+      tagMode: input('opt-tag-mode') as RenderInput,
+      excerpt: input('opt-excerpt') as RenderInput,
+      excerptMode: input('opt-excerpt-mode') as RenderInput,
+      customTemplate: input('opt-custom-template') as RenderInput,
+      customTemplateMode: input('opt-custom-template-mode') as RenderInput,
     };
     void initOptions({
       rt: createOptionsRuntime(),
@@ -335,6 +381,9 @@ if (isBrowserContext()) {
           }
           form.source.value = 'inline-html';
           form.mode.value = 'replace';
+          form.tagMode.value = 'merge';
+          form.excerptMode.value = 'replace';
+          form.customTemplateMode.value = 'replace';
         },
       },
     });

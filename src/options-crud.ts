@@ -35,6 +35,8 @@ export interface OptionsPresetView {
   icon?: string;
   source: BodySource;
   mode: BodyMode;
+  /** Complete validated preset used to rehydrate the edit form losslessly. */
+  preset: Preset;
   /** True when this entry is a pristine bundled default with no user override. */
   seeded: boolean;
 }
@@ -114,6 +116,7 @@ export async function listViewPresets(rt: OptionsRuntime): Promise<OptionsPreset
       name: preset.name,
       source: preset.content.source,
       mode: preset.content.mode,
+      preset,
       seeded: seed !== undefined && presetsEqual(preset, seed),
     };
     if (preset.description !== undefined) view.description = preset.description;

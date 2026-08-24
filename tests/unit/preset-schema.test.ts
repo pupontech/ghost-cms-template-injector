@@ -53,7 +53,11 @@ describe('validatePreset — valid input', () => {
       schemaVersion: PRESET_SCHEMA_VERSION,
       id: 'minimal',
       name: 'Minimal',
-      content: { source: 'inline-lexical', mode: 'prompt', lexical: '{"root":{}}' },
+      content: {
+        source: 'inline-lexical',
+        mode: 'prompt',
+        lexical: '{"root":{"type":"root","version":1,"children":[]}}',
+      },
     };
     expect(validatePreset(raw).metadata).toBeUndefined();
   });
@@ -124,6 +128,28 @@ describe('validatePreset — body source validation (C5/C6 inline & snippet)', (
     const raw = basePreset();
     raw.content = { source: 'inline-html', mode: 'replace', html: { evil: true } };
     expect(() => validatePreset(raw)).toThrow(/html/i);
+  });
+
+  it('rejects malformed inline Lexical before storage or import can accept it', () => {
+    const raw = basePreset();
+    raw.content = { source: 'inline-lexical', mode: 'replace', lexical: '{"root":{}}' };
+    expect(() => validatePreset(raw)).toThrow(/lexical|root|structur/i);
+  });
+
+  it('rejects invalid nested Lexical nodes instead of accepting arbitrary recursion', () => {
+    const raw = basePreset();
+    raw.content = {
+      source: 'inline-lexical',
+      mode: 'replace',
+      lexical: JSON.stringify({
+        root: {
+          type: 'root',
+          version: 1,
+          children: [{ type: 'paragraph', version: 1, children: [null] }],
+        },
+      }),
+    };
+    expect(() => validatePreset(raw)).toThrow(/lexical|node|structur/i);
   });
 });
 

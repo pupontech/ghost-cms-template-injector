@@ -193,7 +193,10 @@ export function createGhostMainBridge(): {
         if (!store) throw new Error('Ember store unavailable for tag relation');
         const names = Array.isArray(value) ? value : [String(value)];
         const records = names.map((name) => {
-          let tag = store.peekAll('tag').find((t) => t.name === name);
+          const wanted = name.trim().toLowerCase();
+          let tag = store
+            .peekAll('tag')
+            .find((t) => typeof t.name === 'string' && t.name.trim().toLowerCase() === wanted);
           if (!tag) tag = store.createRecord('tag', { name }) as { name: string; id?: string };
           return tag;
         });

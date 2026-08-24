@@ -181,6 +181,24 @@ export function createGhostStateAdapter(surface: GhostLiveSurface): GhostStateAd
 
 const FIELDS_REQUIRING_RELATION: ReadonlySet<string> = new Set(['customTemplate', 'tags']);
 
+function validateActionValue(action: PlanAction): string | null {
+  switch (action.field) {
+    case 'body':
+      return isSerializedLexical(action.value)
+        ? null
+        : 'body value must be structurally valid serialized Lexical; refusing to submit invalid lexical';
+    case 'excerpt':
+    case 'customTemplate':
+      return typeof action.value === 'string' ? null : `${action.field} value must be a string`;
+    case 'tags':
+      return Array.isArray(action.value) && action.value.every((tag) => typeof tag === 'string')
+        ? null
+        : 'tags value must be a string array';
+    default:
+      return `unknown field ${String(action.field)}`;
+  }
+}
+
 class GhostStateAdapterImpl implements GhostStateAdapter {
   readonly #surface: GhostLiveSurface;
   #busy = false;
@@ -247,15 +265,8 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
   }
 
   planApply(plan: ApplicationPlan): { ok: true } | { ok: false; reason: string } {
-    if (!plan) return { ok: false, reason: 'no plan supplied' };
-    if (plan.status !== 'ready') {
-      return { ok: false, reason: `plan not ready (${plan.status})` };
-    }
+    if (plan.status !== 'ready') return { ok: false, reason: `plan not ready (${plan.status})` };
     for (const action of plan.actions) {
-      // Trust the planner's authoritative status. Only `apply` actions are
-      // executed; `skip`/`prompt` (which may legitimately carry an
-      // informational `reason`) must NOT be treated as a block. Reject only
-      // when an `apply` action's required live capability is missing.
       if (action.status !== 'apply') continue;
       if (
         FIELDS_REQUIRING_RELATION.has(action.field) &&
@@ -263,6 +274,8 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       ) {
         return { ok: false, reason: `relation mutation unsupported for ${action.field}` };
       }
+      const invalid = validateActionValue(action);
+      if (invalid) return { ok: false, reason: invalid };
     }
     return { ok: true };
   }

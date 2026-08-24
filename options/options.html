@@ -145,6 +145,37 @@
       <label for="opt-icon">Icon</label>
       <input id="opt-icon" type="text" autocomplete="off" />
 
+      <label for="opt-tags">Tags (comma-separated)</label>
+      <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
+
+      <label for="opt-tag-mode">Tag mode</label>
+      <select id="opt-tag-mode">
+        <option value="merge">merge</option>
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+
+      <label for="opt-excerpt">Excerpt</label>
+      <input id="opt-excerpt" type="text" maxlength="300" />
+
+      <label for="opt-excerpt-mode">Excerpt mode</label>
+      <select id="opt-excerpt-mode">
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+
+      <label for="opt-custom-template">Custom template (.hbs)</label>
+      <input id="opt-custom-template" type="text" placeholder="custom-review.hbs" />
+
+      <label for="opt-custom-template-mode">Template mode</label>
+      <select id="opt-custom-template-mode">
+        <option value="replace">replace</option>
+        <option value="only-if-empty">only-if-empty</option>
+        <option value="prompt">prompt</option>
+      </select>
+
       <div class="actions">
         <button id="opt-save" type="button">Save</button>
         <button id="opt-cancel" type="button">Clear</button>

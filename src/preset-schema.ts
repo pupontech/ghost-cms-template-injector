@@ -44,24 +44,35 @@ export interface BodyContent {
 export function isSerializedLexical(value: unknown): value is string {
   if (typeof value !== 'string' || value.trim().length === 0) return false;
   try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    const root = parsed?.['root'];
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)) return false;
+    const root = parsed['root'];
     if (!isRecord(root) || root['type'] !== 'root' || typeof root['version'] !== 'number') {
       return false;
     }
-    const isNode = (node: unknown): boolean => {
+    const rootChildren = root['children'];
+    if (!Array.isArray(rootChildren)) return false;
+
+    // Iterative traversal avoids stack overflows on hostile/deep imported JSON.
+    const pending: unknown[] = [...rootChildren];
+    let visited = 0;
+    while (pending.length > 0) {
+      const node = pending.pop();
+      visited += 1;
       if (
+        visited > 10000 ||
         !isRecord(node) ||
         typeof node['type'] !== 'string' ||
         typeof node['version'] !== 'number'
-      ) {
+      )
         return false;
-      }
       const children = node['children'];
-      return children === undefined || (Array.isArray(children) && children.every(isNode));
-    };
-    const children = root['children'];
-    return Array.isArray(children) && children.every(isNode);
+      if (children !== undefined) {
+        if (!Array.isArray(children)) return false;
+        pending.push(...children);
+      }
+    }
+    return true;
   } catch {
     return false;
   }
@@ -146,7 +157,11 @@ function validateContent(raw: unknown): BodyContent {
   } else if (source === 'inline-html') {
     content.html = requireString(raw, 'html', 'html payload');
   } else {
-    content.lexical = requireString(raw, 'lexical', 'lexical payload');
+    const lexical = requireString(raw, 'lexical', 'lexical payload');
+    if (!isSerializedLexical(lexical)) {
+      fail('content.lexical', 'must be structurally valid serialized Lexical with a root node');
+    }
+    content.lexical = lexical;
   }
 
   return content;

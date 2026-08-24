@@ -179,6 +179,22 @@ describe('C4 apply → save → verify (single native transaction)', () => {
     expect(surface.nativeSave).not.toHaveBeenCalled();
   });
 
+  it('validates every action before mutating when a later body payload is invalid', async () => {
+    const surface = capableSurface();
+    const adapter = createGhostStateAdapter(surface);
+    await expect(
+      adapter.apply(
+        readyPlan([
+          { field: 'excerpt', op: 'set', status: 'apply', value: 'must not persist' },
+          { field: 'body', op: 'set', status: 'apply', value: '{"root":{}}' },
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: 'APPLY_FAILED' });
+    expect(surface.setField).not.toHaveBeenCalled();
+    expect(surface.setLexical).not.toHaveBeenCalled();
+    expect(surface.nativeSave).not.toHaveBeenCalled();
+  });
+
   it('mutates live fields, invokes exactly one native save, and returns clean state', async () => {
     const surface = capableSurface();
     const adapter = createGhostStateAdapter(surface);
