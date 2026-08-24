@@ -46,6 +46,10 @@ Do not enter `/ghost/` itself in the setup field; enter the installation base UR
 
 Follow [`TESTING.md`](TESTING.md) for the owner acceptance procedure. It covers build verification, enabling narrowly scoped access, applying and persisting a preset, Disable behavior in current and new Admin documents, and re-enable behavior.
 
+## Author body templates in the extension
+
+Open the extension Options page and choose **Plain text template** as the body source. Type ordinary text in the multiline editor and save the preset; each line becomes one Ghost Lexical paragraph, and blank lines become empty paragraphs. CRLF and CR newlines are normalized to LF. Text is never parsed as HTML, so tags such as `<b>` remain literal text. Empty or whitespace-only templates are rejected. Existing `ghost-snippet`, `inline-lexical`, and imported `inline-html` presets continue to round-trip; inline HTML remains intentionally unavailable for live writes.
+
 ## Project layout
 
 - `manifest.json` — MV3 manifest with `storage` and `scripting`, no static host permission.

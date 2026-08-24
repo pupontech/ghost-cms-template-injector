@@ -29,7 +29,7 @@ function formView(): OptionsView {
     description: input('desc'),
     source: input('inline-lexical'),
     mode: input('replace'),
-    html: input('{"root":{"type":"root","version":1,"children":[]}}'),
+    body: input('{"root":{"type":"root","version":1,"children":[]}}'),
     snippet: input(),
     group: input(),
     icon: input(),

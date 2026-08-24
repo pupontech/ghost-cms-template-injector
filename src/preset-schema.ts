@@ -4,9 +4,11 @@
  * Pure validation only: no storage, planner, UI, API, or bridge. Every preset
  * is versioned, has a unique id, carries an explicit body mode
  * (replace | only-if-empty | prompt — never append/merge), a validated body
- * source (ghost-snippet | inline-html | inline-lexical), and explicitly
+ * source (ghost-snippet | inline-html | inline-text | inline-lexical), and explicitly
  * validated metadata modes. Imports are size-bounded and fail closed.
  */
+
+import { plainTextToLexical } from './plain-text-lexical';
 
 export const PRESET_SCHEMA_VERSION = 1;
 
@@ -21,7 +23,7 @@ export type TagMode = (typeof TAG_MODES)[number];
 
 const METADATA_MODES = ['replace', 'only-if-empty', 'prompt'] as const;
 
-const BODY_SOURCES = ['ghost-snippet', 'inline-html', 'inline-lexical'] as const;
+const BODY_SOURCES = ['ghost-snippet', 'inline-html', 'inline-text', 'inline-lexical'] as const;
 export type BodySource = (typeof BODY_SOURCES)[number];
 
 /** Ghost's accepted custom_excerpt bound (C6). */
@@ -32,6 +34,7 @@ export interface BodyContent {
   mode: BodyMode;
   snippet?: string;
   html?: string;
+  text?: string;
   lexical?: string;
 }
 
@@ -156,6 +159,16 @@ function validateContent(raw: unknown): BodyContent {
     }
   } else if (source === 'inline-html') {
     content.html = requireString(raw, 'html', 'html payload');
+  } else if (source === 'inline-text') {
+    content.text = requireString(raw, 'text', 'plain text template');
+    if ('html' in raw || 'lexical' in raw) {
+      fail('content', 'inline-text source must not carry html/lexical fields');
+    }
+    try {
+      plainTextToLexical(content.text);
+    } catch (error) {
+      fail('content.text', error instanceof Error ? error.message : 'must be non-empty plain text');
+    }
   } else {
     const lexical = requireString(raw, 'lexical', 'lexical payload');
     if (!isSerializedLexical(lexical)) {

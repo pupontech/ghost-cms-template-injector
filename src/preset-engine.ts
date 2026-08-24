@@ -18,6 +18,7 @@ import type {
   TagsField,
 } from './preset-schema';
 import { isSerializedLexical } from './preset-schema';
+import { plainTextToLexical } from './plain-text-lexical';
 
 /** Live per-field state captured by a C4 `snapshot` on the open editor. */
 export interface EditorSnapshot {
@@ -123,9 +124,11 @@ function planBody(
   const lexical =
     content.source === 'inline-lexical'
       ? content.lexical
-      : content.source === 'ghost-snippet'
-        ? context.snippetLexical?.[content.snippet ?? '']
-        : undefined;
+      : content.source === 'inline-text'
+        ? plainTextToLexical(content.text ?? '')
+        : content.source === 'ghost-snippet'
+          ? context.snippetLexical?.[content.snippet ?? '']
+          : undefined;
   if (!lexical || !isSerializedLexical(lexical)) {
     throw new TypeError(
       content.source === 'inline-html'
@@ -264,6 +267,20 @@ export function planPresetApplication(
     problems.push(
       'content.source: inline HTML is unsupported for live Lexical writes; provide inline-lexical or a Ghost snippet',
     );
+  } else if (preset.content.source === 'inline-text') {
+    try {
+      if (!isSerializedLexical(plainTextToLexical(preset.content.text ?? ''))) {
+        problems.push(
+          'content.source: plain text template could not be converted to serialized Lexical',
+        );
+      }
+    } catch (error) {
+      problems.push(
+        error instanceof Error
+          ? `content.source: ${error.message}`
+          : 'content.source: invalid plain text template',
+      );
+    }
   } else if (!isSerializedLexical(preset.content.lexical)) {
     problems.push(
       'content.source: inline-lexical payload is not structurally valid serialized Lexical',

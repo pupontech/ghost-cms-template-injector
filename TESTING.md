@@ -122,3 +122,12 @@ Record only:
 - A redacted screenshot if needed
 
 Never include cookie values, Authorization headers, session data, passwords, private keys, API tokens, or private post content. See `SECURITY.md` for security reports.
+
+## 9. Test plain-text body templates
+
+1. Open Extension options and select **Create / edit preset**.
+2. Choose **Plain text template** and enter at least one non-whitespace line, optionally separated by blank lines.
+3. Save, reload the Options page, and edit the preset again.
+4. Confirm the text and line breaks are unchanged, then apply it to a disposable post or page.
+
+Expected: each source line appears as a paragraph in Ghost; blank lines remain blank; `<script>`/HTML-looking text is displayed literally; tags, excerpt, and custom template metadata remain intact; and an empty or whitespace-only template is rejected before storage. Choosing **Serialized Lexical JSON** still exposes the advanced raw format, while **inline-html** remains fail-closed for live writes.

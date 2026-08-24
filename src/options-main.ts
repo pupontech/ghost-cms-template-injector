@@ -55,7 +55,7 @@ export interface OptionsView {
     description: RenderInput;
     source: RenderInput;
     mode: RenderInput;
-    html: RenderInput;
+    body: RenderInput;
     snippet: RenderInput;
     group: RenderInput;
     icon: RenderInput;
@@ -66,6 +66,8 @@ export interface OptionsView {
     customTemplate: RenderInput;
     customTemplateMode: RenderInput;
   };
+  bodyLabel?: RenderEl;
+  bodyHelp?: RenderEl;
   importArea: RenderInput;
   exportArea: RenderInput;
   document: {
@@ -176,10 +178,12 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   view.form.source.value = preset.content.source;
   view.form.mode.value = preset.content.mode;
   view.form.snippet.value = preset.content.snippet ?? '';
-  view.form.html.value =
+  view.form.body.value =
     preset.content.source === 'inline-html'
       ? (preset.content.html ?? '')
-      : (preset.content.lexical ?? '');
+      : preset.content.source === 'inline-text'
+        ? (preset.content.text ?? '')
+        : (preset.content.lexical ?? '');
   view.form.group.value = preset.ui?.group ?? '';
   view.form.icon.value = preset.ui?.icon ?? '';
   view.form.tags.value = preset.metadata?.tags?.values.join(', ') ?? '';
@@ -188,6 +192,35 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'replace';
   view.form.customTemplate.value = preset.metadata?.customTemplate?.value ?? '';
   view.form.customTemplateMode.value = preset.metadata?.customTemplate?.mode ?? 'replace';
+  updateBodyEditor(view);
+}
+
+export function updateBodyEditor(view: OptionsView): void {
+  const labels: Record<string, [string, string]> = {
+    'inline-text': [
+      'Plain text template',
+      'Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain text.',
+    ],
+    'inline-html': [
+      'HTML (not applied live)',
+      'HTML is retained for import/export only; live Ghost writes fail closed for this source.',
+    ],
+    'inline-lexical': [
+      'Serialized Lexical JSON',
+      'Advanced source: paste a complete Ghost-compatible Lexical document.',
+    ],
+    'ghost-snippet': [
+      'Inline body value (unused)',
+      'Choose a snippet name above; this field is ignored for Ghost snippets.',
+    ],
+  };
+  const selected: [string, string] = labels[view.form.source.value] ?? [
+    'Plain text template',
+    'Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain text.',
+  ];
+  const [label, help] = selected;
+  if (view.bodyLabel) view.bodyLabel.textContent = label;
+  if (view.bodyHelp) view.bodyHelp.textContent = help;
 }
 
 export function readFormPreset(view: OptionsView): unknown {
@@ -199,9 +232,11 @@ export function readFormPreset(view: OptionsView): unknown {
   if (source === 'ghost-snippet') {
     content['snippet'] = view.form.snippet.value.trim();
   } else if (source === 'inline-html') {
-    content['html'] = view.form.html.value;
+    content['html'] = view.form.body.value;
+  } else if (source === 'inline-text') {
+    content['text'] = view.form.body.value;
   } else {
-    content['lexical'] = view.form.html.value;
+    content['lexical'] = view.form.body.value;
   }
   const preset: Record<string, unknown> = {
     schemaVersion: PRESET_SCHEMA_VERSION,
@@ -302,6 +337,8 @@ export function setStatus(view: OptionsView, message: string, isError = false): 
 /** Wire the options page once the DOM is ready. */
 export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
   const { view } = deps;
+  view.form.source.addEventListener('change', () => updateBodyEditor(view));
+  updateBodyEditor(view);
   view.form.id.addEventListener('input', () => {
     // Clear any lingering disabled state left by a previous edit so a new id
     // can be typed (HTML boolean attribute: only absence enables).
@@ -342,7 +379,7 @@ if (isBrowserContext()) {
       description: input('opt-description') as RenderInput,
       source: input('opt-source') as RenderInput,
       mode: input('opt-mode') as RenderInput,
-      html: input('opt-html') as RenderInput,
+      body: input('opt-body') as RenderInput,
       snippet: input('opt-snippet') as RenderInput,
       group: input('opt-group') as RenderInput,
       icon: input('opt-icon') as RenderInput,
@@ -359,6 +396,8 @@ if (isBrowserContext()) {
         listEl,
         statusEl,
         form,
+        bodyLabel: el('opt-body-label') as RenderEl,
+        bodyHelp: el('opt-body-help') as RenderEl,
         importArea,
         exportArea,
         document: {
@@ -379,7 +418,7 @@ if (isBrowserContext()) {
             field.value = '';
             field.removeAttribute('disabled');
           }
-          form.source.value = 'inline-html';
+          form.source.value = 'inline-text';
           form.mode.value = 'replace';
           form.tagMode.value = 'merge';
           form.excerptMode.value = 'replace';

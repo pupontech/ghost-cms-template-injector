@@ -121,7 +121,8 @@
 
       <label for="opt-source">Body source</label>
       <select id="opt-source">
-        <option value="inline-html">inline-html</option>
+        <option value="inline-text">Plain text template</option>
+        <option value="inline-html">inline-html (unsupported for live writes)</option>
         <option value="ghost-snippet">ghost-snippet</option>
         <option value="inline-lexical">inline-lexical</option>
       </select>
@@ -136,8 +137,12 @@
       <label for="opt-snippet">Snippet name</label>
       <input id="opt-snippet" type="text" autocomplete="off" />
 
-      <label for="opt-html">HTML / Lexical</label>
-      <textarea id="opt-html"></textarea>
+      <label id="opt-body-label" for="opt-body">Plain text template</label>
+      <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
+      <small id="opt-body-help"
+        >Each line becomes a paragraph; blank lines are preserved. HTML is treated as plain
+        text.</small
+      >
 
       <label for="opt-group">Group</label>
       <input id="opt-group" type="text" autocomplete="off" />
