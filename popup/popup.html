@@ -6,61 +6,116 @@
     <title>Ghost Preset Toolbar</title>
     <style>
       :root {
-        color-scheme: light dark;
+        --surface: #ffffff;
+        --text: #1d1d1f;
+        --text-2: #6e6e73;
+        --text-3: #a1a1a6;
+        --line: rgba(0, 0, 0, 0.08);
+        --accent: #0a84ff;
+        --danger: #ff3b30;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #232325;
+          --text: #f5f5f7;
+          --text-2: #98989d;
+          --text-3: #636366;
+          --line: rgba(255, 255, 255, 0.09);
+          --accent: #409cff;
+          --danger: #ff453a;
+        }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        font-family: system-ui, sans-serif;
+        background: var(--surface);
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          'SF Pro Text',
+          'Helvetica Neue',
+          system-ui,
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+        -webkit-font-smoothing: antialiased;
         min-width: 280px;
-        padding: 12px 14px;
+        max-width: 320px;
+        padding: 16px;
       }
       h1 {
         font-size: 14px;
-        margin: 0 0 8px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        margin: 0 0 2px;
+      }
+      .subtitle {
+        margin: 0 0 12px;
+        color: var(--text-3);
+        font-size: 11.5px;
       }
       #gpt-status {
         font-size: 12px;
-        margin: 0 0 10px;
+        color: var(--text-2);
+        background: color-mix(in srgb, var(--text) 5%, transparent);
+        border-radius: 8px;
+        padding: 7px 10px;
+        margin: 0 0 12px;
         min-height: 16px;
       }
       #gpt-status[role='alert'] {
-        color: #b3261e;
+        color: var(--danger);
       }
       ul#gpt-preset-list {
         list-style: none;
-        margin: 0;
+        margin: 0 0 4px;
         padding: 0;
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 4px;
       }
       #gpt-preset-list button {
         width: 100%;
         text-align: left;
-        font-size: 13px;
-        padding: 8px 10px;
-        border: 1px solid rgba(128, 128, 128, 0.4);
-        border-radius: 6px;
-        background: transparent;
+        font: inherit;
+        font-weight: 500;
+        padding: 9px 11px;
+        border: none;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--text) 5%, transparent);
         color: inherit;
         cursor: pointer;
+        transition: background-color 120ms ease;
       }
       #gpt-preset-list button:hover:not(:disabled) {
-        border-color: rgba(128, 128, 128, 0.8);
+        background: color-mix(in srgb, var(--accent) 14%, transparent);
+      }
+      #gpt-preset-list button:active:not(:disabled) {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
       }
       #gpt-preset-list button:disabled {
-        opacity: 0.5;
+        opacity: 0.4;
         cursor: default;
       }
       .gpt-setup-link {
         display: inline-block;
         margin-top: 12px;
         font-size: 12px;
+        font-weight: 500;
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .gpt-setup-link:hover {
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
     <h1>Ghost Preset Toolbar</h1>
+    <p class="subtitle">Apply a preset to the open editor.</p>
     <p id="gpt-status" role="status">Detecting editor…</p>
     <ul id="gpt-preset-list"></ul>
     <a class="gpt-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>

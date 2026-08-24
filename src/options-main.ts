@@ -339,6 +339,7 @@ export async function handleExport(deps: OptionsControllerDeps): Promise<void> {
 export function setStatus(view: OptionsView, message: string, isError = false): void {
   setText(view.statusEl, message);
   view.statusEl.setAttribute('role', isError ? 'alert' : 'status');
+  view.statusEl.classList?.add('visible');
 }
 
 /* ------------------------------------------------------------------ */

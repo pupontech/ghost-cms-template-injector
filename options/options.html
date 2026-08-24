@@ -6,177 +6,358 @@
     <title>Ghost Preset Toolbar — Options</title>
     <style>
       :root {
-        color-scheme: light dark;
+        --bg: #f5f5f7;
+        --surface: #ffffff;
+        --surface-2: #fbfbfd;
+        --text: #1d1d1f;
+        --text-2: #6e6e73;
+        --text-3: #a1a1a6;
+        --line: rgba(0, 0, 0, 0.08);
+        --accent: #0a84ff;
+        --danger: #ff3b30;
+        --radius: 10px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161617;
+          --surface: #232325;
+          --surface-2: #1c1c1e;
+          --text: #f5f5f7;
+          --text-2: #98989d;
+          --text-3: #636366;
+          --line: rgba(255, 255, 255, 0.09);
+          --accent: #409cff;
+          --danger: #ff453a;
+        }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        font-family: system-ui, sans-serif;
-        padding: 16px 20px;
-        max-width: 720px;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          'SF Pro Text',
+          'Helvetica Neue',
+          system-ui,
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        justify-content: center;
+        padding: 48px 20px 64px;
+      }
+      .app {
+        width: 100%;
+        max-width: 600px;
+      }
+
+      /* ---- header ---- */
+      header {
+        margin-bottom: 28px;
       }
       h1 {
-        font-size: 18px;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
         margin: 0 0 4px;
       }
-      h2 {
-        font-size: 14px;
-        margin: 24px 0 8px;
-      }
-      #opt-status {
+      .subtitle {
+        color: var(--text-2);
         font-size: 13px;
-        margin: 8px 0;
-        min-height: 18px;
+        margin: 0;
+      }
+
+      /* ---- status pill ---- */
+      #opt-status {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 16px;
+        font-size: 12.5px;
+        font-weight: 500;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 180ms ease,
+          translateY 180ms ease;
+        max-width: 80vw;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        z-index: 10;
       }
       #opt-status[role='alert'] {
-        color: #b3261e;
+        color: var(--danger);
       }
+      #opt-status.visible {
+        opacity: 1;
+      }
+
+      /* ---- sections ---- */
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-2);
+        margin: 30px 0 10px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      /* ---- preset list ---- */
       ul#opt-preset-list {
         list-style: none;
         margin: 0;
         padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
+        overflow: hidden;
       }
-      #opt-preset-list li {
+      ul#opt-preset-list li {
         display: flex;
         align-items: center;
-        gap: 8px;
-        border: 1px solid rgba(128, 128, 128, 0.4);
-        border-radius: 6px;
-        padding: 8px 10px;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+      ul#opt-preset-list li + li {
+        border-top: 1px solid var(--line);
       }
       #opt-preset-list li span {
         flex: 1;
+        min-width: 0;
+        font-size: 13.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       #opt-preset-list li small {
-        color: rgba(128, 128, 128, 0.9);
-        margin-right: 8px;
+        color: var(--text-3);
+        font-size: 11.5px;
+        font-weight: 400;
+        flex-shrink: 0;
       }
+
+      /* ---- form ---- */
       form {
+        padding: 20px;
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 10px;
+        gap: 16px;
       }
-      form label {
-        font-size: 13px;
-        font-weight: 600;
+      .field label {
         display: block;
-        margin-bottom: 4px;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 5px;
       }
-      form input,
-      form textarea,
-      form select {
+      .field small {
+        display: block;
+        margin-top: 5px;
+        color: var(--text-3);
+        font-weight: 400;
+        font-size: 11.5px;
+      }
+      input,
+      textarea,
+      select {
         font: inherit;
-        padding: 6px 8px;
-        border: 1px solid rgba(128, 128, 128, 0.5);
-        border-radius: 6px;
-        background: transparent;
         color: inherit;
         width: 100%;
-        box-sizing: border-box;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 11px;
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease;
       }
-      form textarea {
-        min-height: 160px;
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--text-3);
+      }
+      textarea {
+        min-height: 150px;
         resize: vertical;
+        line-height: 1.55;
       }
-      form small {
-        display: block;
-        margin-top: 4px;
-        color: rgba(128, 128, 128, 0.9);
+      input.optional:not(:focus),
+      textarea.optional:not(:focus) {
+        border-style: solid;
+      }
+      .optional-label {
+        color: var(--text-3);
         font-weight: 400;
       }
+
+      /* ---- buttons ---- */
       .actions {
         display: flex;
         gap: 8px;
-        margin-top: 4px;
+        justify-content: flex-end;
       }
       button {
         font: inherit;
-        padding: 6px 12px;
-        border: 1px solid rgba(128, 128, 128, 0.5);
-        border-radius: 6px;
-        background: transparent;
-        color: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
         cursor: pointer;
+        border-radius: 8px;
+        padding: 7px 14px;
+        transition:
+          filter 120ms ease,
+          background-color 120ms ease,
+          opacity 120ms ease;
+      }
+      button:hover {
+        filter: brightness(1.06);
+      }
+      button:active {
+        filter: brightness(0.94);
+      }
+      #opt-save {
+        background: var(--accent);
+        border: none;
+        color: #fff;
+      }
+      #opt-cancel,
+      #opt-import,
+      #opt-export {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--text);
+      }
+      #opt-preset-list button {
+        background: transparent;
+        border: none;
+        color: var(--accent);
+        padding: 4px 6px;
+        font-weight: 500;
+        flex-shrink: 0;
+      }
+      #opt-preset-list button[data-action='delete'] {
+        color: var(--text-2);
+      }
+      #opt-preset-list button[data-action='delete']:hover {
+        color: var(--danger);
+      }
+
+      /* ---- import/export ---- */
+      .io-card {
+        padding: 16px 20px;
+      }
+      .io-card p {
+        margin: 0 0 10px;
+        color: var(--text-2);
+        font-size: 12.5px;
       }
       textarea#opt-import-area,
       textarea#opt-export-area {
-        width: 100%;
-        min-height: 120px;
-        font-family: ui-monospace, monospace;
-        font-size: 12px;
+        min-height: 96px;
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 11.5px;
       }
     </style>
   </head>
   <body>
-    <h1>Ghost Preset Toolbar — Options</h1>
-    <p id="opt-status" role="status">Loading presets…</p>
+    <div class="app">
+      <header>
+        <h1>Ghost Preset Toolbar</h1>
+        <p class="subtitle">Reusable templates applied to your Ghost editor.</p>
+      </header>
 
-    <h2>Your presets</h2>
-    <ul id="opt-preset-list"></ul>
+      <p id="opt-status" role="status">Loading presets…</p>
 
-    <h2>Create a preset</h2>
-    <form id="opt-form" aria-label="Create or edit a preset">
-      <div>
-        <label for="opt-name">Preset name</label>
-        <input id="opt-name" type="text" autocomplete="off" placeholder="Review checklist" />
+      <h2>Presets</h2>
+      <div class="card">
+        <ul id="opt-preset-list"></ul>
       </div>
 
-      <div>
-        <label for="opt-title">Post title (optional)</label>
-        <input id="opt-title" type="text" autocomplete="off" placeholder="My review of…" />
-        <small>Replaces the post's current title when the preset is applied.</small>
+      <h2>Create a preset</h2>
+      <form id="opt-form" aria-label="Create or edit a preset">
+        <div class="field">
+          <label for="opt-name">Preset name</label>
+          <input id="opt-name" type="text" autocomplete="off" placeholder="Review checklist" />
+        </div>
+
+        <div class="field">
+          <label for="opt-title">Post title <span class="optional-label">· optional</span></label>
+          <input id="opt-title" type="text" autocomplete="off" placeholder="My review of…" />
+          <small>Replaces the post's current title when applied.</small>
+        </div>
+
+        <div class="field">
+          <label for="opt-body">Template text</label>
+          <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
+          <small id="opt-body-help"
+            >Each line becomes a paragraph; blank lines are preserved. Tags such as &lt;b&gt; stay
+            as plain text.</small
+          >
+        </div>
+
+        <div class="field">
+          <label for="opt-tags"> Tags <span class="optional-label">· comma-separated</span></label>
+          <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
+          <small>Existing post tags are kept and these are added to them.</small>
+        </div>
+
+        <div class="field">
+          <label for="opt-excerpt"
+            >Custom excerpt <span class="optional-label">· optional</span></label
+          >
+          <input
+            id="opt-excerpt"
+            type="text"
+            maxlength="300"
+            placeholder="A short summary for listings and search results."
+          />
+          <small>Up to 300 characters. Only applied when the post has no excerpt yet.</small>
+        </div>
+
+        <div class="actions">
+          <button id="opt-cancel" type="button">Clear</button>
+          <button id="opt-save" type="button">Save preset</button>
+        </div>
+      </form>
+
+      <h2>Import</h2>
+      <div class="card io-card">
+        <p>Paste a preset collection (JSON array or <code>{ "presets": [...] }</code>).</p>
+        <textarea
+          id="opt-import-area"
+          aria-label="Import preset collection as JSON"
+          placeholder='[{"schemaVersion":1,"id":"example","name":"Example","content":{"source":"inline-text","mode":"replace","text":"Hi"}}]'
+        ></textarea>
+        <div class="actions" style="margin-top: 12px">
+          <button id="opt-import" type="button">Import</button>
+        </div>
       </div>
 
-      <div>
-        <label for="opt-body">Template text</label>
-        <textarea id="opt-body" aria-describedby="opt-body-help"></textarea>
-        <small id="opt-body-help"
-          >Each line becomes a paragraph; blank lines are preserved. Tags such as &lt;b&gt; stay as
-          plain text.</small
-        >
+      <h2>Export</h2>
+      <div class="card io-card">
+        <p>Download all presets (bundled defaults + your overrides) as JSON.</p>
+        <textarea id="opt-export-area" aria-label="Exported preset collection" readonly></textarea>
+        <div class="actions" style="margin-top: 12px">
+          <button id="opt-export" type="button">Export</button>
+        </div>
       </div>
-
-      <div>
-        <label for="opt-tags">Tags (comma-separated)</label>
-        <input id="opt-tags" type="text" autocomplete="off" placeholder="Software, Reviews" />
-        <small>Existing post tags are kept and these are added to them.</small>
-      </div>
-
-      <div>
-        <label for="opt-excerpt">Custom excerpt (optional)</label>
-        <input
-          id="opt-excerpt"
-          type="text"
-          maxlength="300"
-          placeholder="A short summary shown in listings and search results."
-        />
-        <small>Up to 300 characters. Only applied when the post has no excerpt yet.</small>
-      </div>
-
-      <div class="actions">
-        <button id="opt-save" type="button">Save</button>
-        <button id="opt-cancel" type="button">Clear</button>
-      </div>
-    </form>
-
-    <h2>Import</h2>
-    <p>Paste a preset collection (JSON array or <code>{ "presets": [...] }</code>).</p>
-    <textarea
-      id="opt-import-area"
-      aria-label="Import preset collection as JSON"
-      placeholder='[{"schemaVersion":1,"id":"example","name":"Example","content":{"source":"inline-text","mode":"replace","text":"Hi"}}]'
-    ></textarea>
-    <div class="actions">
-      <button id="opt-import" type="button">Import</button>
-    </div>
-
-    <h2>Export</h2>
-    <p>Download all presets (bundled defaults + your overrides) as JSON.</p>
-    <textarea id="opt-export-area" aria-label="Exported preset collection" readonly></textarea>
-    <div class="actions">
-      <button id="opt-export" type="button">Export</button>
     </div>
 
     <!-- Hidden advanced inputs keep legacy/round-trip fields alive without
