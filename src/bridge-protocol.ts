@@ -12,7 +12,7 @@
 export const BRIDGE_PROTOCOL_VERSION = 1;
 
 /** Identity string stamped on every request and accepted on every response. */
-export const BRIDGE_SOURCE_ID = 'ghost-preset-toolbar/page-bridge/v1';
+export const BRIDGE_SOURCE_ID = 'ghost-cms-template-injector/page-bridge/v1';
 
 export const BRIDGE_OPERATIONS = [
   'discover',
@@ -200,7 +200,7 @@ export function validateBridgeResponse<R = unknown>(
  * from page code), and a stale token from a previous enable cannot reactivate
  * a dormant or already-activated bridge.
  */
-export const BRIDGE_CAPABILITY_SOURCE = 'ghost-preset-toolbar/page-bridge-capability/v1';
+export const BRIDGE_CAPABILITY_SOURCE = 'ghost-cms-template-injector/page-bridge-capability/v1';
 
 export interface BridgeCapabilityMessage {
   capSource: string;

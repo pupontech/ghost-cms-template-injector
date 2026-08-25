@@ -59,12 +59,12 @@ describe('ui-popup-main — status summary', () => {
       sendMessage: async () =>
         capability
           ? ({
-              source: 'ghost-preset-toolbar/popup/v1',
+              source: 'ghost-cms-template-injector/popup/v1',
               ok: true,
               result: { supported: true, capability },
             } as never)
           : ({
-              source: 'ghost-preset-toolbar/popup/v1',
+              source: 'ghost-cms-template-injector/popup/v1',
               ok: false,
               error: 'UNSUPPORTED_CAPABILITY',
             } as never),
@@ -175,7 +175,7 @@ describe('ui-popup-main — active tab resolution + runtime', () => {
   it('buildPopupRuntime forwards sendMessage to the resolved tab only', async () => {
     const sendMessage = vi
       .fn()
-      .mockResolvedValue({ source: 'ghost-preset-toolbar/popup/v1', ok: true });
+      .mockResolvedValue({ source: 'ghost-cms-template-injector/popup/v1', ok: true });
     const api = { tabs: { query: vi.fn(), sendMessage } };
     const runtime = buildPopupRuntime(api as never, {
       tabId: '7',

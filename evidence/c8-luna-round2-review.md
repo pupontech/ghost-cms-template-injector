@@ -1,7 +1,7 @@
 # C8 Luna round-two execution review
 
 Date: 2026-08-24
-Worktree: `/root/ghost-research/ghost-preset-toolbar/.worktrees/t_eacca232`
+Worktree: `/root/ghost-research/ghost-cms-template-injector/.worktrees/t_eacca232`
 Reviewed commit at start: `f0800910dda970bc0a10d49af59c3da10cc0f82c`
 
 ## Verdict
@@ -10,7 +10,7 @@ Reviewed commit at start: `f0800910dda970bc0a10d49af59c3da10cc0f82c`
 
 ## What passed
 
-- Read `AGENTS.md`, `GHOST_PRESET_TOOLBAR_DECISION.md`, and `GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md`.
+- Read `AGENTS.md`, `GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md`, and `GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md`.
 - Production registration wiring is present in `src/host-permission.ts`: registration occurs only after an explicit permission request succeeds, with separate isolated and MAIN registrations scoped to the exact normalized installation `/ghost/*` match. Revoke unregisters both IDs and clears consent.
 - `src/content-script-main.ts` mints a per-document token in the isolated context, activates the MAIN bridge, and watches `chrome.storage.onChanged` for consent revocation to send deactivation.
 - `src/main-bridge-main.ts` is dormant by default, routes requests through the capability gate, stays silent while dormant, consumes the active token on deactivation, removes its listener on `pagehide`, and refuses replay of consumed tokens.

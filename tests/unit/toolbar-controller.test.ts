@@ -144,7 +144,7 @@ describe('toolbar controller — apply delegation', () => {
       presetId: string;
     };
     expect(sent.op).toBe('apply');
-    expect(sent.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(sent.source).toBe('ghost-cms-template-injector/popup/v1');
     expect(sent.presetId).toBe('p1');
   });
 
@@ -161,7 +161,7 @@ describe('toolbar controller — apply delegation', () => {
   it('surfaces a structured content-script failure instead of treating it as success', async () => {
     const deps = makeDeps({
       sendMessage: vi.fn().mockResolvedValue({
-        source: 'ghost-preset-toolbar/popup/v1',
+        source: 'ghost-cms-template-injector/popup/v1',
         ok: false,
         error: 'BLOCKED: editor is saving',
       }),
@@ -179,13 +179,13 @@ describe('toolbar controller — apply delegation', () => {
     const sendMessage = vi
       .fn()
       .mockResolvedValueOnce({
-        source: 'ghost-preset-toolbar/popup/v1',
+        source: 'ghost-cms-template-injector/popup/v1',
         ok: false,
         error: 'NEEDS_PROMPT',
         result: [{ field: 'body', question: 'Replace the existing body?' }],
       })
       .mockResolvedValueOnce({
-        source: 'ghost-preset-toolbar/popup/v1',
+        source: 'ghost-cms-template-injector/popup/v1',
         ok: true,
         result: { saved: true },
       });
@@ -247,7 +247,7 @@ describe('toolbar controller — apply delegation', () => {
 
 describe('toolbar controller — accessibility contract', () => {
   it('exposes a stable ARIA label constant', () => {
-    expect(TOOLBAR_ARIA_LABEL).toMatch(/preset/i);
+    expect(TOOLBAR_ARIA_LABEL).toMatch(/ghost-cms template injector/i);
   });
 
   it('exposes preset rows carrying id, name, and a possibly-empty icon', async () => {

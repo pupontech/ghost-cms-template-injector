@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Ghost Preset Toolbar",
-  "version": "0.2.1",
-  "description": "Preset toolbar for Ghost Admin. Phase-4: popup editor detection, options CRUD, and an optional floating preset toolbar.",
+  "name": "Ghost-CMS Template Injector",
+  "version": "0.2.2",
+  "description": "Injects validated CMS templates (presets) into Ghost Admin posts and pages: local template management, an optional injected toolbar, explicit per-installation host consent, and Ghost-native saves.",
   "minimum_chrome_version": "116",
   "action": {
-    "default_title": "Ghost Preset Toolbar",
+    "default_title": "Ghost-CMS Template Injector",
     "default_popup": "popup/popup.html"
   },
   "background": {

@@ -111,7 +111,7 @@ describe('content-script → bridge → ghost-state integration', () => {
   it('discovers capability through the real bridge protocol', async () => {
     const { cs } = makeIntegratedScript(makeSurface());
     const reply = (await cs.handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'discover',
     })) as Record<string, unknown>;
     expect(reply.ok).toBe(true);
@@ -122,7 +122,7 @@ describe('content-script → bridge → ghost-state integration', () => {
   it('applies a preset atomically through discover→snapshot→plan→save', async () => {
     const { cs, surface } = makeIntegratedScript(makeSurface());
     const reply = (await cs.handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'apply',
       presetId: 'software-review',
     })) as Record<string, unknown>;

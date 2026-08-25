@@ -106,7 +106,10 @@ describe('simplified options form', () => {
 
     await expect(handleExport({ rt, view })).resolves.toBeUndefined();
     expect(exportPresets).toHaveBeenCalledWith([preset]);
-    expect(download).toHaveBeenCalledWith('ghost-preset-toolbar-presets.json', '{"presets":[]}');
+    expect(download).toHaveBeenCalledWith(
+      'ghost-cms-template-injector-presets.json',
+      '{"presets":[]}',
+    );
   });
 
   it('creates a preset with only name, template text, and tags', () => {

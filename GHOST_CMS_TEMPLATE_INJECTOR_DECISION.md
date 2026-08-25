@@ -343,7 +343,7 @@ Why:
 
 ## 11. Implementation companion
 
-The executable build workflow is maintained separately in [`GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md`](./GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md). It defines:
+The executable build workflow is maintained separately in [`GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md`](./GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md). It defines:
 
 - the mandatory Phase-0 API and MAIN-world feasibility spikes;
 - the durable Hermes Kanban task graph and review gates;

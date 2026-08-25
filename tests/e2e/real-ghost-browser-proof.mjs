@@ -82,7 +82,7 @@ bws.on('message', (data) => {
     const txt = (m.params.args || []).map((a) => a.value ?? a.description ?? '').join(' ');
     // Surface content-script diagnostics and page errors without dumping Ghost's
     // own chatty console output.
-    if (txt.includes('ghost-preset-toolbar') || txt.includes('error'))
+    if (txt.includes('ghost-cms-template-injector') || txt.includes('error'))
       console.log('[page]', txt.slice(0, 200));
   } else if (m.method === 'Runtime.exceptionThrown') {
     const d = m.params.exceptionDetails;
@@ -296,7 +296,7 @@ await evaluate(
 await evaluate(
   `(() => {
      const token = 'proof-' + Array.from({length:24}, () => Math.floor(Math.random()*36).toString(36)).join('');
-     window.postMessage({ capSource: 'ghost-preset-toolbar/page-bridge-capability/v1', action: 'activate', token }, '*');
+     window.postMessage({ capSource: 'ghost-cms-template-injector/page-bridge-capability/v1', action: 'activate', token }, '*');
      return true;
    })()`,
   false,
@@ -308,13 +308,13 @@ const discovered = await evaluate(
   `(() => new Promise((resolve) => {
      const nonce = crypto.randomUUID();
      const onMsg = (e) => {
-       if (e.data && e.data.nonce === nonce && e.data.source === 'ghost-preset-toolbar/page-bridge/v1' && e.data.ok === true) {
+       if (e.data && e.data.nonce === nonce && e.data.source === 'ghost-cms-template-injector/page-bridge/v1' && e.data.ok === true) {
          window.removeEventListener('message', onMsg);
          resolve(e.data);
        }
      };
      window.addEventListener('message', onMsg);
-     window.postMessage({ v: 1, source: 'ghost-preset-toolbar/page-bridge/v1', op: 'discover', nonce, payload: {} }, '*');
+     window.postMessage({ v: 1, source: 'ghost-cms-template-injector/page-bridge/v1', op: 'discover', nonce, payload: {} }, '*');
      setTimeout(() => { window.removeEventListener('message', onMsg); resolve(null); }, 5000);
    }))()`,
   true,
@@ -334,7 +334,7 @@ const applyResult = await evaluate(
        20000,
      );
      window.__sendRuntime(
-       { source: 'ghost-preset-toolbar/popup/v1', op: 'apply', presetId: 'software-review' },
+       { source: 'ghost-cms-template-injector/popup/v1', op: 'apply', presetId: 'software-review' },
      ).then((r) => { clearTimeout(t); resolve(r); });
    }))()`,
   true,

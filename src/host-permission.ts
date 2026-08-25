@@ -68,7 +68,7 @@ export const CONTENT_SCRIPT_FILES = ['dist/content-script.js', 'dist/toolbar.js'
 export const MAIN_WORLD_BRIDGE_FILE = 'dist/bridge.js';
 
 /** Stable registration id so (re)registration is idempotent. */
-export const CONTENT_SCRIPT_REGISTRATION_ID = 'ghost-preset-toolbar-enabled';
+export const CONTENT_SCRIPT_REGISTRATION_ID = 'ghost-cms-template-injector-enabled';
 
 /** MAIN-world bridge registration id (isolated id + `-main` suffix). */
 export const MAIN_WORLD_REGISTRATION_ID = `${CONTENT_SCRIPT_REGISTRATION_ID}-main`;

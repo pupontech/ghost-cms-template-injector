@@ -23,7 +23,7 @@ describe('MAIN bridge entry inbound filter (C3 response-echo guard)', () => {
   it('ignores messages that only match source+version but are not requests', () => {
     // Pre-fix filter keyed on loose source/v checks; a response-sibling object
     // with matching source/v (but no valid op/nonce/payload) must be dropped.
-    const loose = { v: 1, source: 'ghost-preset-toolbar/page-bridge/v1' };
+    const loose = { v: 1, source: 'ghost-cms-template-injector/page-bridge/v1' };
     expect(isPageBridgeInbound(loose)).toBe(false);
   });
 

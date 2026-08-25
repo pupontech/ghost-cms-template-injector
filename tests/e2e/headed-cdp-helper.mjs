@@ -16,7 +16,7 @@ export async function launchHeadedChromium(opts = {}) {
   const {
     port = DEFAULT_PORT,
     extensionRoot = process.cwd(),
-    userDataDir = '/tmp/gpt-eacca232-headed-profile',
+    userDataDir = '/tmp/gcti-eacca232-headed-profile',
     display = ':102',
     extraArgs = [],
   } = opts;

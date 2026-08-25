@@ -227,8 +227,8 @@ if (isBrowserContext()) {
   const doc = globalThis.document;
   if (doc) {
     doc.addEventListener('DOMContentLoaded', () => {
-      const statusEl = doc.getElementById('gpt-status');
-      const listEl = doc.getElementById('gpt-preset-list');
+      const statusEl = doc.getElementById('gcti-status');
+      const listEl = doc.getElementById('gcti-preset-list');
       if (statusEl && listEl) {
         void initPopup(chrome, {
           statusEl: statusEl as unknown as RenderEl,

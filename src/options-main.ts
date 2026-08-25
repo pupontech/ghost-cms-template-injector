@@ -371,7 +371,7 @@ export async function handleExport(deps: OptionsControllerDeps): Promise<void> {
   const presets = await rt.loadPresets();
   const json = exportPresetsToString(rt, presets);
   view.exportArea.value = json;
-  view.download('ghost-preset-toolbar-presets.json', json);
+  view.download('ghost-cms-template-injector-presets.json', json);
   setStatus(view, `Exported ${presets.length} preset(s).`);
 }
 

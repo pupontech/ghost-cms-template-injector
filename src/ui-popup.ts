@@ -26,7 +26,7 @@ import { detectEditorUrl } from './route-detection';
 import type { Preset } from './preset-schema';
 
 /** Identity stamped on every popup→content message and accepted on replies. */
-export const POPUP_MESSAGE_SOURCE = 'ghost-preset-toolbar/popup/v1';
+export const POPUP_MESSAGE_SOURCE = 'ghost-cms-template-injector/popup/v1';
 
 /** Operations the popup is permitted to send to the content script. */
 export type PopupOperation = 'discover' | 'apply';

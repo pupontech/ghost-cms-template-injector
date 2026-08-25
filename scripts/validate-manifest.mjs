@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Manifest validation for the Ghost Preset Toolbar. Enforces the Phase-4
+// Manifest validation for the Ghost-CMS Template Injector. Enforces the Phase-4
 // security contract: MV3 only, scoped permissions, NO static wildcard content
 // match, consent-gated optional host permissions, and dynamic content-script
 // registration. Built dist artifacts must contain no chrome.tabs (the toolbar

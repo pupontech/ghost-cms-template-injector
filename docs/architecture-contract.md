@@ -1,4 +1,4 @@
-# Gate-0 Architecture Contract — Ghost Preset Toolbar
+# Gate-0 Architecture Contract — Ghost-CMS Template Injector
 
 Status: provisional until both feasibility spikes pass, independent review completes, and the architecture gate approves. This document defines contracts, not a claim that private Ghost editor access is feasible.
 

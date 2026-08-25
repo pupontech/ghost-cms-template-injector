@@ -12,8 +12,8 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
   it('keeps popup status live and preset controls keyboard-operable', () => {
     const html = read('popup/popup.html');
     expect(html).toContain('<html lang="en">');
-    expect(html).toMatch(/id="gpt-status" role="status"/);
-    expect(html).toContain('<ul id="gpt-preset-list"></ul>');
+    expect(html).toMatch(/id="gcti-status" role="status"/);
+    expect(html).toContain('<ul id="gcti-preset-list"></ul>');
     expect(html).toContain('<script type="module" src="../dist/popup.js"></script>');
     expect(read('src/ui-popup-main.ts')).toContain("button.setAttribute('type', 'button')");
   });

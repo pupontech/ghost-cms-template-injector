@@ -279,7 +279,7 @@ export async function savePreset(input: unknown): Promise<Preset> {
  */
 export function exportPresets(presets: Preset[]): string {
   return JSON.stringify(
-    { kind: 'ghost-preset-toolbar-presets', schemaVersion: PRESET_SCHEMA_VERSION, presets },
+    { kind: 'ghost-cms-template-injector-presets', schemaVersion: PRESET_SCHEMA_VERSION, presets },
     null,
     2,
   );

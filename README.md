@@ -1,4 +1,4 @@
-# Ghost Preset Toolbar
+# Ghost-CMS Template Injector
 
 > **WARNING: COMPLETELY VIBE CODED**
 
@@ -7,18 +7,9 @@ No credentials are stored!!!
 
 A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management, an optional injected toolbar, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
 
-
-
-
 <img width="834" height="1038" alt="Screenshot 2026-08-25 160140" src="https://github.com/user-attachments/assets/654fdc54-071a-4e5b-9a19-44d4afb8d013" />
 <img width="1571" height="1166" alt="Screenshot 2026-08-25 160210" src="https://github.com/user-attachments/assets/f5ae2e79-ee9c-441a-a142-b3b4068d9e77" />
 <img width="536" height="973" alt="Screenshot 2026-08-25 160452" src="https://github.com/user-attachments/assets/0e348152-423a-460f-aae8-6a6a2c4b886a" />
-
-
-
-
-
-
 
 ## Security model
 
@@ -89,8 +80,6 @@ You can also move presets between machines with **Export** / **Import** (JSON) a
 - `presets/presets.json` — read-only bundled seed presets.
 - `tests/` — unit, contract, accessibility, and real-browser proof harnesses.
 - `evidence/` — redacted release evidence; never place credentials here.
-
-
 
 ## Release state
 

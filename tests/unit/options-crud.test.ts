@@ -62,7 +62,7 @@ function makeRuntime(initial: Preset[] = []): {
       return presets;
     }),
     exportPresets: vi.fn((presets: Preset[]) =>
-      JSON.stringify({ kind: 'ghost-preset-toolbar-presets', presets }),
+      JSON.stringify({ kind: 'ghost-cms-template-injector-presets', presets }),
     ),
   };
   return { rt, store };

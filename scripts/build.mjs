@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Production build for the Ghost Preset Toolbar: typecheck is run by the caller
+// Production build for the Ghost-CMS Template Injector: typecheck is run by the caller
 // (`npm run build`), then entry points are bundled with esbuild (already a
 // transitive dependency of vitest, but we require it explicitly) into dist/.
 //

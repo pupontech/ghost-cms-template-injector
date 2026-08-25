@@ -50,7 +50,7 @@ const chromium = spawn(
     '--disable-gpu',
     '--allow-insecure-localhost',
     `--remote-debugging-port=${PORT}`,
-    '--user-data-dir=/tmp/gpt-ef2721b1-profile',
+    '--user-data-dir=/tmp/gcti-ef2721b1-profile',
     '--window-size=1440,900',
     'about:blank',
   ],
@@ -156,7 +156,7 @@ async function bridgeRequest(op, payload, timeoutMs = 8000) {
     v: 1,
     op,
     nonce,
-    source: 'ghost-preset-toolbar/page-bridge/v1',
+    source: 'ghost-cms-template-injector/page-bridge/v1',
     payload,
   });
   // Dispatch as a synthetic MessageEvent with `source: window` (non-null) so

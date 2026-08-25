@@ -4,7 +4,7 @@
 - lexical editor route reached: true
 - MAIN bridge discover ok: true
 - disposable new post created: true
-- apply reply: {"v":1,"source":"ghost-preset-toolbar/page-bridge/v1","nonce":"0d3f02e9-8fe7-433b-aee2-ffbe6812ba19","ok":true,"result":{"resourceId":"6a8aebd8a2a1f6801cccd985","updatedAt":null,"saved":true}}
+- apply reply: {"v":1,"source":"ghost-cms-template-injector/page-bridge/v1","nonce":"0d3f02e9-8fe7-433b-aee2-ffbe6812ba19","ok":true,"result":{"resourceId":"6a8aebd8a2a1f6801cccd985","updatedAt":null,"saved":true}}
 - API persisted post count: 5
 - newest post after apply: {"id":"6a8aebd8a2a1f6801cccd985","custom_excerpt":"A hands-on review.","lexical_children":1,"lexical_empty":false,"tags":["Reviews"]}
 - newest post after idle (autosave window): {"id":"6a8aebd8a2a1f6801cccd985","custom_excerpt":"A hands-on review.","lexical_children":1,"tags":["Reviews"]}

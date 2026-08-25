@@ -78,7 +78,7 @@ export function createToolbarElement(createEl: CreateEl): ToolbarElementHandle {
   const root = createEl('div');
   root.setAttribute('role', 'toolbar');
   root.setAttribute('aria-label', TOOLBAR_ARIA_LABEL);
-  root.setAttribute('data-gpt-toolbar', '1');
+  root.setAttribute('data-gcti-toolbar', '1');
 
   const statusEl = createEl('div');
   statusEl.setAttribute('role', 'status');

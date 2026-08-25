@@ -1,6 +1,6 @@
 # t_eacca232 genuine headed C8 revoke proof — real unpacked MV3 extension, live Ghost 6.60
 
-- headed Chromium under Xvfb display :102, --load-extension=/root/ghost-research/ghost-preset-toolbar/.worktrees/t_eacca232
+- headed Chromium under Xvfb display :102, --load-extension=/root/ghost-research/ghost-cms-template-injector/.worktrees/t_eacca232
 - extension id: gajmcdfjpghaimgofcmnephkhpmfgifa
 - Enable/Disable driven through the real setup page UI with OS-level trusted input;
   the native Chromium permission bubble was accepted by clicking its "Allow" button

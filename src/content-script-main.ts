@@ -81,7 +81,9 @@ function buildCapabilityDeps(): CapabilityClientDeps {
     // treat a truthy result as "awake", otherwise fall back to repeated
     // activation retries (the gateway below) to guarantee delivery.
     isBridgeActive: () => {
-      const hook = (globalThis as Record<string, unknown>)['__ghostPresetToolbarBridgeActive'];
+      const hook = (globalThis as Record<string, unknown>)[
+        '__ghostCmsTemplateInjectorBridgeActive'
+      ];
       return typeof hook === 'function' && Boolean((hook as () => boolean)());
     },
     onConsentRevoked: (cb) => {

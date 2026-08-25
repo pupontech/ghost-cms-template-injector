@@ -1,14 +1,14 @@
-# Ghost Preset Toolbar — Implementation and Multi-Agent Delivery Guide
+# Ghost-CMS Template Injector — Implementation and Multi-Agent Delivery Guide
 
 > **Status:** Build playbook. This document does not claim that the private Ghost editor bridge is already feasible; Phase 0 must prove it.
 >
-> **Architecture authority:** [`GHOST_PRESET_TOOLBAR_DECISION.md`](./GHOST_PRESET_TOOLBAR_DECISION.md)
+> **Architecture authority:** [`GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md`](./GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md)
 >
 > **Target source used for compatibility research:** [`ghost/`](./ghost/)
 
 ## 1. Purpose
 
-This guide turns the technical decision into an executable engineering workflow. A future request such as **“build the Ghost preset toolbar”** should be treated as an instruction to:
+This guide turns the technical decision into an executable engineering workflow. A future request such as **“build the Ghost-CMS Template Injector”** should be treated as an instruction to:
 
 1. use a dedicated Hermes Kanban board as the durable source of task truth;
 2. use named Hermes profiles with different providers/models for distinct roles;
@@ -87,7 +87,7 @@ Run once, from outside an active worker run:
 
 ```bash
 hermes profile create ghostterra --clone \
-  --description "Architect for the Ghost preset toolbar; decomposes work, owns contracts, and synthesizes architecture decisions."
+  --description "Architect for the Ghost-CMS Template Injector; decomposes work, owns contracts, and synthesizes architecture decisions."
 
 hermes profile create ghostox --clone \
   --description "Primary implementation engineer for the Ghost MV3 extension; writes production code and tests in isolated worktrees."
@@ -96,7 +96,7 @@ hermes profile create ghostnim --clone \
   --description "Independent adversarial reviewer for Ghost API, MV3 security, autosave consistency, and code quality."
 
 hermes profile create ghostluna --clone \
-  --description "QA, test, and documentation engineer for the Ghost preset toolbar and browser integration matrix."
+  --description "QA, test, and documentation engineer for the Ghost-CMS Template Injector and browser integration matrix."
 ```
 
 `--clone` copies profile configuration and `.env`; verify what was copied without printing secrets. Configure each alias/profile with the normal Hermes provider wizard or profile alias:
@@ -134,19 +134,19 @@ Create the implementation as a separate repository, not inside the checked-out G
 
 ```text
 /root/ghost-research/
-├── GHOST_PRESET_TOOLBAR_DECISION.md
-├── GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md
+├── GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md
+├── GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md
 ├── AGENTS.md
 ├── ghost/                         # upstream Ghost reference/test target; do not vendor changes
-└── ghost-preset-toolbar/          # new extension repository created during build
+└── ghost-cms-template-injector/          # new extension repository created during build
 ```
 
-Initialize `/root/ghost-research/ghost-preset-toolbar` as Git before dispatching coding cards. Use Kanban `worktree` workspaces for cards that change code. Do not run two workers in the same Git worktree. Research/review cards may use `dir:/root/ghost-research` when they are read-only.
+Initialize `/root/ghost-research/ghost-cms-template-injector` as Git before dispatching coding cards. Use Kanban `worktree` workspaces for cards that change code. Do not run two workers in the same Git worktree. Research/review cards may use `dir:/root/ghost-research` when they are read-only.
 
 Recommended implementation-repository contents:
 
 ```text
-ghost-preset-toolbar/
+ghost-cms-template-injector/
 ├── AGENTS.md                      # copied/adapted project rules
 ├── README.md
 ├── package.json
@@ -180,19 +180,19 @@ After the implementation repository exists:
 
 ```bash
 hermes kanban init
-hermes kanban boards create ghost-preset-toolbar \
-  --name "Ghost Preset Toolbar" \
+hermes kanban boards create ghost-cms-template-injector \
+  --name "Ghost-CMS Template Injector" \
   --description "MV3 Ghost Admin preset toolbar implementation" \
   --icon "👻" \
-  --default-workdir /root/ghost-research/ghost-preset-toolbar \
+  --default-workdir /root/ghost-research/ghost-cms-template-injector \
   --switch
 ```
 
 Use the board slug explicitly in automation:
 
 ```bash
-hermes kanban --board ghost-preset-toolbar list
-hermes kanban --board ghost-preset-toolbar watch
+hermes kanban --board ghost-cms-template-injector list
+hermes kanban --board ghost-cms-template-injector watch
 hermes dashboard
 ```
 
@@ -217,22 +217,22 @@ Even when profile defaults are correct, pin provider/model on critical cards for
 
 ```bash
 # Examples only; replace title/body with the full card specification.
-hermes kanban --board ghost-preset-toolbar create "Architecture and contracts" \
+hermes kanban --board ghost-cms-template-injector create "Architecture and contracts" \
   --assignee ghostterra --provider openai-codex --model gpt-5.6-terra \
   --workspace dir:/root/ghost-research --goal --goal-max-turns 20 \
   --idempotency-key ghost-preset-architecture
 
-hermes kanban --board ghost-preset-toolbar create "Implement preset engine" \
+hermes kanban --board ghost-cms-template-injector create "Implement preset engine" \
   --assignee ghostox --provider openrouter --model stealth/ox-alpha \
   --workspace worktree --branch wt/preset-engine --goal --goal-max-turns 30 \
   --idempotency-key ghost-preset-engine
 
-hermes kanban --board ghost-preset-toolbar create "Adversarial architecture review" \
+hermes kanban --board ghost-cms-template-injector create "Adversarial architecture review" \
   --assignee ghostnim --provider nvidia --model nvidia/nemotron-3-ultra-550b-a55b \
   --workspace worktree --branch wt/architecture-review --goal --goal-max-turns 20 \
   --idempotency-key ghost-preset-architecture-review
 
-hermes kanban --board ghost-preset-toolbar create "Build test fixtures and QA matrix" \
+hermes kanban --board ghost-cms-template-injector create "Build test fixtures and QA matrix" \
   --assignee ghostluna --provider openai-codex --model gpt-5.6-luna \
   --workspace worktree --branch wt/test-matrix --goal --goal-max-turns 25 \
   --idempotency-key ghost-preset-tests
@@ -382,7 +382,7 @@ When a future user asks to build this project, the orchestrator must:
 1. read `AGENTS.md`, the decision document, and this guide;
 2. inspect current files and Git state;
 3. verify all four profiles/providers/models and never expose credentials;
-4. initialize or reuse the `ghost-preset-toolbar` board;
+4. initialize or reuse the `ghost-cms-template-injector` board;
 5. inspect existing cards/idempotency keys before creating anything;
 6. create the dependency graph beginning with Gate 0;
 7. start or verify the gateway dispatcher, or run explicit dispatch passes;
@@ -399,9 +399,9 @@ A normal `delegate_task` may still be used *inside* a Kanban worker for a short,
 Use this from `/root/ghost-research`:
 
 ```text
-Build the Ghost preset toolbar described in GHOST_PRESET_TOOLBAR_DECISION.md.
-Follow AGENTS.md and GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md exactly.
-Use the durable ghost-preset-toolbar Kanban board and the required ghostterra,
+Build the Ghost-CMS Template Injector described in GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md.
+Follow AGENTS.md and GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md exactly.
+Use the durable ghost-cms-template-injector Kanban board and the required ghostterra,
 ghostox, ghostnim, and ghostluna model lanes. Begin with the two mandatory
 feasibility spikes; do not proceed past the architecture gate unless they pass.
 Use isolated Git worktrees, TDD, independent review, real Ghost/browser tests,

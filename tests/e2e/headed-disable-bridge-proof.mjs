@@ -51,12 +51,15 @@ if (!cookieValue) {
 const ADMIN = 'https://localhost:2368/blog/ghost/';
 const ORIGIN_INPUT = 'https://localhost:2368/blog/';
 const EXACT_MATCH = 'https://localhost:2368/blog/ghost/*';
-const EXPECTED_IDS = ['ghost-preset-toolbar-enabled', 'ghost-preset-toolbar-enabled-main'];
+const EXPECTED_IDS = [
+  'ghost-cms-template-injector-enabled',
+  'ghost-cms-template-injector-enabled-main',
+];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await launchHeadedChromium({
   extensionRoot: ROOT,
-  userDataDir: '/tmp/gpt-eacca232-c8qa-profile',
+  userDataDir: '/tmp/gcti-eacca232-c8qa-profile',
   display: ':102',
 });
 const extId = await browser.extensionId();
@@ -224,7 +227,7 @@ async function openEditorTarget(label) {
         window.__capTokens = [];
         window.addEventListener('message', (e) => {
           const d = e.data;
-          if (d && d.capSource === 'ghost-preset-toolbar/page-bridge-capability/v1' && typeof d.token === 'string') {
+          if (d && d.capSource === 'ghost-cms-template-injector/page-bridge-capability/v1' && typeof d.token === 'string') {
             window.__capLog.push({ action: d.action, tokenLen: d.token.length });
             window.__capTokens.push(d.token);
           }
@@ -315,11 +318,11 @@ async function bridgeDiscover(sessionId, token, timeoutMs = 5000) {
       function cleanup() { window.removeEventListener('message', onMsg); clearTimeout(timer); }
       window.addEventListener('message', onMsg);
       if (token) {
-        window.postMessage({ capSource: 'ghost-preset-toolbar/page-bridge-capability/v1',
+        window.postMessage({ capSource: 'ghost-cms-template-injector/page-bridge-capability/v1',
           action: 'activate', token }, '*');
       }
       window.postMessage({ v: 1, op: 'discover', nonce,
-        source: 'ghost-preset-toolbar/page-bridge/v1', payload: {} }, '*');
+        source: 'ghost-cms-template-injector/page-bridge/v1', payload: {} }, '*');
     }))(${JSON.stringify(token)}, ${timeoutMs})`,
     sessionId,
   );
@@ -357,7 +360,7 @@ try {
   check('pre_disable_production_handshake_observed', pre.caps.activations >= 1);
   const preDigest = await tokenDigest(pre.sessionId, 0);
   const toolbarPre = await browser.evaluate(
-    `Boolean(document.querySelector('[data-gpt-toolbar="1"]'))`,
+    `Boolean(document.querySelector('[data-gcti-toolbar="1"]'))`,
     pre.sessionId,
     false,
   );
@@ -395,7 +398,7 @@ try {
   const fresh = await openEditorTarget('fresh-after-disable');
   check('fresh_doc_identity_distinct', fresh.identity.timeOrigin !== pre.identity.timeOrigin);
   const toolbarFresh = await browser.evaluate(
-    `Boolean(document.querySelector('[data-gpt-toolbar="1"]'))`,
+    `Boolean(document.querySelector('[data-gcti-toolbar="1"]'))`,
     fresh.sessionId,
     false,
   );
@@ -412,7 +415,7 @@ try {
   check('re_enable_scoped_registrations_restored', exactlyScoped(regsRe));
   const reTarget = await openEditorTarget('re-enabled');
   const toolbarRe = await browser.evaluate(
-    `Boolean(document.querySelector('[data-gpt-toolbar="1"]'))`,
+    `Boolean(document.querySelector('[data-gcti-toolbar="1"]'))`,
     reTarget.sessionId,
     false,
   );

@@ -32,7 +32,7 @@ function makeDepsWithDiscover(): ContentScriptDeps {
     postMessage: (message) => {
       const reply = {
         v: 1,
-        source: 'ghost-preset-toolbar/page-bridge/v1',
+        source: 'ghost-cms-template-injector/page-bridge/v1',
         nonce: (message as { nonce: string }).nonce,
         ok: true,
         result: { supported: true, capability: { canNativeSave: true } },
@@ -58,7 +58,7 @@ function makeDepsWithDiscoverFailure(): ContentScriptDeps {
           new MessageEvent('message', {
             data: {
               v: 1,
-              source: 'ghost-preset-toolbar/page-bridge/v1',
+              source: 'ghost-cms-template-injector/page-bridge/v1',
               nonce: (message as { nonce: string }).nonce,
               ok: false,
               error: 'TIMEOUT',
@@ -111,17 +111,20 @@ describe('content-script Phase-5 orchestration', () => {
 
   it('replies UNKNOWN_OP for an unsupported popup operation', async () => {
     const cs = createContentScript(makeDeps());
-    const reply = await cs.handleMessage({ source: 'ghost-preset-toolbar/popup/v1', op: 'nope' });
+    const reply = await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'nope',
+    });
     expect(reply).toMatchObject({ ok: false, error: 'UNKNOWN_OP' });
   });
 
   it('discover delegates to the bridge and returns the capability', async () => {
     const cs = createContentScript(makeDepsWithDiscover());
     const reply = (await cs.handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'discover',
     })) as Record<string, unknown>;
-    expect(reply.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(reply.source).toBe('ghost-cms-template-injector/popup/v1');
     expect(reply.ok).toBe(true);
     expect((reply.result as Record<string, unknown>)['capability']).toMatchObject({
       canNativeSave: true,
@@ -130,12 +133,12 @@ describe('content-script Phase-5 orchestration', () => {
 
   it('preserves a discover bridge failure instead of double-wrapping it as success', async () => {
     const reply = await createContentScript(makeDepsWithDiscoverFailure()).handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'discover',
     });
 
     expect(reply).toEqual({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       ok: false,
       error: 'TIMEOUT',
     });
@@ -144,7 +147,7 @@ describe('content-script Phase-5 orchestration', () => {
   it('apply refuses a request missing presetId', async () => {
     const cs = createContentScript(makeDeps());
     const reply = await cs.handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'apply',
     });
     expect(reply).toMatchObject({ ok: false, error: 'MISSING_PRESET_ID' });
@@ -174,7 +177,7 @@ describe('content-script Phase-5 orchestration', () => {
                   new MessageEvent('message', {
                     data: {
                       v: 1,
-                      source: 'ghost-preset-toolbar/page-bridge/v1',
+                      source: 'ghost-cms-template-injector/page-bridge/v1',
                       nonce: reqNonce(message),
                       ok: false,
                       error: err instanceof Error ? 'APPLY_FAILED' : 'APPLY_FAILED',
@@ -195,7 +198,7 @@ describe('content-script Phase-5 orchestration', () => {
       if (op === 'discover') {
         return {
           v: 1,
-          source: 'ghost-preset-toolbar/page-bridge/v1',
+          source: 'ghost-cms-template-injector/page-bridge/v1',
           nonce: reqNonce(msg),
           ok: true,
           result: { supported: true, capability: { canNativeSave: true } },
@@ -207,7 +210,7 @@ describe('content-script Phase-5 orchestration', () => {
       }
       return {
         v: 1,
-        source: 'ghost-preset-toolbar/page-bridge/v1',
+        source: 'ghost-cms-template-injector/page-bridge/v1',
         nonce: reqNonce(msg),
         ok: false,
         error: 'APPLY_FAILED',
@@ -222,21 +225,21 @@ describe('content-script Phase-5 orchestration', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const reply = (await cs.handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'apply',
       presetId: 'x',
     })) as Record<string, unknown>;
 
     spy.mockRestore();
     expect(reply).toBeDefined();
-    expect(reply.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(reply.source).toBe('ghost-cms-template-injector/popup/v1');
     expect(reply.ok).toBe(false);
     expect(String(reply.error)).toMatch(/^APPLY_CRASH|^APPLY_FAILED|^TIMEOUT|^BLOCKED/);
   });
 
   it('apply rejects malformed prompt answers at the runtime trust boundary', async () => {
     const reply = await createContentScript(makeDeps()).handleMessage({
-      source: 'ghost-preset-toolbar/popup/v1',
+      source: 'ghost-cms-template-injector/popup/v1',
       op: 'apply',
       presetId: 'starter-post',
       promptAnswers: { title: 'yes', __proto__: { polluted: true } },

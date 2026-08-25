@@ -29,7 +29,7 @@ import type { DetectedRoute } from './route-detection';
 import { POPUP_MESSAGE_SOURCE, type PopupMessage } from './ui-popup';
 
 /** Stable accessible label for the injected toolbar region. */
-export const TOOLBAR_ARIA_LABEL = 'Ghost preset toolbar';
+export const TOOLBAR_ARIA_LABEL = 'Ghost-CMS Template Injector';
 
 /** A preset row the toolbar renders. `icon` is a string; empty means "no icon". */
 export interface ToolbarPreset {

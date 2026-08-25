@@ -26,7 +26,7 @@ Expected:
 4. Select this repository directory—the directory containing `manifest.json`, not `dist/`.
 5. Record the tested Git commit and Chromium/Ghost versions in your private test notes.
 
-Expected: Chromium loads **Ghost Preset Toolbar** without an extension error.
+Expected: Chromium loads **Ghost-CMS Template Injector** without an extension error.
 
 ## 3. Grant narrowly scoped Ghost access
 

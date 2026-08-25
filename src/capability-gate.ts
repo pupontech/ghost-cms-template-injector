@@ -73,7 +73,7 @@ export function createCapabilityGate(): CapabilityGate {
       kind: 'reject',
       response: {
         v: 1,
-        source: 'ghost-preset-toolbar/page-bridge/v1',
+        source: 'ghost-cms-template-injector/page-bridge/v1',
         nonce: request.nonce,
         ok: false,
         error: 'CAPABILITY_REQUIRED',

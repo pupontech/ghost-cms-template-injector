@@ -1,4 +1,4 @@
-# Ghost Preset Toolbar Project Rules
+# Ghost-CMS Template Injector Project Rules
 
 These instructions apply to work started from `/root/ghost-research`.
 
@@ -6,17 +6,17 @@ These instructions apply to work started from `/root/ghost-research`.
 
 Before planning or editing, read:
 
-1. `GHOST_PRESET_TOOLBAR_DECISION.md` — authoritative technical architecture.
-2. `GHOST_PRESET_TOOLBAR_IMPLEMENTATION_GUIDE.md` — authoritative delivery, Kanban, model-lane, testing, and review workflow.
+1. `GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md` — authoritative technical architecture.
+2. `GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md` — authoritative delivery, Kanban, model-lane, testing, and review workflow.
 3. Relevant source under `ghost/` for every Ghost behavior relied upon.
 
 If the decision and implementation guide conflict, stop and resolve the conflict explicitly before coding.
 
 ## Mandatory orchestration for a build request
 
-When the user asks to build, implement, scaffold, or finish the Ghost preset toolbar:
+When the user asks to build, implement, scaffold, or finish the Ghost-CMS Template Injector:
 
-- Use the durable Hermes board `ghost-preset-toolbar`; do not manage the main build only with an ephemeral `delegate_task` swarm or a private TODO list.
+- Use the durable Hermes board `ghost-cms-template-injector`; do not manage the main build only with an ephemeral `delegate_task` swarm or a private TODO list.
 - Inspect existing board cards and idempotency keys before creating cards.
 - Use named profiles and pin the requested provider/model on critical cards:
   - `ghostterra`: `openai-codex` / `gpt-5.6-terra` — architecture, decomposition, synthesis.

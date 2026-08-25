@@ -7,7 +7,7 @@
  * Ghost Admin editor URL (https://localhost:2368/blog/ghost/#/editor/post).
  * It captures console errors/page exceptions and asserts:
  *   1. no `Failed to fetch` / TypeError while the toolbar loads presets;
- *   2. the toolbar actually mounts: a [data-gpt-toolbar="1"] element exists.
+ *   2. the toolbar actually mounts: a [data-gcti-toolbar="1"] element exists.
  *
  * This is the exact failure mode from the release matrix (toolbar never
  * mounted, console showed `TypeError: Failed to fetch` from toolbar bootstrap).
@@ -33,7 +33,7 @@ const chromium = spawn(
     '--disable-gpu',
     '--allow-insecure-localhost',
     `--remote-debugging-port=${PORT}`,
-    '--user-data-dir=/tmp/gpt-mount-profile',
+    '--user-data-dir=/tmp/gcti-mount-profile',
     'about:blank',
   ],
   { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -157,13 +157,13 @@ await evaluate(
 let mounted = false;
 for (let i = 0; i < 50 && !mounted; i++) {
   await sleep(100);
-  mounted = await evaluate(`!!document.querySelector('[data-gpt-toolbar="1"]')`, false);
+  mounted = await evaluate(`!!document.querySelector('[data-gcti-toolbar="1"]')`, false);
 }
 
 const failedToFetch = consoleErrors.some((e) => /failed to fetch|typeerror/i.test(e));
 
 console.log('--- toolbar mount proof ---');
-console.log('toolbar mounted [data-gpt-toolbar="1"]:', mounted);
+console.log('toolbar mounted [data-gcti-toolbar="1"]:', mounted);
 console.log('console/page errors captured:', consoleErrors.length);
 for (const e of consoleErrors.slice(0, 8)) console.log('   !', e.split('\n')[0]);
 console.log('contains "Failed to fetch":', failedToFetch);

@@ -110,8 +110,8 @@ describe('createToolbarElement', () => {
     const handle = createToolbarElement(() => makeEl());
     const root = handle.root as unknown as TestEl;
     expect(root.attrs['role']).toBe('toolbar');
-    expect(root.attrs['aria-label']).toMatch(/preset/i);
-    expect(root.attrs['data-gpt-toolbar']).toBeDefined();
+    expect(root.attrs['aria-label']).toMatch(/ghost-cms template injector/i);
+    expect(root.attrs['data-gcti-toolbar']).toBeDefined();
     expect(statusRegion(root).attrs['role']).toBe('status');
     expect(statusRegion(root).attrs['aria-live']).toBe('polite');
     expect((handle.listEl as unknown as TestEl).attrs['aria-label']).toBe('Presets');
@@ -210,7 +210,7 @@ describe('initToolbar — apply delegation through the mounted toolbar', () => {
       presetId: string;
     };
     expect(sent.op).toBe('apply');
-    expect(sent.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(sent.source).toBe('ghost-cms-template-injector/popup/v1');
     expect(sent.presetId).toBe('p2');
   });
 
