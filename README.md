@@ -2,7 +2,8 @@
 
 > **WARNING: COMPLETELY VIBE CODED**
 
-This experimental pre-1.0 project may change or break; use it only with disposable test content.
+TLDR - Gives you full post templates withought touching .hbs files and will apply your tags and excerpts as well in the native ghost editor.
+No credentials are stored!!!
 
 A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management, an optional injected toolbar, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
 
@@ -48,10 +49,6 @@ Do not enter `/ghost/` itself in the setup field; enter the installation base UR
 
 ## Test the release
 
-Follow [`TESTING.md`](TESTING.md) for the owner acceptance procedure. It covers build verification, enabling narrowly scoped access, applying and persisting a preset, Disable behavior in current and new Admin documents, and re-enable behavior.
-
-## Author body templates in the extension
-
 The extension ships with one bundled default, **Starter Post**. Make it yours:
 
 1. Open the extension **Options** page.
@@ -80,23 +77,7 @@ You can also move presets between machines with **Export** / **Import** (JSON) a
 - `tests/` — unit, contract, accessibility, and real-browser proof harnesses.
 - `evidence/` — redacted release evidence; never place credentials here.
 
-## Useful commands
 
-| Command                     | Purpose                                           |
-| --------------------------- | ------------------------------------------------- |
-| `npm run build`             | Type-check and produce production `dist/` bundles |
-| `npm run build:debug`       | Produce `dist/` bundles with external source maps |
-| `npm test`                  | Run the Vitest suite                              |
-| `npm run format:check`      | Check Prettier formatting                         |
-| `npm run lint`              | Run ESLint                                        |
-| `npm run typecheck`         | Run strict TypeScript checks                      |
-| `npm run manifest:validate` | Validate MV3 and built artifact contracts         |
-| `npm run audit:high`        | Fail on high/critical dependency findings         |
-| `npm run verify`            | Run every automated release gate                  |
-
-## Privacy
-
-Use a disposable test post/page when possible. Never commit cookies, login details, API tokens, CSRF values, TLS private keys, Chromium profiles, or screenshots containing private content. See [`SECURITY.md`](SECURITY.md).
 
 ## Release state
 
