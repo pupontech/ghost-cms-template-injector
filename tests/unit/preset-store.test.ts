@@ -115,6 +115,15 @@ describe('listPresets — defaults + local overrides', () => {
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
+
+  it('fails closed to bundled defaults when chrome.storage.local cannot be read', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    storage.api.get.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(listPresets()).resolves.toEqual(bundledSeedPresets());
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });
 
 describe('savePreset — validated atomic persistence', () => {
@@ -151,6 +160,23 @@ describe('savePreset — validated atomic persistence', () => {
     for (const call of storage.api.set.mock.calls) {
       expect(Object.keys(call[0] as StorageArea)).toEqual([STORAGE_KEY]);
     }
+  });
+
+  it('rejects a stored override document beyond the import size budget before writing', async () => {
+    chromeStub(storedDoc());
+    const before = structuredClone(storage.area);
+    const oversized = {
+      ...seedPreset(),
+      content: {
+        source: 'inline-html' as const,
+        mode: 'replace' as const,
+        html: 'x'.repeat(MAX_IMPORT_BYTES),
+      },
+    };
+
+    await expect(savePreset(oversized)).rejects.toThrow(/stored preset document too large/);
+    expect(storage.area).toEqual(before);
+    expect(storage.api.set).not.toHaveBeenCalled();
   });
 });
 

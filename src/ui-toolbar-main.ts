@@ -54,6 +54,8 @@ export interface ToolbarEnv {
   onHashChange: (cb: () => void) => void;
   /** Send the apply `PopupMessage` to the active tab's content script. */
   sendMessage: (message: PopupMessage) => Promise<unknown>;
+  /** Ask a prompt-mode overwrite question. */
+  confirmPrompt?: (question: string, field: string) => boolean | Promise<boolean>;
   /** Load validated presets (bundled seeds + chrome.storage overrides). */
   listPresets: () => Promise<ToolbarPreset[]>;
   /** Create a DOM element. */
@@ -125,6 +127,7 @@ export async function initToolbar(env: ToolbarEnv): Promise<void> {
     detectRoute: (): DetectedRoute => detectGhostRoute(env.getHref(), env.getHash()),
     listPresets: env.listPresets,
     sendMessage: env.sendMessage,
+    confirmPrompt: env.confirmPrompt,
   };
 
   const controller = createToolbarController(deps);
@@ -199,6 +202,7 @@ if (isBrowserContext()) {
       async sendMessage(message: PopupMessage) {
         return chrome.runtime.sendMessage(message);
       },
+      confirmPrompt: (question) => globalThis.confirm(question),
       listPresets: () =>
         import('./preset-store').then((m) =>
           m.listPresets().then((presets) =>

@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   deriveIdFromName,
+  nextAvailablePresetId,
   readFormPreset,
   fillFormForEdit,
+  handleDelete,
+  handleExport,
   type OptionsView,
   type RenderInput,
 } from '../../src/options-main';
-import type { OptionsPresetView } from '../../src/options-crud';
+import type { OptionsPresetView, OptionsRuntime } from '../../src/options-crud';
 import type { Preset } from '../../src/preset-schema';
 
 function input(value = ''): RenderInput {
@@ -54,10 +57,56 @@ function formView(): OptionsView {
   } as OptionsView;
 }
 
+function runtime(overrides: Partial<OptionsRuntime> = {}): OptionsRuntime {
+  return {
+    loadPresets: async () => [],
+    loadBundledDefaults: async () => [],
+    savePreset: async (value) => value as Preset,
+    importPresetsIntoStore: async () => [],
+    exportPresets: () => '[]',
+    ...overrides,
+  };
+}
+
 describe('simplified options form', () => {
   it('derives a slug id from the visible name for new presets', () => {
     expect(deriveIdFromName('Review checklist!')).toBe('review-checklist');
     expect(deriveIdFromName('   ')).toMatch(/^preset-/);
+  });
+
+  it('creates a bounded unique id instead of shadowing an existing preset', () => {
+    expect(nextAvailablePresetId('life-update', new Set(['life-update', 'life-update-2']))).toBe(
+      'life-update-3',
+    );
+    const long = 'x'.repeat(64);
+    expect(nextAvailablePresetId(long, new Set([long]))).toBe(`${'x'.repeat(62)}-2`);
+  });
+
+  it('surfaces storage failures when deleting instead of rejecting the UI handler', async () => {
+    const view = formView();
+    const rt = runtime({ loadPresets: vi.fn().mockRejectedValue(new Error('storage offline')) });
+
+    await expect(handleDelete({ rt, view }, 'missing', false)).resolves.toBeUndefined();
+    expect(view.statusEl.textContent).toContain('Delete failed: storage offline');
+    expect(view.statusEl.getAttribute('role')).toBe('alert');
+  });
+
+  it('exports through the injected runtime instead of bypassing the testable storage seam', async () => {
+    const view = formView();
+    const download = vi.fn();
+    view.download = download;
+    const preset: Preset = {
+      schemaVersion: 1,
+      id: 'export-me',
+      name: 'Export me',
+      content: { source: 'inline-text', mode: 'replace', text: 'Body' },
+    };
+    const exportPresets = vi.fn(() => '{"presets":[]}');
+    const rt = runtime({ loadPresets: async () => [preset], exportPresets });
+
+    await expect(handleExport({ rt, view })).resolves.toBeUndefined();
+    expect(exportPresets).toHaveBeenCalledWith([preset]);
+    expect(download).toHaveBeenCalledWith('ghost-preset-toolbar-presets.json', '{"presets":[]}');
   });
 
   it('creates a preset with only name, template text, and tags', () => {

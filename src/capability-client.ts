@@ -2,9 +2,10 @@
  * Isolated-world capability client for the MAIN bridge (C8 revoke hardening).
  *
  * After the extension enables the toolbar, each Ghost Admin document runs this
- * client from the isolated content script: it mints a fresh unguessable token
- * (extension context — page MAIN-world code never sees generation), posts the
- * one-time ACTIVATION envelope to `window`, and holds the token. When consent
+ * client from the isolated content script: it mints a fresh unguessable token,
+ * posts the one-time ACTIVATION envelope to `window`, and holds the token. The
+ * token prevents stale replay but is observable to same-page MAIN-world code;
+ * this is a lifecycle gate, not a page-code confidentiality boundary. When consent
  * is revoked (Disable), the controller writes null consent to
  * chrome.storage.local; the client observes that via the injected watcher and
  * posts DEACTIVATION with the exact held token, returning any already-injected

@@ -29,8 +29,18 @@
  */
 
 import { createGhostStateAdapter, GhostStateException, type GhostLiveSurface } from './ghost-state';
+import type { GhostSnapshot } from './ghost-state';
 import { createPageBridgeResponder, type PageBridgeResponderEnv } from './page-bridge';
 import type { BridgeResponse } from './bridge-protocol';
+
+/**
+ * Native-save observation window: how long the fire-and-forget save path polls
+ * for the editor to become clean before giving up (slow saves on large posts).
+ * MUST remain SHORTER than the isolated client's reply timeout
+ * (`BRIDGE_TIMEOUT_MS` in `page-bridge.ts`) so a slow save is not cut short by
+ * a client-side TIMEOUT. The invariant is pinned by a contract test.
+ */
+export const NATIVE_SAVE_OBSERVE_MS = 10_000;
 
 /* ------------------------------------------------------------------ */
 /* Real Ghost Ember object discovery (C2, proven in spike t_4f22448d)   */
@@ -108,6 +118,24 @@ let lastKnown: { resourceId: string | null; updatedAt: string | null } = {
 };
 
 /**
+ * Opaque per-record identity tokens. A single monotonically-increasing counter
+ * stamps each distinct live record object with a stable string token, so the
+ * adapter (and the stale-editor guard) can tell when the editor has navigated
+ * to a different record even when `id` is null (unsaved draft) or unchanged.
+ */
+const recordIdentities = new WeakMap<object, string>();
+let identityCounter = 0;
+
+function recordIdentityToken(rec: GhostModelLike): string {
+  const key = rec as unknown as object;
+  const existing = recordIdentities.get(key);
+  if (existing !== undefined) return existing;
+  const token = `record:${++identityCounter}`;
+  recordIdentities.set(key, token);
+  return token;
+}
+
+/**
  * Build the C3 responder environment that wires the real Ghost surface into the
  * versioned `ghost-state` adapter. Exposed purely as a `handle(message)` so the
  * entry layer (`ui-toolbar-main`/content-script) can install it as the MAIN
@@ -128,6 +156,24 @@ export function createGhostMainBridge(): {
       const rec = getRecord(ctrl);
       const id = (rec?.get?.('id') as string | undefined) ?? rec?.id ?? null;
       return id;
+    },
+    getRecordIdentity(): string | null {
+      const rec = getRecord(getEditorController(findEmberOwner()));
+      if (!rec) return null;
+      return recordIdentityToken(rec);
+    },
+    isSaving(): boolean {
+      const ctrl = getEditorController(findEmberOwner());
+      const rec = getRecord(ctrl);
+      // Ember Data marks the record while its save task is running.
+      if (typeof rec?.get === 'function' && rec.get('isSaving') === true) return true;
+      // Ghost's lexical-editor controller exposes save/autosave tasks whose
+      // `isRunning` flips true while a native save or autosave is in flight.
+      const tasks = ctrl as unknown as {
+        saveTask?: { isRunning?: boolean };
+        autosaveTask?: { isRunning?: boolean };
+      };
+      return Boolean(tasks?.saveTask?.isRunning) || Boolean(tasks?.autosaveTask?.isRunning);
     },
     hasRecord(): boolean {
       return getRecord(getEditorController(findEmberOwner())) !== null;
@@ -290,8 +336,9 @@ export function createGhostMainBridge(): {
       } else {
         // Fire-and-forget save path: poll for the editor to become clean
         // instead of a fixed sleep, so slow saves (large posts) are not cut
-        // short. Give up after 10s and let the dirty-check fail closed.
-        const deadline = Date.now() + 10_000;
+        // short. Bound the poll by NATIVE_SAVE_OBSERVE_MS and let the dirty
+        // check fail closed if it still has not persisted.
+        const deadline = Date.now() + NATIVE_SAVE_OBSERVE_MS;
         while (Date.now() < deadline) {
           await new Promise<void>((res) => setTimeout(res, 100));
           if (!getRecord(ctrl)?.hasDirtyAttributes) break;
@@ -370,7 +417,11 @@ export function createGhostMainBridge(): {
     snapshot: () => adapter.snapshot(),
     planApply: (payload) =>
       adapter.planApply(payload['plan'] as Parameters<typeof adapter.planApply>[0]),
-    apply: (payload) => adapter.apply(payload['plan'] as Parameters<typeof adapter.apply>[0]),
+    apply: (payload) =>
+      adapter.apply(
+        payload['plan'] as Parameters<typeof adapter.apply>[0],
+        payload['expected'] as GhostSnapshot | undefined,
+      ),
     save: () => surface.nativeSave().then((r) => r),
     rollback: (payload) =>
       adapter.rollback(payload['token'] as Parameters<typeof adapter.rollback>[0]),

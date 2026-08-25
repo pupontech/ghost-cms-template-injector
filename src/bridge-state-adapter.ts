@@ -33,11 +33,12 @@ export function createBridgeStateAdapter(bridge: PageBridge): ApplyPipelineAdapt
       });
     },
 
-    apply(plan: ApplicationPlan): Promise<ApplyResult> {
-      return bridge.request('apply', { plan }).then((r) => {
+    apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult> {
+      return bridge.request('apply', { plan, expected }).then((r) => {
         if (r.ok) return r.result as ApplyResult;
-        // Distinguish ROLLBACK_FAILED — the error message is the bridge code,
-        // so a UI layer can warn the user the editor may be left inconsistent.
+        // Distinguish ROLLBACK_FAILED / STALE_EDITOR / BUSY — the error
+        // message is the bridge code, so a UI layer can warn the user the
+        // editor may be left inconsistent or that a retry is required.
         throw new Error(r.error);
       });
     },

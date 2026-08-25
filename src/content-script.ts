@@ -58,6 +58,21 @@ export interface ApplyReply {
   error?: string;
 }
 
+const PROMPT_FIELDS = new Set(['body', 'excerpt', 'customTemplate', 'tags', 'title']);
+
+function parsePromptAnswers(value: unknown): Partial<Record<string, boolean>> | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return null;
+  const parsed: Record<string, boolean> = {};
+  for (const [key, answer] of Object.entries(value)) {
+    if (!PROMPT_FIELDS.has(key) || typeof answer !== 'boolean') return null;
+    parsed[key] = answer;
+  }
+  return parsed;
+}
+
 export function createContentScript(deps: ContentScriptDeps): ContentScriptHandle {
   let initialized = false;
   let bridge: PageBridge | null = null;
@@ -99,20 +114,12 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     }
   }
 
-  async function discover(): Promise<unknown> {
+  async function discover(): Promise<ApplyReply> {
     const reply = await getBridge().request('discover', {});
     if (!reply.ok) {
-      // Fail closed with the actual bridge error (e.g. TIMEOUT when the MAIN
-      // bridge is still dormant). Reporting ok:true here masked capability
-      // failures as a successful-but-unsupported probe and forced the caller to
-      // wait the full 5s bridge timeout before surfacing a confusing reason.
-      return {
-        source: POPUP_MESSAGE_SOURCE,
-        ok: false,
-        error: reply.error,
-      };
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: reply.error };
     }
-    return reply.result;
+    return { source: POPUP_MESSAGE_SOURCE, ok: true, result: reply.result };
   }
 
   async function apply(
@@ -176,15 +183,18 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     }
     const op = msg['op'];
     if (op === 'discover') {
-      const result = await discover();
-      return { source: POPUP_MESSAGE_SOURCE, ok: true, result };
+      return discover();
     }
     if (op === 'apply') {
       const presetId = msg['presetId'];
       if (typeof presetId !== 'string') {
         return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_PRESET_ID' };
       }
-      return apply(presetId, msg['promptAnswers'] as Partial<Record<string, boolean>> | undefined);
+      const promptAnswers = parsePromptAnswers(msg['promptAnswers']);
+      if (promptAnswers === null) {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'INVALID_PROMPT_ANSWERS' };
+      }
+      return apply(presetId, promptAnswers);
     }
     return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'UNKNOWN_OP' };
   }

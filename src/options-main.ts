@@ -153,6 +153,23 @@ export function deriveIdFromName(name: string): string {
   return slug.length > 0 ? slug : `preset-${Date.now()}`;
 }
 
+/**
+ * Return the next unused preset id when `base` already exists in `existing`,
+ * so a newly-created preset never shadows a name already in the list. Appends
+ * an increasing numeric suffix (`...-2`, `...-3`, …) and keeps the result
+ * within the 64-char id bound by trimming the stem for the suffix.
+ */
+export function nextAvailablePresetId(base: string, existing: ReadonlySet<string>): string {
+  if (!existing.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const suffix = String(n);
+    // Reserve room for `-` + the numeric suffix within the 64-char bound.
+    const stem = base.slice(0, 64 - suffix.length - 1);
+    const candidate = `${stem}-${suffix}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Controller wiring                                                   */
 /* ------------------------------------------------------------------ */
@@ -288,7 +305,21 @@ export function readFormPreset(view: OptionsView): unknown {
 
 export async function handleSave(deps: OptionsControllerDeps): Promise<void> {
   const { rt, view } = deps;
-  const preset = readFormPreset(view);
+  const editing = view.form.id.getAttribute('disabled') !== null;
+  const preset = readFormPreset(view) as Record<string, unknown>;
+  if (!editing) {
+    try {
+      const used = new Set((await rt.loadPresets()).map((item) => item.id));
+      preset['id'] = nextAvailablePresetId(String(preset['id']), used);
+    } catch (error) {
+      setStatus(
+        view,
+        `Save failed: ${error instanceof Error ? error.message : 'could not load existing presets'}`,
+        true,
+      );
+      return;
+    }
+  }
   const outcome = await createOrUpdatePreset(rt, preset);
   if (!outcome.ok) {
     setStatus(view, `Save failed: ${outcome.error ?? 'invalid preset'}`, true);
@@ -305,9 +336,17 @@ export async function handleDelete(
   seeded: boolean,
 ): Promise<void> {
   const { rt, view } = deps;
-  await deletePreset(rt, id);
-  setStatus(view, seeded ? `Reverted "${id}" to the bundled default.` : `Deleted "${id}".`);
-  await refreshList(deps);
+  try {
+    await deletePreset(rt, id);
+    setStatus(view, seeded ? `Reverted "${id}" to the bundled default.` : `Deleted "${id}".`);
+    await refreshList(deps);
+  } catch (error) {
+    setStatus(
+      view,
+      `Delete failed: ${error instanceof Error ? error.message : 'storage unavailable'}`,
+      true,
+    );
+  }
 }
 
 export async function handleImport(deps: OptionsControllerDeps): Promise<void> {
@@ -329,7 +368,7 @@ export async function handleImport(deps: OptionsControllerDeps): Promise<void> {
 
 export async function handleExport(deps: OptionsControllerDeps): Promise<void> {
   const { rt, view } = deps;
-  const presets = await listPresets();
+  const presets = await rt.loadPresets();
   const json = exportPresetsToString(rt, presets);
   view.exportArea.value = json;
   view.download('ghost-preset-toolbar-presets.json', json);

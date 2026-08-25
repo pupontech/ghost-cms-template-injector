@@ -71,6 +71,14 @@ export type DiscoverOutcome =
 export interface GhostSnapshot {
   resourceType: GhostResourceType;
   resourceId: string | null;
+  /**
+   * Opaque per-record identity: a token derived from the exact live record
+   * object, stable across reads for the same record and distinct when the
+   * editor navigates to a different record (or reloads). Falls back to
+   * `resourceId` when the concrete surface does not expose one. Structured-
+   * cloneable so it can travel through the C3 bridge.
+   */
+  recordIdentity: string | null;
   /** Live metadata — title, excerpt, and custom template exactly as stored. */
   title: string | null;
   excerpt: string | null;
@@ -99,7 +107,9 @@ export type GhostStateError =
   | 'APPLY_FAILED'
   | 'SAVE_FAILED'
   | 'ROLLBACK_FAILED'
-  | 'ROLLBACK_UNPROVEN';
+  | 'ROLLBACK_UNPROVEN'
+  /** The live editor record changed (navigation/reload) since the plan snapshot. */
+  | 'STALE_EDITOR';
 
 export class GhostStateException extends Error {
   readonly code: GhostStateError;
@@ -135,6 +145,17 @@ export interface GhostLiveSurface {
   setLexical(lexical: string): void;
   /** Invoke exactly one Ghost-native save transaction. Resolves on clean. */
   nativeSave(): Promise<{ updatedAt: string | null }>;
+  /**
+   * Opaque per-record identity: a token unique to the exact live record object
+   * (stable across reads, distinct on navigation/reload). Optional — when
+   * absent the adapter falls back to `getResourceId()` for identity checks.
+   */
+  getRecordIdentity?(): string | null;
+  /**
+   * True while a native save OR Ghost autosave is in flight. Optional — when
+   * absent the adapter treats the editor as never saving (no save gate).
+   */
+  isSaving?(): boolean;
   /** Capture a recoverable rollback snapshot through the live path. */
   captureRollback(): unknown;
   /** Restore a previously captured rollback snapshot. */
@@ -158,8 +179,14 @@ export interface GhostStateAdapter {
   snapshot(): GhostSnapshot;
   /** Validate every dependency and mode before mutating (C4 planApply). */
   planApply(plan: ApplicationPlan): { ok: true } | { ok: false; reason: string };
-  /** Mutate the live record per the validated plan, then save once. */
-  apply(plan: ApplicationPlan): Promise<ApplyResult>;
+  /**
+   * Mutate the live record per the validated plan, then save once. When
+   * `expected` (the pre-plan snapshot) is supplied, the transaction first
+   * verifies the live record still matches it — opaque per-record identity plus
+   * current fields — and refuses with STALE_EDITOR (zero mutation) if it has
+   * drifted (navigation or a concurrent user edit) since the snapshot.
+   */
+  apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult>;
   /** Pure rollback attempt; throws if recovery cannot be proven. */
   rollback(token: RollbackToken): void;
 }
@@ -267,6 +294,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     return {
       resourceType: this.#surface.getResourceType(),
       resourceId: this.#surface.getResourceId(),
+      recordIdentity: this.#surface.getRecordIdentity?.() ?? this.#surface.getResourceId(),
       title: this.#surface.getTitle(),
       excerpt: this.#surface.getExcerpt(),
       customTemplate: this.#surface.getCustomTemplate(),
@@ -275,7 +303,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       bodyEmpty: this.#surface.isBodyEmpty(),
       dirty: this.#surface.isDirty(),
       updatedAt: this.#surface.getUpdatedAt(),
-      saving: false,
+      saving: this.#surface.isSaving?.() ?? false,
     };
   }
 
@@ -295,12 +323,30 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     return { ok: true };
   }
 
-  async apply(plan: ApplicationPlan): Promise<ApplyResult> {
+  async apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult> {
     if (this.#busy) {
       throw new GhostStateException('BUSY', 'transaction already in flight');
     }
     this.#busy = true;
     try {
+      // Save-activity gate (P0): never start a transaction while a native save
+      // or autosave is in flight — the record is mid-mutation and applying now
+      // risks conflating our write with the in-progress save.
+      if (this.#surface.isSaving?.() === true) {
+        throw new GhostStateException(
+          'BUSY',
+          'native save/autosave in flight; retry after it completes',
+        );
+      }
+
+      // Stale-editor guard (P0): verify the live record still matches the
+      // pre-plan snapshot BEFORE any mutation or rollback capture. A navigation
+      // or a concurrent user edit since the snapshot means the plan is stale —
+      // refuse with zero mutation (nothing to roll back, nothing saved).
+      if (expected) {
+        this.#verifyExpected(expected);
+      }
+
       // Capture rollback BEFORE any mutation.
       const snapshot = this.#surface.captureRollback();
       this.#rollback = {
@@ -375,6 +421,38 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
         'mutation failed and rollback could not be proven; editor left recoverable',
       );
     }
+  }
+
+  /**
+   * P0 stale-editor guard. Compares the live record's opaque per-record
+   * identity and current fields against the pre-plan snapshot. Any drift
+   * (navigation to another record, a reload, or a concurrent user edit that
+   * changed a field the plan depends on) throws STALE_EDITOR before any
+   * mutation or rollback capture has occurred.
+   */
+  #verifyExpected(expected: GhostSnapshot): void {
+    const identityNow = this.#surface.getRecordIdentity?.() ?? this.#surface.getResourceId();
+    const identityThen = expected.recordIdentity ?? expected.resourceId;
+    const stale = (field: string): never => {
+      throw new GhostStateException(
+        'STALE_EDITOR',
+        `editor "${field}" changed since snapshot; refusing to apply`,
+      );
+    };
+
+    // Opaque per-record identity — the strongest signal for navigation/reload.
+    if (identityNow !== identityThen) stale('record identity');
+    // Current fields the plan's merge/only-if-empty/replace decisions depended on.
+    if (this.#surface.getResourceId() !== expected.resourceId) stale('resourceId');
+    if (this.#surface.getUpdatedAt() !== expected.updatedAt) stale('updatedAt');
+    if (this.#surface.getTitle() !== expected.title) stale('title');
+    if (this.#surface.getExcerpt() !== expected.excerpt) stale('excerpt');
+    if (this.#surface.getCustomTemplate() !== expected.customTemplate) stale('customTemplate');
+    if (this.#surface.getLexical() !== expected.lexical) stale('lexical');
+    if (this.#surface.isBodyEmpty() !== expected.bodyEmpty) stale('bodyEmpty');
+    const tagsNow = this.#surface.getTags().join('\u0000');
+    const tagsThen = (expected.tags ?? []).join('\u0000');
+    if (tagsNow !== tagsThen) stale('tags');
   }
 
   rollback(token: RollbackToken): void {

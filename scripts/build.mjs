@@ -13,9 +13,11 @@
 //     declare their scripts as `type: "module"` in their HTML/manifest, so they
 //     keep ESM output as required by their runtimes.
 import { build } from 'esbuild';
-import { mkdirSync, renameSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, renameSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const debugBuild = process.env.DEBUG_BUILD === '1';
+rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 
 // Inline the packaged seed preset JSON into every bundle at build time. This
@@ -43,7 +45,7 @@ const shared = {
   target: 'chrome116',
   external: ['node:fs', 'node:url', 'node:path'],
   define: bundledSeedDefine,
-  sourcemap: 'external',
+  sourcemap: debugBuild ? 'external' : false,
   minify: true,
   legalComments: 'none',
 };
@@ -77,13 +79,15 @@ renameSync('dist/background-main.js', 'dist/background.js');
 renameSync('dist/ui-popup-main.js', 'dist/popup.js');
 renameSync('dist/options-main.js', 'dist/options.js');
 renameSync('dist/setup-main.js', 'dist/setup.js');
-renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
-renameSync('dist/ui-toolbar-main.js.map', 'dist/toolbar.js.map');
-renameSync('dist/main-bridge-main.js.map', 'dist/bridge.js.map');
-renameSync('dist/background-main.js.map', 'dist/background.js.map');
-renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
-renameSync('dist/options-main.js.map', 'dist/options.js.map');
-renameSync('dist/setup-main.js.map', 'dist/setup.js.map');
+if (debugBuild) {
+  renameSync('dist/content-script-main.js.map', 'dist/content-script.js.map');
+  renameSync('dist/ui-toolbar-main.js.map', 'dist/toolbar.js.map');
+  renameSync('dist/main-bridge-main.js.map', 'dist/bridge.js.map');
+  renameSync('dist/background-main.js.map', 'dist/background.js.map');
+  renameSync('dist/ui-popup-main.js.map', 'dist/popup.js.map');
+  renameSync('dist/options-main.js.map', 'dist/options.js.map');
+  renameSync('dist/setup-main.js.map', 'dist/setup.js.map');
+}
 
 console.log(
   'build: dist/background.js dist/content-script.js dist/popup.js dist/toolbar.js dist/options.js dist/setup.js dist/bridge.js written',

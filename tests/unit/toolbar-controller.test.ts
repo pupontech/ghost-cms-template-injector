@@ -158,6 +158,53 @@ describe('toolbar controller — apply delegation', () => {
     expect(result.error).toMatch(/not available/i);
   });
 
+  it('surfaces a structured content-script failure instead of treating it as success', async () => {
+    const deps = makeDeps({
+      sendMessage: vi.fn().mockResolvedValue({
+        source: 'ghost-preset-toolbar/popup/v1',
+        ok: false,
+        error: 'BLOCKED: editor is saving',
+      }),
+    });
+    const ctrl = createToolbarController(deps);
+    await ctrl.sync();
+
+    const result = await ctrl.applyPreset('p1');
+
+    expect(result).toMatchObject({ ok: false, delegated: true });
+    expect(result.error).toMatch(/editor is saving/i);
+  });
+
+  it('resolves prompt-mode fields and retries with explicit answers', async () => {
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValueOnce({
+        source: 'ghost-preset-toolbar/popup/v1',
+        ok: false,
+        error: 'NEEDS_PROMPT',
+        result: [{ field: 'body', question: 'Replace the existing body?' }],
+      })
+      .mockResolvedValueOnce({
+        source: 'ghost-preset-toolbar/popup/v1',
+        ok: true,
+        result: { saved: true },
+      });
+    const confirmPrompt = vi.fn().mockResolvedValue(true);
+    const ctrl = createToolbarController(makeDeps({ sendMessage, confirmPrompt }));
+    await ctrl.sync();
+
+    const result = await ctrl.applyPreset('p1');
+
+    expect(result).toMatchObject({ ok: true, delegated: true });
+    expect(confirmPrompt).toHaveBeenCalledWith('Replace the existing body?', 'body');
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage.mock.calls[1]?.[0]).toMatchObject({
+      op: 'apply',
+      presetId: 'p1',
+      promptAnswers: { body: true },
+    });
+  });
+
   it('surfaces a transport error from the content script as a failed delegation', async () => {
     const sendMessage = vi.fn().mockRejectedValue(new Error('bridge busy'));
     const deps = makeDeps({ sendMessage });

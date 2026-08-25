@@ -128,17 +128,20 @@ function asArray(raw: unknown): Preset[] {
  */
 async function readStoredDoc(): Promise<PresetStoreDoc | null> {
   const area = getLocalStorage();
-  const result = await area.get(STORAGE_KEY);
-  const raw = result[STORAGE_KEY];
-  if (raw === undefined) return null;
-
   try {
+    const result = await area.get(STORAGE_KEY);
+    const raw = result[STORAGE_KEY];
+    if (raw === undefined) return null;
+
     const migrated = migrateDocument(raw);
     // Revalidate every stored preset — storage contents are untrusted input.
     validatePresets(migrated.presets);
     return migrated;
   } catch (error) {
-    console.error('preset-store: stored presets invalid, ignoring local overrides', error);
+    console.error(
+      'preset-store: stored presets unavailable or invalid, ignoring local overrides',
+      error,
+    );
     return null;
   }
 }
@@ -186,6 +189,12 @@ async function writeStoredDoc(presets: Preset[]): Promise<void> {
     version: (existing?.version ?? 0) + 1,
     presets,
   };
+  const bytes = new TextEncoder().encode(JSON.stringify(doc)).length;
+  if (bytes > MAX_IMPORT_BYTES) {
+    throw new RangeError(
+      `preset-store: stored preset document too large (${bytes} > ${MAX_IMPORT_BYTES} bytes)`,
+    );
+  }
   // Single atomic replacement of the whole document.
   await getLocalStorage().set({ [STORAGE_KEY]: doc });
 }

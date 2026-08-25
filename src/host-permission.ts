@@ -38,6 +38,8 @@ export interface ExactOrigin {
 export interface HostPermissionDeps {
   /** Request optional host permission for the exact origin after consent. */
   requestPermission: (origins: string[]) => Promise<boolean>;
+  /** Remove optional host permission for exact origins during disable/rollback. */
+  removePermission: (origins: string[]) => Promise<boolean>;
   /** Read currently-granted optional host permissions. */
   getAllPermissions: () => Promise<{ origins?: string[] }>;
   /** Register content scripts for the granted origin's `/ghost/*`. */
@@ -173,6 +175,17 @@ export function createHostPermission(deps: HostPermissionDeps): {
     const origin = normalized.origin;
     const match = ghostMatchForOrigin(origin);
 
+    const current = await status();
+    if (current.enabled) {
+      if (current.origin === origin) return { ok: true, enabled: true, origin };
+      return {
+        ok: false,
+        enabled: true,
+        origin: current.origin,
+        error: `Access is already enabled for ${current.origin}. Disable it before switching installations.`,
+      };
+    }
+
     // Request the exact origin's `/ghost/*` host permission. This is a subset of
     // the declared `optional_host_permissions` pattern, so Chrome accepts it and
     // the user is shown their concrete origin (not a wildcard) at the consent
@@ -207,6 +220,9 @@ export function createHostPermission(deps: HostPermissionDeps): {
         },
       ]);
     } catch (err) {
+      // Permission was granted but no safe runtime was installed. Roll it back
+      // so a failed enable cannot leave silent host access behind.
+      await deps.removePermission([match]).catch(() => false);
       const message = err instanceof Error ? err.message : 'Failed to register content scripts.';
       return { ok: false, enabled: false, origin: null, error: message };
     }
@@ -216,14 +232,30 @@ export function createHostPermission(deps: HostPermissionDeps): {
   }
 
   async function revoke(): Promise<HostPermissionStatus> {
-    // Both the isolated content script and the MAIN-world bridge were
-    // registered under two distinct ids in grant(). Unregister both, or the
-    // MAIN bridge lingers after the user disables the toolbar (release
-    // defect C8). Each unregister is idempotent and non-fatal on its own.
+    const consent = await deps.storageGet(CONSENT_STORAGE_KEY);
+    // Null consent first: already-loaded isolated scripts observe this and put
+    // their MAIN bridge back to sleep before registration/permission cleanup.
+    await deps.storageSet({ [CONSENT_STORAGE_KEY]: null });
     await deps
       .unregisterContentScripts([CONTENT_SCRIPT_REGISTRATION_ID, MAIN_WORLD_REGISTRATION_ID])
       .catch(() => {});
-    await deps.storageSet({ [CONSENT_STORAGE_KEY]: null });
+
+    const granted = await deps.getAllPermissions();
+    const recordedMatch =
+      typeof consent === 'object' &&
+      consent !== null &&
+      typeof (consent as Record<string, unknown>)['match'] === 'string'
+        ? ((consent as Record<string, unknown>)['match'] as string)
+        : null;
+    const grantedGhostMatches = (granted.origins ?? []).filter((match) => {
+      if (!match.endsWith('/ghost/*')) return false;
+      const installation = normalizeInstallation(match.slice(0, -'/ghost/*'.length));
+      return installation !== null && ghostMatchForOrigin(installation.origin) === match;
+    });
+    const originsToRemove = recordedMatch
+      ? grantedGhostMatches.filter((match) => match === recordedMatch)
+      : grantedGhostMatches;
+    if (originsToRemove.length > 0) await deps.removePermission(originsToRemove);
     return { enabled: false, origin: null };
   }
 

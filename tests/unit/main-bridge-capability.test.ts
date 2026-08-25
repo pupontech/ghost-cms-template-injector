@@ -15,7 +15,7 @@
  * token minter, proving the responder-model semantics (record-on-activate,
  * consume-on-deactivate, stale token refused).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 
 import {
   BRIDGE_SOURCE_ID,
@@ -36,7 +36,33 @@ interface FakeWindow {
   posted: unknown[];
   timeOrigin: number;
   postMessage: (m: unknown) => void;
-  dispatch: (data: unknown) => Promise<void>;
+  dispatch: (data: unknown, opts?: { source?: unknown; origin?: string }) => Promise<void>;
+}
+
+/** The origin the extension's own page runs on in these tests. */
+const OWN_ORIGIN = 'https://ghost.example.com';
+/** A foreign window object — never the extension's own top-level window. */
+const foreignWindow = {} as unknown;
+
+// The MAIN bridge reads `location.origin` to compare against event.origin.
+// Give every test in this file a concrete own page origin so the same-origin
+// gate has a stable value (restored after the suite).
+const _ownOriginLocation = globalThis.location;
+beforeAll(() => {
+  (globalThis as unknown as Record<string, unknown>).location = { origin: OWN_ORIGIN };
+});
+afterAll(() => {
+  if (_ownOriginLocation === undefined) {
+    delete (globalThis as unknown as Record<string, unknown>).location;
+  } else {
+    (globalThis as unknown as Record<string, unknown>).location = _ownOriginLocation;
+  }
+});
+
+// The suite-level hook owns the location replacement; C3 cases keep this
+// no-op restore helper so their setup/teardown reads symmetrically.
+function stubOwnOrigin(): () => void {
+  return () => undefined;
 }
 
 function makeFakeWindow(): FakeWindow {
@@ -48,11 +74,29 @@ function makeFakeWindow(): FakeWindow {
     postMessage(m: unknown) {
       win.posted.push(m);
     },
-    async dispatch(data: unknown) {
+    // A trusted same-window message: `source` IS the extension's own top-level
+    // window (globalThis in the MAIN world) and `origin` equals location.origin.
+    // Tests override these to simulate cross-frame / cross-origin senders.
+    async dispatch(data: unknown, opts: { source?: unknown; origin?: string } = {}) {
       const ev = new MessageEvent('message', { data });
-      Object.defineProperty(ev, 'source', { value: win, configurable: true });
-      for (const l of [...win.listeners]) await Promise.resolve(l(ev));
-      await new Promise((r) => setTimeout(r, 0));
+      Object.defineProperty(ev, 'source', {
+        value: opts.source === undefined ? globalThis : opts.source,
+        configurable: true,
+      });
+      Object.defineProperty(ev, 'origin', {
+        value: opts.origin === undefined ? OWN_ORIGIN : opts.origin,
+        configurable: true,
+      });
+      const g = globalThis as unknown as Record<string, unknown>;
+      const savedPost = g.postMessage;
+      g.postMessage = win.postMessage as typeof postMessage;
+      try {
+        for (const l of [...win.listeners]) await Promise.resolve(l(ev));
+        await new Promise((r) => setTimeout(r, 0));
+      } finally {
+        if (savedPost !== undefined) g.postMessage = savedPost;
+        else delete g.postMessage;
+      }
     },
   };
   return win;
@@ -63,6 +107,7 @@ function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
   const g = globalThis as unknown as Record<string, unknown>;
   const savedAdd = g.addEventListener;
   const savedRemove = g.removeEventListener;
+  const savedPost = g.postMessage;
   g.addEventListener = ((type: string, cb: EventListener) => {
     if (type === 'message') win.listeners.add(cb as never);
     else if (type === 'pagehide') win.pageHideListeners.add(cb as never);
@@ -70,6 +115,7 @@ function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
   g.removeEventListener = ((type: string, cb: EventListener) => {
     if (type === 'message') win.listeners.delete(cb as never);
   }) as typeof removeEventListener;
+  g.postMessage = win.postMessage as typeof postMessage;
   try {
     return fn();
   } finally {
@@ -77,6 +123,8 @@ function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
     else delete g.addEventListener;
     if (savedRemove !== undefined)
       g.removeEventListener = savedRemove as typeof removeEventListener;
+    if (savedPost !== undefined) g.postMessage = savedPost as typeof postMessage;
+    else delete g.postMessage;
   }
 }
 
@@ -221,6 +269,99 @@ describe('MAIN bridge capability gate — disable/revoke regression (C8)', () =>
     await win.dispatch(deactivateMsg(TOKEN('wrong')));
     const stillActive = await discover(win);
     expect((stillActive as { ok?: boolean } | null)?.ok).toBe(true);
+  });
+});
+
+describe('MAIN bridge listener — same-window / same-origin gate (C3)', () => {
+  it('ignores a cross-frame activation (foreign event.source) so it cannot wake the bridge', async () => {
+    const restore = stubOwnOrigin();
+    try {
+      const win = makeFakeWindow();
+      const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+      withFakeWindow(win, () => installMainBridge(handle));
+
+      // A different window posts an otherwise-valid activation envelope.
+      await win.dispatch(activateMsg(TOKEN('a')), { source: foreignWindow });
+      // The bridge must remain dormant — no response to a later discover.
+      expect(await discover(win)).toBeNull();
+      expect(handle).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('ignores a cross-origin activation (wrong event.origin) so it cannot wake the bridge', async () => {
+    const restore = stubOwnOrigin();
+    try {
+      const win = makeFakeWindow();
+      const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+      withFakeWindow(win, () => installMainBridge(handle));
+
+      await win.dispatch(activateMsg(TOKEN('a')), { origin: 'https://evil.example.net' });
+      // Still dormant: a later trusted discover is refused.
+      expect(await discover(win)).toBeNull();
+      expect(handle).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('ignores a cross-frame bridge request and only the trusted window is answered', async () => {
+    const restore = stubOwnOrigin();
+    try {
+      const win = makeFakeWindow();
+      const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+      withFakeWindow(win, () => installMainBridge(handle));
+      await win.dispatch(activateMsg(TOKEN('a')));
+
+      // A foreign window's discover request is dropped (no reply).
+      const before = win.posted.length;
+      await win.dispatch(createBridgeRequest('discover', {}), { source: foreignWindow });
+      for (let i = 0; i < 20 && win.posted.length <= before; i++) {
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      expect(win.posted.length).toBe(before);
+      expect(handle).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('ignores a cross-origin bridge request even from the same window', async () => {
+    const restore = stubOwnOrigin();
+    try {
+      const win = makeFakeWindow();
+      const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+      withFakeWindow(win, () => installMainBridge(handle));
+      await win.dispatch(activateMsg(TOKEN('a')));
+
+      const before = win.posted.length;
+      await win.dispatch(createBridgeRequest('discover', {}), {
+        origin: 'https://evil.example.net',
+      });
+      for (let i = 0; i < 20 && win.posted.length <= before; i++) {
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      expect(win.posted.length).toBe(before);
+      expect(handle).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('still accepts a trusted same-window, same-origin activation and request', async () => {
+    const restore = stubOwnOrigin();
+    try {
+      const win = makeFakeWindow();
+      const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+      withFakeWindow(win, () => installMainBridge(handle));
+      // Default dispatch is the trusted source (globalThis) + OWN_ORIGIN.
+      await win.dispatch(activateMsg(TOKEN('h')));
+      expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
+      expect(handle).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
   });
 });
 

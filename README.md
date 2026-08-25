@@ -1,5 +1,9 @@
 # Ghost Preset Toolbar
 
+> **WARNING: COMPLETELY VIBE CODED**
+
+This experimental pre-1.0 project may change or break; use it only with disposable test content.
+
 A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management, an optional injected toolbar, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
 
 ## Security model
@@ -25,7 +29,7 @@ npm ci
 npm run verify
 ```
 
-`npm run verify` runs formatting checks, ESLint, strict TypeScript, a production build, the complete Vitest suite, and manifest/built-artifact validation. The generated extension bundles are placed in `dist/` and are intentionally not committed.
+`npm run verify` runs formatting checks, ESLint, strict TypeScript, a production build, the complete Vitest suite, and manifest/built-artifact validation. Normal builds omit source maps; use `npm run build:debug` for external maps. CI also runs the high-severity dependency audit gate. The generated extension bundles are placed in `dist/` and are intentionally not committed.
 
 ## Load the extension
 
@@ -78,15 +82,17 @@ You can also move presets between machines with **Export** / **Import** (JSON) a
 
 ## Useful commands
 
-| Command                     | Purpose                                  |
-| --------------------------- | ---------------------------------------- |
-| `npm run build`             | Type-check and produce `dist/` bundles   |
-| `npm test`                  | Run the Vitest suite                     |
-| `npm run format:check`      | Check Prettier formatting                |
-| `npm run lint`              | Run ESLint                               |
-| `npm run typecheck`         | Run strict TypeScript checks             |
-| `npm run manifest:validate` | Validate permissions and built artifacts |
-| `npm run verify`            | Run every automated release gate         |
+| Command                     | Purpose                                           |
+| --------------------------- | ------------------------------------------------- |
+| `npm run build`             | Type-check and produce production `dist/` bundles |
+| `npm run build:debug`       | Produce `dist/` bundles with external source maps |
+| `npm test`                  | Run the Vitest suite                              |
+| `npm run format:check`      | Check Prettier formatting                         |
+| `npm run lint`              | Run ESLint                                        |
+| `npm run typecheck`         | Run strict TypeScript checks                      |
+| `npm run manifest:validate` | Validate MV3 and built artifact contracts         |
+| `npm run audit:high`        | Fail on high/critical dependency findings         |
+| `npm run verify`            | Run every automated release gate                  |
 
 ## Privacy
 

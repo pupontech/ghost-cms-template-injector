@@ -22,6 +22,7 @@ import { createHostPermission, type HostPermissionDeps } from './host-permission
 export interface SetupChromeApi {
   permissions: {
     request: (args: { origins: string[] }) => Promise<boolean>;
+    remove: (args: { origins: string[] }) => Promise<boolean>;
     getAll: () => Promise<{ origins?: string[] }>;
   };
   scripting: {
@@ -40,6 +41,7 @@ export interface SetupChromeApi {
 export function buildHostPermissionDeps(api: SetupChromeApi): HostPermissionDeps {
   return {
     requestPermission: (origins) => api.permissions.request({ origins }),
+    removePermission: (origins) => api.permissions.remove({ origins }),
     getAllPermissions: () => api.permissions.getAll(),
     registerContentScripts: (scripts) => api.scripting.registerContentScripts(scripts as unknown[]),
     unregisterContentScripts: (ids) => api.scripting.unregisterContentScripts({ ids }),

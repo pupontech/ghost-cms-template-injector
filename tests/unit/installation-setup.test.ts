@@ -84,6 +84,7 @@ describe('subdirectory Ghost installations (P2)', () => {
   function makeDeps(overrides: Partial<HostPermissionDeps> = {}): HostPermissionDeps {
     return {
       requestPermission: overrides.requestPermission ?? (async () => true),
+      removePermission: overrides.removePermission ?? (async () => true),
       getAllPermissions: overrides.getAllPermissions ?? (async () => ({ origins: [] })),
       registerContentScripts: overrides.registerContentScripts ?? (async () => {}),
       unregisterContentScripts: overrides.unregisterContentScripts ?? (async () => {}),

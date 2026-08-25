@@ -28,6 +28,7 @@ function fakeAdapter(overrides: Partial<ApplyPipelineAdapter> = {}): {
   const base: GhostSnapshot = {
     resourceType: 'post',
     resourceId: 'post-1',
+    recordIdentity: 'post-1',
     excerpt: null,
     customTemplate: null,
     title: null,
@@ -156,6 +157,7 @@ describe('Phase-5 atomic apply pipeline', () => {
       snapshot: () => ({
         resourceType: 'post',
         resourceId: 'post-1',
+        recordIdentity: 'post-1',
         excerpt: 'already written by the user',
         title: null,
         customTemplate: null,

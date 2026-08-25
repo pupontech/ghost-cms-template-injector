@@ -45,6 +45,33 @@ function makeDepsWithDiscover(): ContentScriptDeps {
   return makeDeps({ createBridgeEnv: () => isolatedEnv });
 }
 
+function makeDepsWithDiscoverFailure(): ContentScriptDeps {
+  let onMainMessage: ((event: MessageEvent) => void) | null = null;
+  return makeDeps({
+    createBridgeEnv: () => ({
+      addEventListener: (cb) => {
+        onMainMessage = cb;
+      },
+      removeEventListener: () => {},
+      postMessage: (message) => {
+        onMainMessage?.(
+          new MessageEvent('message', {
+            data: {
+              v: 1,
+              source: 'ghost-preset-toolbar/page-bridge/v1',
+              nonce: (message as { nonce: string }).nonce,
+              ok: false,
+              error: 'TIMEOUT',
+            },
+          }),
+        );
+      },
+      setTimeoutFn: (fn) => setTimeout(fn, 0) as unknown,
+      clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    }),
+  });
+}
+
 describe('content-script Phase-5 orchestration', () => {
   it('does nothing on non-Ghost-admin pages', () => {
     const addListener = vi.fn();
@@ -101,6 +128,19 @@ describe('content-script Phase-5 orchestration', () => {
     });
   });
 
+  it('preserves a discover bridge failure instead of double-wrapping it as success', async () => {
+    const reply = await createContentScript(makeDepsWithDiscoverFailure()).handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'discover',
+    });
+
+    expect(reply).toEqual({
+      source: 'ghost-preset-toolbar/popup/v1',
+      ok: false,
+      error: 'TIMEOUT',
+    });
+  });
+
   it('apply refuses a request missing presetId', async () => {
     const cs = createContentScript(makeDeps());
     const reply = await cs.handleMessage({
@@ -108,5 +148,16 @@ describe('content-script Phase-5 orchestration', () => {
       op: 'apply',
     });
     expect(reply).toMatchObject({ ok: false, error: 'MISSING_PRESET_ID' });
+  });
+
+  it('apply rejects malformed prompt answers at the runtime trust boundary', async () => {
+    const reply = await createContentScript(makeDeps()).handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'apply',
+      presetId: 'starter-post',
+      promptAnswers: { title: 'yes', __proto__: { polluted: true } },
+    });
+
+    expect(reply).toMatchObject({ ok: false, error: 'INVALID_PROMPT_ANSWERS' });
   });
 });

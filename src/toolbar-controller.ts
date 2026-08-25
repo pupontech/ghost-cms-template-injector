@@ -61,6 +61,8 @@ export interface ToolbarControllerDeps {
   listPresets: () => Promise<ToolbarPreset[]>;
   /** Send a structured message to the content script on the active tab. */
   sendMessage: (message: PopupMessage) => Promise<unknown>;
+  /** Ask for an explicit prompt-mode overwrite decision. */
+  confirmPrompt?: ((question: string, field: string) => boolean | Promise<boolean>) | undefined;
 }
 
 function visibilityFor(route: DetectedRoute): ToolbarVisibility {
@@ -169,7 +171,46 @@ export function createToolbarController(deps: ToolbarControllerDeps): {
           tabId: '',
           presetId,
         };
-        await deps.sendMessage(message);
+        let reply = await deps.sendMessage(message);
+        if (typeof reply === 'object' && reply !== null) {
+          let parsed = reply as Record<string, unknown>;
+          if (
+            parsed['ok'] === false &&
+            parsed['error'] === 'NEEDS_PROMPT' &&
+            Array.isArray(parsed['result']) &&
+            deps.confirmPrompt
+          ) {
+            const promptAnswers: Record<string, boolean> = {};
+            for (const rawPrompt of parsed['result']) {
+              if (typeof rawPrompt !== 'object' || rawPrompt === null) {
+                emitStatus('');
+                return { ok: false, delegated: true, error: 'Invalid prompt response.' };
+              }
+              const prompt = rawPrompt as Record<string, unknown>;
+              if (typeof prompt['field'] !== 'string' || typeof prompt['question'] !== 'string') {
+                emitStatus('');
+                return { ok: false, delegated: true, error: 'Invalid prompt response.' };
+              }
+              promptAnswers[prompt['field']] = await deps.confirmPrompt(
+                prompt['question'],
+                prompt['field'],
+              );
+            }
+            reply = await deps.sendMessage({ ...message, promptAnswers });
+            parsed =
+              typeof reply === 'object' && reply !== null ? (reply as Record<string, unknown>) : {};
+          }
+          if (parsed['ok'] === false) {
+            const error =
+              typeof parsed['error'] === 'string' ? parsed['error'] : 'Apply was rejected.';
+            emitStatus('');
+            return { ok: false, delegated: true, error };
+          }
+          if (parsed['ok'] !== true) {
+            emitStatus('');
+            return { ok: false, delegated: true, error: 'Unrecognized apply response.' };
+          }
+        }
         emitStatus('');
         return { ok: true, delegated: true };
       } catch (err) {

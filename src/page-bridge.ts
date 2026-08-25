@@ -24,7 +24,15 @@ import {
   type BridgeResponse,
 } from './bridge-protocol';
 
-export const BRIDGE_TIMEOUT_MS = 5_000;
+/**
+ * Isolated-side reply timeout. MUST remain longer than the native-save
+ * observation window (`NATIVE_SAVE_OBSERVE_MS` in `main-bridge.ts`): the MAIN
+ * responder can legitimately spend up to that window polling a slow native
+ * save, so a shorter client timeout would report a false TIMEOUT mid-save.
+ * The invariant `BRIDGE_TIMEOUT_MS > NATIVE_SAVE_OBSERVE_MS` is pinned by a
+ * contract test.
+ */
+export const BRIDGE_TIMEOUT_MS = 15_000;
 
 /* ------------------------------------------------------------------ */
 /* Isolated-world client                                              */
@@ -130,6 +138,20 @@ const TRANSACTIONAL_OPS: ReadonlySet<BridgeOperation> = new Set([
   'rollback',
 ]);
 
+/**
+ * Map a `GhostStateException` (surfaced as a rejection with a `.code`) to the
+ * closest bridge error code. Preserves the higher-severity codes so the
+ * isolated side can distinguish a stale editor, an unrecoverable rollback, or
+ * a busy transaction from a generic apply failure.
+ */
+function ghostErrorToBridgeCode(e: unknown): BridgeErrorCode {
+  const code = (e as { code?: string } | undefined)?.code;
+  if (code === 'ROLLBACK_FAILED') return 'ROLLBACK_FAILED';
+  if (code === 'STALE_EDITOR') return 'STALE_EDITOR';
+  if (code === 'BUSY') return 'BUSY';
+  return 'APPLY_FAILED';
+}
+
 export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBridgeResponder {
   let busy = false;
 
@@ -205,13 +227,10 @@ export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBrid
               },
               (rejectionReason) => {
                 busy = false;
-                // Preserve the higher-severity ROLLBACK_FAILED so the UI can
-                // tell the user the editor may be left inconsistent. The
-                // GhostStateException carries it in `.code`, not the message.
-                const code: BridgeErrorCode =
-                  (rejectionReason as { code?: string } | undefined)?.code === 'ROLLBACK_FAILED'
-                    ? 'ROLLBACK_FAILED'
-                    : 'APPLY_FAILED';
+                // Preserve the higher-severity ROLLBACK_FAILED / STALE_EDITOR /
+                // BUSY so the UI can act on them (the GhostStateException
+                // carries the code in `.code`, not the message).
+                const code: BridgeErrorCode = ghostErrorToBridgeCode(rejectionReason);
                 return {
                   v: BRIDGE_PROTOCOL_VERSION,
                   source: BRIDGE_SOURCE_ID,
@@ -226,10 +245,7 @@ export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBrid
           return respond(request, () => ({ ok: true, result }));
         } catch (e) {
           busy = false;
-          const code: BridgeErrorCode =
-            e instanceof Error && (e as { code?: string }).code === 'ROLLBACK_FAILED'
-              ? 'ROLLBACK_FAILED'
-              : 'APPLY_FAILED';
+          const code: BridgeErrorCode = ghostErrorToBridgeCode(e);
           return respond(request, () => ({
             ok: false,
             error: code,

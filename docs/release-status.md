@@ -16,7 +16,7 @@ The final C8 worktree passed `npm run verify`:
 - ESLint
 - Strict TypeScript check
 - Production build
-- Vitest: 28 files, 302 tests
+- Vitest: 32 files, 326 tests
 - Manifest and built-artifact validation
 
 Focused bridge/capability verification also passed: 5 files, 39 tests.

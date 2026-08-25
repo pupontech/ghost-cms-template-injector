@@ -61,7 +61,7 @@ For each failed or blocked case, record: matrix ID, Ghost/Chromium versions, san
 
 ## Current verified runs
 
-- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 28 test files / 302 tests, and manifest validation.
+- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 32 test files / 326 tests, and manifest validation.
 - Genuine headed preset-persistence run: PASS for body, custom excerpt, tag, and post-autosave stability; see `evidence/ef2721b1-headed-rerun.md`.
 - Genuine headed C8 lifecycle: PASS for explicit native consent, exact scoped registrations, current/new-document silence after Disable, stale-token rejection, and fresh-capability re-enable; see `evidence/eacca232-headed-revoke-proof.md`.
 - Owner acceptance: pending completion of `TESTING.md` in the owner's environment.

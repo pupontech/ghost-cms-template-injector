@@ -17,9 +17,10 @@
  * existing document, so this listener would otherwise keep answering forever.
  * The bridge is therefore DORMANT BY DEFAULT: every inbound request, including
  * `discover`, is silently dropped until the isolated extension world posts a
- * one-time per-enable activation token (minted with crypto randomness in the
- * extension context, unobservable from page code — a page can only replay a
- * token it has legitimately observed after activation was granted).
+ * one-time per-enable activation token minted with crypto randomness in the
+ * extension context. The gate provides lifecycle dormancy and stale-token
+ * rejection; it is not a confidentiality boundary from same-page MAIN-world
+ * code, which can observe window messages and already owns Ghost's page realm.
  * Deactivation with the same token puts the bridge back to sleep; document
  * teardown (pagehide) also clears all state. A stale token from a previous
  * enable cycle cannot activate anything.
@@ -91,6 +92,17 @@ export function installMainBridge(
   }
 
   const listener = (event: MessageEvent): void => {
+    // C3 source/origin gate: accept activation envelopes and bridge requests
+    // ONLY when they were posted by THIS same top-level window to itself. A
+    // message from an embedded/child frame (different `event.source`) or from
+    // any cross-origin context (event.origin !== location.origin) must never be
+    // able to activate the bridge or drive a request. Both bridge ends live in
+    // this one window, so the only legitimate sender posts with
+    // `source === window` and `origin === location.origin`.
+    const ownWindow = globalThis as unknown;
+    const ownOrigin = globalThis.location?.origin ?? '';
+    if (event.source !== ownWindow || event.origin !== ownOrigin) return;
+
     const data: unknown = event.data;
 
     // Capability handshake first: activation/deactivation envelope.

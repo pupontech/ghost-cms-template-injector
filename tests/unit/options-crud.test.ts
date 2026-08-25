@@ -73,7 +73,7 @@ describe('listViewPresets — read + seeded flag', () => {
     const { rt } = makeRuntime();
     const views = await listViewPresets(rt);
     expect(views.length).toBeGreaterThan(0);
-    const software = views.find((v) => v.id === 'life-update');
+    const software = views.find((v) => v.id === 'starter-post');
     expect(software?.seeded).toBe(true);
   });
 

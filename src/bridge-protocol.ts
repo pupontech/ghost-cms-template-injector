@@ -35,6 +35,8 @@ export type BridgeErrorCode =
   | 'BUSY'
   | 'APPLY_FAILED'
   | 'ROLLBACK_FAILED'
+  /** The live editor record changed (navigation/reload) since the plan snapshot. */
+  | 'STALE_EDITOR'
   /** Request arrived while the MAIN bridge is dormant (no capability active). */
   | 'CAPABILITY_REQUIRED';
 
@@ -153,6 +155,7 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
         'BUSY',
         'APPLY_FAILED',
         'ROLLBACK_FAILED',
+        'STALE_EDITOR',
         'CAPABILITY_REQUIRED',
       ].includes(r['error'])
     );
