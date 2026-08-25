@@ -42,7 +42,7 @@ import type { ApplyResult, DiscoverOutcome, GhostSnapshot } from './ghost-state'
 export interface ApplyPipelineAdapter {
   discover(): DiscoverOutcome | Promise<DiscoverOutcome>;
   snapshot(): GhostSnapshot | Promise<GhostSnapshot>;
-  apply(plan: ApplicationPlan): Promise<ApplyResult>;
+  apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult>;
 }
 
 export interface ApplyPipelineDeps {
@@ -127,7 +127,7 @@ export async function runApplyPipeline(
 
   // 7. Atomic apply — single native transaction, recoverable on failure.
   try {
-    const result = await deps.adapter.apply(exec);
+    const result = await deps.adapter.apply(exec, snapshot);
     return { status: 'applied', result };
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : 'apply failed' };

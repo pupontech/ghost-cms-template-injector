@@ -103,6 +103,23 @@ function depsWith(opts: {
 }
 
 describe('Phase-5 atomic apply pipeline', () => {
+  it('forwards the pre-plan snapshot as `expected` to the adapter (stale-editor guard)', async () => {
+    const applied: Array<{ plan: ApplicationPlan; expected?: unknown }> = [];
+    const { adapter, snapshots } = fakeAdapter({
+      async apply(plan: ApplicationPlan, expected?: unknown) {
+        applied.push({ plan, expected });
+        return { resourceId: 'post-1', updatedAt: '2026-08-21T01:00:00.000Z', saved: true };
+      },
+    });
+    const deps = depsWith({ adapter, preset: presetSoftwareReview });
+    const out = await runApplyPipeline(deps, 'software-review');
+    expect(out.status).toBe('applied');
+    expect(applied).toHaveLength(1);
+    // The EXACT pre-plan snapshot object is what the adapter must verify so a
+    // navigation/user-edit between snapshot and apply is detected (STALE_EDITOR).
+    expect(applied[0]?.expected).toBe(snapshots[0]);
+  });
+
   it('discovers capability first and fails closed when unsupported', async () => {
     const { adapter } = fakeAdapter({
       discover: () => ({ supported: false, reason: 'native save unreachable' }),

@@ -29,6 +29,8 @@ export interface PopupChromeApi {
     }) => Promise<Array<{ id?: number; url?: string; hash?: string }>>;
     sendMessage: (tabId: number, message: PopupMessage) => Promise<ContentReply | undefined>;
   };
+  /** Optional explicit prompt-mode confirmation delegate. */
+  confirmPrompt?: (question: string) => boolean | Promise<boolean>;
 }
 
 export interface ResolvedActiveTab {
@@ -161,15 +163,54 @@ export async function initPopup(api: PopupChromeApi, view: PopupView): Promise<v
   } catch {
     presets = [];
   }
+  // A prompt-mode preset needs explicit user decisions before its fields are
+  // applied. The toolbar contracts a `confirmPrompt` seam for this; the popup
+  // surface gets the same behavior through an injected delegate (defaults to
+  // the browser `confirm` dialog) so prompt-mode presets work from BOTH
+  // surfaces. The loop collects answers per question, retries apply with them,
+  // and stops if the user declines any question.
+  const confirmPrompt: (question: string) => boolean | Promise<boolean> =
+    api.confirmPrompt ??
+    ((question: string) => {
+      if (typeof globalThis.confirm === 'function') return globalThis.confirm(question);
+      return true;
+    });
+
+  async function runApply(presetId: string): Promise<void> {
+    let answers: Partial<Record<string, boolean>> | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await controller.applyPreset(presetId, answers);
+      if (
+        !result.ok &&
+        result.error === 'NEEDS_PROMPT' &&
+        result.prompts &&
+        result.prompts.length > 0
+      ) {
+        const next: Partial<Record<string, boolean>> = {};
+        for (const prompt of result.prompts) {
+          const accepted = await confirmPrompt(prompt.question);
+          if (!accepted) {
+            view.statusEl.textContent = `Preset "${presetId}" not applied — you declined a prompt.`;
+            return;
+          }
+          next[prompt.field] = true;
+        }
+        answers = next;
+        continue;
+      }
+      view.statusEl.textContent = result.ok
+        ? 'Applying preset — you can close this popup.'
+        : `Apply failed: ${result.error ?? 'unknown error'}`;
+      return;
+    }
+    view.statusEl.textContent = 'Apply failed: too many prompt rounds.';
+  }
+
   renderPresetList(
     view.listEl,
     presets,
     (presetId) => {
-      void controller.applyPreset(presetId).then((result) => {
-        view.statusEl.textContent = result.ok
-          ? 'Applying preset — you can close this popup.'
-          : `Apply failed: ${result.error ?? 'unknown error'}`;
-      });
+      void runApply(presetId);
     },
     view.document.createElement,
   );

@@ -128,7 +128,7 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   ): Promise<ApplyReply> {
     // Per-tab in-flight guard (belt-and-suspenders over the bridge BUSY lock).
     if (inFlight) {
-      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' } as ApplyReply;
     }
     inFlight = true;
     try {
@@ -167,6 +167,12 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
         case 'error':
           return { source: POPUP_MESSAGE_SOURCE, ok: false, error: outcome.error };
       }
+    } catch (err) {
+      // ANY unexpected pipeline exception must surface as a structured failure
+      // reply — never as `undefined` (which the popup parses as "no reply").
+      const message = err instanceof Error ? err.message : 'apply pipeline crashed';
+      console.error('ghost-preset-toolbar: apply pipeline crashed', err);
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: `APPLY_CRASH: ${message}` };
     } finally {
       inFlight = false;
     }

@@ -88,6 +88,7 @@ describe('subdirectory Ghost installations (P2)', () => {
       getAllPermissions: overrides.getAllPermissions ?? (async () => ({ origins: [] })),
       registerContentScripts: overrides.registerContentScripts ?? (async () => {}),
       unregisterContentScripts: overrides.unregisterContentScripts ?? (async () => {}),
+      getRegisteredContentScripts: overrides.getRegisteredContentScripts ?? (async () => []),
       storageGet: overrides.storageGet ?? (async () => undefined),
       storageSet: overrides.storageSet ?? (async () => {}),
     };

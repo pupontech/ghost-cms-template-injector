@@ -70,6 +70,8 @@ export interface ApplyResult {
   ok: boolean;
   delegated: boolean;
   error?: string | undefined;
+  /** Prompt-mode questions the caller must answer before a retry. */
+  prompts?: Array<{ field: string; question: string }>;
 }
 
 /** Runtime seams the controller depends on (chrome.* and store injected). */
@@ -243,6 +245,24 @@ export function createPopupController(runtime: PopupRuntime): PopupController {
     }
 
     const checked = validateReply(reply);
+    if (!checked.ok && checked.error === 'NEEDS_PROMPT') {
+      // Prompt-mode preset: the content script refused because one or more
+      // fields need an explicit user decision. Surface the questions so the
+      // caller (popup UI / toolbar) can collect answers and retry with them.
+      const raw = (reply as { result?: unknown } | undefined)?.result;
+      const prompts = Array.isArray(raw)
+        ? raw
+            .filter(
+              (p): p is { field: string; question: string } =>
+                typeof p === 'object' &&
+                p !== null &&
+                typeof (p as { field?: unknown }).field === 'string' &&
+                typeof (p as { question?: unknown }).question === 'string',
+            )
+            .map((p) => ({ field: p.field, question: p.question }))
+        : [];
+      return { ok: false, delegated: true, error: 'NEEDS_PROMPT', prompts };
+    }
     return { ok: checked.ok, delegated: checked.ok, error: checked.error };
   }
 

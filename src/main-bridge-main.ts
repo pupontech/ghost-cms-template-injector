@@ -126,14 +126,24 @@ export function installMainBridge(
 
   globalThis.addEventListener('message', listener as EventListener);
 
-  // Document teardown: deactivate (consuming the token) and remove the listener
-  // so a BFCache restore / target reuse cannot revive an activated bridge from
-  // a previous enable cycle. A fresh enable always mints a NEW token, which is
-  // not consumed, so it re-activates cleanly.
+  // Document teardown + BFCache restore: pagehide deactivates (consuming the
+  // token) and removes the MAIN listener so a BFCache restore / target reuse
+  // cannot revive an activated bridge from a previous enable cycle. A fresh
+  // enable always mints a NEW token, which is not consumed, so it re-activates
+  // cleanly. When the document is RESTORED from the back/forward cache
+  // (persisted pagehide → pageshow), the same JS realm lives on but our
+  // listener was removed: re-install it so a fresh activation handshake (the
+  // isolated client re-mints a never-seen token on persisted pageshow) can
+  // wake the bridge again.
   globalThis.addEventListener('pagehide', () => {
     const tok = gate.currentToken();
     if (tok) gate.deactivate(tok);
     globalThis.removeEventListener('message', listener as EventListener);
+  });
+  globalThis.addEventListener('pageshow', (event: Event) => {
+    if ((event as PageTransitionEvent).persisted === true) {
+      globalThis.addEventListener('message', listener as EventListener);
+    }
   });
 }
 

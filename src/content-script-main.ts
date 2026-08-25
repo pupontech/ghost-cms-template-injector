@@ -63,15 +63,19 @@ createContentScript(deps).init();
 function buildCapabilityDeps(): CapabilityClientDeps {
   const cryptoRef = globalThis.crypto;
   return {
-    randomToken: () =>
-      typeof cryptoRef?.randomUUID === 'function'
-        ? cryptoRef.randomUUID()
-        : Array.from({ length: 4 }, () =>
-            Math.floor(Math.random() * 0xffffffff)
-              .toString(16)
-              .padStart(8, '0'),
-          ).join(''),
-    postToWindow: (message) => globalThis.postMessage(message, '*'),
+    randomToken: () => {
+      if (typeof cryptoRef?.randomUUID === 'function') return cryptoRef.randomUUID();
+      // Chrome ≥116 always provides randomUUID; this fallback must STILL be
+      // cryptographically secure (the activation token gates the MAIN bridge).
+      // getRandomValues is guaranteed in the MV3 browser target (Chrome 116+),
+      // so Math.random is never acceptable here.
+      const bytes = cryptoRef.getRandomValues(new Uint8Array(16));
+      return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    },
+    // The activation envelope reaches the MAIN bridge in THIS same window.
+    // Target our own origin (not '*') so a cross-origin embedding frame can
+    // never eavesdrop on the handshake or race the one-time activation.
+    postToWindow: (message) => globalThis.postMessage(message, globalThis.location?.origin || '*'),
     // The MAIN bridge installs the live-state introspection hook only under
     // test/evidence builds; in production we don't expose it. When present we
     // treat a truthy result as "awake", otherwise fall back to repeated
@@ -113,4 +117,15 @@ if (
   const client = createCapabilityClient(buildCapabilityDeps());
   client.activateForDocument();
   client.watchRevocation();
+
+  // BFCache restore: the MAIN bridge tears down its listener + consumes its
+  // token on pagehide, so a back/forward-cache restore must re-mint a fresh
+  // token and re-run the one-time activation handshake for this document
+  // (M2: without this, every op after restore silently times out).
+  globalThis.addEventListener('pageshow', (event: PageTransitionEvent) => {
+    if (event.persisted === true) {
+      client.deactivate(); // drop the (consumed) held token
+      client.activateForDocument(); // mint a fresh never-seen token
+    }
+  });
 }

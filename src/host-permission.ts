@@ -54,6 +54,8 @@ export interface HostPermissionDeps {
   ) => Promise<void>;
   /** Remove previously-registered content scripts by id (idempotent). */
   unregisterContentScripts: (ids: string[]) => Promise<void>;
+  /** List currently-registered content scripts (used to reconcile orphaned registrations before (re)registering). */
+  getRegisteredContentScripts: () => Promise<Array<{ id: string }>>;
   /** Persist/recall consent state (records that the user opted in). */
   storageGet: (key: string) => Promise<unknown>;
   storageSet: (items: Record<string, unknown>) => Promise<void>;
@@ -200,7 +202,20 @@ export function createHostPermission(deps: HostPermissionDeps): {
       };
     }
 
+    const registrationIds = [CONTENT_SCRIPT_REGISTRATION_ID, MAIN_WORLD_REGISTRATION_ID];
     try {
+      // Reconcile any ORPHANED registrations from a previous enable cycle before
+      // (re)registering. If an earlier grant persisted the permission but died
+      // before recording consent (or Chrome kept the scripts after a storage
+      // failure), their ids are still registered — re-registering the same id
+      // throws a duplicate-id error and soft-locks enable until a manual disable.
+      // Idempotently clearing them first makes grant self-healing.
+      const registered = await deps.getRegisteredContentScripts().catch(() => []);
+      const stale = registered.filter((s) => registrationIds.includes(s.id));
+      if (stale.length > 0) {
+        await deps.unregisterContentScripts(stale.map((s) => s.id));
+      }
+
       await deps.registerContentScripts([
         {
           id: CONTENT_SCRIPT_REGISTRATION_ID,
@@ -222,12 +237,24 @@ export function createHostPermission(deps: HostPermissionDeps): {
     } catch (err) {
       // Permission was granted but no safe runtime was installed. Roll it back
       // so a failed enable cannot leave silent host access behind.
+      await deps.unregisterContentScripts(registrationIds).catch(() => {});
       await deps.removePermission([match]).catch(() => false);
       const message = err instanceof Error ? err.message : 'Failed to register content scripts.';
       return { ok: false, enabled: false, origin: null, error: message };
     }
 
-    await deps.storageSet({ [CONSENT_STORAGE_KEY]: { origin, match, grantedAt: Date.now() } });
+    try {
+      await deps.storageSet({ [CONSENT_STORAGE_KEY]: { origin, match, grantedAt: Date.now() } });
+    } catch (err) {
+      // The scripts are live but consent was never recorded: this is the
+      // orphaned-registration state that blocks a future enable. Roll the
+      // registration + permission back so the extension returns to a clean
+      // disabled state instead of stranding injected scripts with no consent.
+      await deps.unregisterContentScripts(registrationIds).catch(() => {});
+      await deps.removePermission([match]).catch(() => false);
+      const message = err instanceof Error ? err.message : 'Failed to persist consent.';
+      return { ok: false, enabled: false, origin: null, error: message };
+    }
     return { ok: true, enabled: true, origin };
   }
 

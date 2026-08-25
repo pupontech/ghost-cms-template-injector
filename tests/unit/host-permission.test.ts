@@ -14,6 +14,7 @@ function makeDeps(overrides: Partial<HostPermissionDeps> = {}): {
     requestPermission: ReturnType<typeof vi.fn>;
     registerContentScripts: ReturnType<typeof vi.fn>;
     unregisterContentScripts: ReturnType<typeof vi.fn>;
+    getRegisteredContentScripts: ReturnType<typeof vi.fn>;
     removePermission: ReturnType<typeof vi.fn>;
     storageSet: ReturnType<typeof vi.fn>;
     storageGet: ReturnType<typeof vi.fn>;
@@ -23,6 +24,7 @@ function makeDeps(overrides: Partial<HostPermissionDeps> = {}): {
   const getAllPermissions = vi.fn().mockResolvedValue({ origins: [] });
   const registerContentScripts = vi.fn().mockResolvedValue(undefined);
   const unregisterContentScripts = vi.fn().mockResolvedValue(undefined);
+  const getRegisteredContentScripts = vi.fn().mockResolvedValue([]);
   const removePermission = vi.fn().mockResolvedValue(true);
   const storageGet = vi.fn().mockResolvedValue(undefined);
   const storageSet = vi.fn().mockResolvedValue(undefined);
@@ -32,6 +34,7 @@ function makeDeps(overrides: Partial<HostPermissionDeps> = {}): {
       getAllPermissions,
       registerContentScripts,
       unregisterContentScripts,
+      getRegisteredContentScripts,
       removePermission,
       storageGet,
       storageSet,
@@ -41,6 +44,7 @@ function makeDeps(overrides: Partial<HostPermissionDeps> = {}): {
       requestPermission,
       registerContentScripts,
       unregisterContentScripts,
+      getRegisteredContentScripts,
       removePermission,
       storageSet,
       storageGet,
@@ -159,6 +163,49 @@ describe('createHostPermission — consent flow', () => {
     expect(result).toMatchObject({ ok: false, enabled: false });
     expect(calls.removePermission).toHaveBeenCalledWith(['https://ghost.example.com/ghost/*']);
     expect(calls.storageSet).not.toHaveBeenCalled();
+  });
+
+  it('reconciles ORPHANED registrations before (re)registering so re-enable self-heals', async () => {
+    const { deps, calls } = makeDeps({
+      // A previous enable cycle granted permission + registered scripts but
+      // died before recording consent (orphaned state). The ids are registered;
+      // a naked re-register would throw a duplicate-id error and soft-lock
+      // enable until a manual disable.
+      getRegisteredContentScripts: vi
+        .fn()
+        .mockResolvedValue([
+          { id: CONTENT_SCRIPT_REGISTRATION_ID },
+          { id: MAIN_WORLD_REGISTRATION_ID },
+        ]),
+    });
+
+    const result = await createHostPermission(deps).grant('https://ghost.example.com');
+
+    expect(result.ok).toBe(true);
+    // Orphans are cleared first, then a fresh registration is attempted.
+    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([
+      CONTENT_SCRIPT_REGISTRATION_ID,
+      MAIN_WORLD_REGISTRATION_ID,
+    ]);
+    expect(calls.registerContentScripts).toHaveBeenCalledTimes(1);
+    expect(calls.storageSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back registration + permission when the consent write fails (no orphaned state)', async () => {
+    const { deps, calls } = makeDeps({
+      storageSet: vi.fn().mockRejectedValue(new Error('storage unavailable')),
+    });
+
+    const result = await createHostPermission(deps).grant('https://ghost.example.com');
+
+    expect(result).toMatchObject({ ok: false, enabled: false });
+    // Scripts were registered but consent never persisted: roll BOTH back so
+    // the extension returns to a clean disabled state.
+    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([
+      CONTENT_SCRIPT_REGISTRATION_ID,
+      MAIN_WORLD_REGISTRATION_ID,
+    ]);
+    expect(calls.removePermission).toHaveBeenCalledWith(['https://ghost.example.com/ghost/*']);
   });
 
   it('reports status enabled only when consent matches a granted origin', async () => {

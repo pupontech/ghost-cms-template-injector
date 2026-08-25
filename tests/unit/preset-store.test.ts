@@ -178,6 +178,44 @@ describe('savePreset — validated atomic persistence', () => {
     expect(storage.area).toEqual(before);
     expect(storage.api.set).not.toHaveBeenCalled();
   });
+
+  it('FAILS CLOSED when the existing stored document is corrupt — never silently destroys other presets', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // A stored doc with a future schemaVersion (or one invalid preset) is
+    // unreadable; a save must NOT read-modify-write from [] and wipe it.
+    chromeStub({
+      [STORAGE_KEY]: { schemaVersion: PRESET_SCHEMA_VERSION + 1, presets: [seedPreset()] },
+    });
+    const before = structuredClone(storage.area);
+
+    await expect(savePreset({ ...seedPreset(), name: 'New Name' })).rejects.toThrow(
+      /schemaVersion|stored/,
+    );
+    // The corrupt document is left byte-for-byte untouched: no data loss.
+    expect(storage.area).toEqual(before);
+    expect(storage.api.set).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('FAILS CLOSED on write when one stored preset is invalid (no reset from empty)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    chromeStub({
+      [STORAGE_KEY]: {
+        schemaVersion: PRESET_SCHEMA_VERSION,
+        version: 3,
+        presets: [
+          seedPreset(),
+          { id: 'junk', name: 'Junk' }, // missing schemaVersion/content
+        ],
+      },
+    });
+    const before = structuredClone(storage.area);
+
+    await expect(savePreset(seedPreset())).rejects.toThrow(/preset/i);
+    expect(storage.area).toEqual(before);
+    expect(storage.api.set).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });
 
 describe('schema-version migrations', () => {
@@ -235,6 +273,22 @@ describe('importPresets / exportPresets — bounded, validated round-trip', () =
     expect(doc.presets).toEqual(bundledSeedPresets());
     expect(doc.version).toBe(1);
     expect(storage.api.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to replace an unreadable stored doc (corrupt/future schema) — no silent wipe', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    chromeStub({
+      [STORAGE_KEY]: { schemaVersion: PRESET_SCHEMA_VERSION + 1, presets: [seedPreset()] },
+    });
+    const before = structuredClone(storage.area);
+
+    await expect(importPresetsIntoStore(exportPresets(bundledSeedPresets()))).rejects.toThrow(
+      /schemaVersion|stored/,
+    );
+    // The pre-existing (unreadable) document is NOT replaced from an empty base.
+    expect(storage.area).toEqual(before);
+    expect(storage.api.set).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
 

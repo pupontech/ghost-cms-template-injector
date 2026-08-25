@@ -28,6 +28,7 @@ export interface SetupChromeApi {
   scripting: {
     registerContentScripts: (scripts: unknown[]) => Promise<void>;
     unregisterContentScripts: (ids: { ids: string[] }) => Promise<void>;
+    getRegisteredContentScripts: () => Promise<Array<{ id: string }>>;
   };
   storage: {
     local: {
@@ -45,6 +46,7 @@ export function buildHostPermissionDeps(api: SetupChromeApi): HostPermissionDeps
     getAllPermissions: () => api.permissions.getAll(),
     registerContentScripts: (scripts) => api.scripting.registerContentScripts(scripts as unknown[]),
     unregisterContentScripts: (ids) => api.scripting.unregisterContentScripts({ ids }),
+    getRegisteredContentScripts: () => api.scripting.getRegisteredContentScripts(),
     storageGet: (key) => api.storage.local.get(key).then((r) => r[key]),
     storageSet: (items) => api.storage.local.set(items),
   };

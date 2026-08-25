@@ -150,6 +150,90 @@ describe('content-script Phase-5 orchestration', () => {
     expect(reply).toMatchObject({ ok: false, error: 'MISSING_PRESET_ID' });
   });
 
+  it('never replies `undefined` when the apply pipeline crashes — surfaces a structured failure', async () => {
+    // Simulate a bridge that answers discover but CRASHES the pipeline later
+    // (e.g. a ghost-state adapter regression inside snapshot/plan): the apply
+    // handler MUST return a structured error, never undefined (which the popup
+    // parses as no reply).
+    const reqNonce = (msg: unknown) => (msg as { nonce: string }).nonce;
+    const makeBridge = (onRequest: (msg: unknown) => unknown) => {
+      let onMainMessage: ((event: MessageEvent) => void) | null = null;
+      return {
+        env: {
+          addEventListener: (cb: (e: MessageEvent) => void) => {
+            onMainMessage = cb;
+          },
+          removeEventListener: () => {},
+          postMessage: (message: unknown) => {
+            Promise.resolve(onRequest(message)).then(
+              (v) => onMainMessage?.(new MessageEvent('message', { data: v })),
+              (err: unknown) => {
+                // A bridge rejection (e.g. STALE_EDITOR / ROLLBACK_FAILED)
+                // must not hang the apply; it is surfaced as an error reply.
+                onMainMessage?.(
+                  new MessageEvent('message', {
+                    data: {
+                      v: 1,
+                      source: 'ghost-preset-toolbar/page-bridge/v1',
+                      nonce: reqNonce(message),
+                      ok: false,
+                      error: err instanceof Error ? 'APPLY_FAILED' : 'APPLY_FAILED',
+                    },
+                  }),
+                );
+              },
+            );
+          },
+          setTimeoutFn: (fn: () => void) => setTimeout(fn, 0) as unknown,
+          clearTimeoutFn: (id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>),
+        } satisfies PageBridgeEnv,
+        dispatch: (data: unknown) => onMainMessage?.(new MessageEvent('message', { data })),
+      };
+    };
+    const { env } = makeBridge((msg) => {
+      const op = (msg as { op: string }).op;
+      if (op === 'discover') {
+        return {
+          v: 1,
+          source: 'ghost-preset-toolbar/page-bridge/v1',
+          nonce: reqNonce(msg),
+          ok: true,
+          result: { supported: true, capability: { canNativeSave: true } },
+        };
+      }
+      if (op === 'snapshot') {
+        // Crash the pipeline mid-flight.
+        throw new Error('ghost-state adapter exploded');
+      }
+      return {
+        v: 1,
+        source: 'ghost-preset-toolbar/page-bridge/v1',
+        nonce: reqNonce(msg),
+        ok: false,
+        error: 'APPLY_FAILED',
+      };
+    });
+    const cs = createContentScript(
+      makeDeps({
+        createBridgeEnv: () => env,
+        getAdminApiBase: () => null,
+      }),
+    );
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'apply',
+      presetId: 'x',
+    })) as Record<string, unknown>;
+
+    spy.mockRestore();
+    expect(reply).toBeDefined();
+    expect(reply.source).toBe('ghost-preset-toolbar/popup/v1');
+    expect(reply.ok).toBe(false);
+    expect(String(reply.error)).toMatch(/^APPLY_CRASH|^APPLY_FAILED|^TIMEOUT|^BLOCKED/);
+  });
+
   it('apply rejects malformed prompt answers at the runtime trust boundary', async () => {
     const reply = await createContentScript(makeDeps()).handleMessage({
       source: 'ghost-preset-toolbar/popup/v1',

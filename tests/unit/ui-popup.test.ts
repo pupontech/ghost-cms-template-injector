@@ -186,6 +186,35 @@ describe('popup controller — apply delegation (survives popup closure)', () =>
     expect(result.error).toBe('APPLY_FAILED');
   });
 
+  it('surfaces NEEDS_PROMPT with the prompt questions so the caller can retry', async () => {
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValue(
+        reply(
+          false,
+          [{ field: 'title', question: 'Overwrite the current title?' }],
+          'NEEDS_PROMPT',
+        ),
+      );
+    const rt = makeRuntime({ sendMessage });
+    const ctrl = createPopupController(rt);
+    const result = await ctrl.applyPreset('p1');
+    expect(result.ok).toBe(false);
+    expect(result.delegated).toBe(true);
+    expect(result.error).toBe('NEEDS_PROMPT');
+    expect(result.prompts).toEqual([{ field: 'title', question: 'Overwrite the current title?' }]);
+  });
+
+  it('fails closed (no prompts) when the NEEDS_PROMPT result payload is malformed', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(reply(false, 'not-an-array', 'NEEDS_PROMPT'));
+    const rt = makeRuntime({ sendMessage });
+    const ctrl = createPopupController(rt);
+    const result = await ctrl.applyPreset('p1');
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('NEEDS_PROMPT');
+    expect(result.prompts).toEqual([]);
+  });
+
   it('fails closed when the content script reply lacks the popup identity', async () => {
     const sendMessage = vi.fn().mockResolvedValue({ source: 'other', ok: true, result: {} });
     const rt = makeRuntime({ sendMessage });

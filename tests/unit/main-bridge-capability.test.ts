@@ -33,6 +33,7 @@ import { createCapabilityGate } from '../../src/capability-gate';
 interface FakeWindow {
   listeners: Set<(e: MessageEvent) => void>;
   pageHideListeners: Set<() => void>;
+  pageShowListeners: Set<(e: { persisted: boolean }) => void>;
   posted: unknown[];
   timeOrigin: number;
   postMessage: (m: unknown) => void;
@@ -69,6 +70,7 @@ function makeFakeWindow(): FakeWindow {
   const win: FakeWindow = {
     listeners: new Set<(e: MessageEvent) => void>(),
     pageHideListeners: new Set<() => void>(),
+    pageShowListeners: new Set<(e: { persisted: boolean }) => void>(),
     posted: [] as unknown[],
     timeOrigin: Date.now(),
     postMessage(m: unknown) {
@@ -111,6 +113,8 @@ function withFakeWindow<T>(win: FakeWindow, fn: () => T): T {
   g.addEventListener = ((type: string, cb: EventListener) => {
     if (type === 'message') win.listeners.add(cb as never);
     else if (type === 'pagehide') win.pageHideListeners.add(cb as never);
+    else if (type === 'pageshow')
+      win.pageShowListeners.add(cb as unknown as (e: { persisted: boolean }) => void);
   }) as typeof addEventListener;
   g.removeEventListener = ((type: string, cb: EventListener) => {
     if (type === 'message') win.listeners.delete(cb as never);
@@ -181,6 +185,41 @@ describe('MAIN bridge capability gate — disable/revoke regression (C8)', () =>
     // Dormant bridge is SILENT: no response of any kind.
     expect(reply).toBeNull();
     expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('2b. BFCache restore: pagehide tears the listener down, persisted pageshow re-installs it and a FRESH token reactivates (M2)', async () => {
+    const win = makeFakeWindow();
+    const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+    withFakeWindow(win, () => installMainBridge(handle));
+
+    // Enable cycle A (isolated world mints token a).
+    await win.dispatch(activateMsg(TOKEN('a')));
+    expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
+
+    // Enter the back/forward cache: pagehide runs, consuming token 'a' and
+    // REMOVING the message listener. Without a reinstall, a restore would
+    // leave every op silent forever (the audit's M2).
+    withFakeWindow(win, () => {
+      for (const l of [...win.pageHideListeners]) l();
+    });
+    expect(win.listeners.size).toBe(0);
+    expect(await discover(win)).toBeNull();
+
+    // Restore from BFCache: persisted pageshow re-installs the message
+    // listener; the isolated client re-mints a FRESH token ('b') and re-runs
+    // the one-time handshake — the consumed 'a' can never reactivate.
+    withFakeWindow(win, () => {
+      for (const l of [...win.pageShowListeners]) l({ persisted: true });
+    });
+    expect(win.listeners.size).toBeGreaterThan(0);
+
+    // A stale replay of the OLD token is refused (consumed by pagehide).
+    await win.dispatch(activateMsg(TOKEN('a')));
+    expect(await discover(win)).toBeNull();
+
+    // Fresh token from the re-enabled cycle wakes the bridge again.
+    await win.dispatch(activateMsg(TOKEN('b')));
+    expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
   });
 
   it('3. fresh post-disable document: installed bridge starts dormant (silent)', async () => {

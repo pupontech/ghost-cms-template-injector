@@ -76,6 +76,17 @@ bws.on('message', (data) => {
   if (m.id && pending.has(m.id)) {
     pending.get(m.id)(m);
     pending.delete(m.id);
+    return;
+  }
+  if (m.method === 'Runtime.consoleAPICalled') {
+    const txt = (m.params.args || []).map((a) => a.value ?? a.description ?? '').join(' ');
+    // Surface content-script diagnostics and page errors without dumping Ghost's
+    // own chatty console output.
+    if (txt.includes('ghost-preset-toolbar') || txt.includes('error'))
+      console.log('[page]', txt.slice(0, 200));
+  } else if (m.method === 'Runtime.exceptionThrown') {
+    const d = m.params.exceptionDetails;
+    console.log('[page exc]', (d.exception?.description ?? d.text ?? '').slice(0, 300));
   }
 });
 function send(method, params = {}, sessionId) {
@@ -98,6 +109,7 @@ async function cdp(method, params = {}) {
   if (r.error) throw new Error(`${method}: ${r.error.message}`);
   return r.result;
 }
+await cdp('Runtime.enable');
 async function evaluate(expression, awaitPromise = true, world = undefined) {
   const r = await cdp('Runtime.evaluate', {
     expression,
@@ -145,18 +157,57 @@ if (!routeOk) {
 
 // Pre-install a minimal chrome stub so the bundle entry (which wires
 // chrome.runtime.onMessage) and preset-store (chrome.storage.local) work in
-// this proof harness. The storage area is seeded with the proof preset.
+// this proof harness. The stub ROUTES chrome.runtime.sendMessage to the
+// listener the REAL content-script bundle registers, mirroring the production
+// delivery semantics (listeners may return true and reply later via
+// sendResponse). The storage area is seeded with the proof preset.
 await evaluate(
   `(() => {
      const area = {};
+     const runtimeListeners = [];
      window.chrome = {
-       runtime: { onMessage: { addListener() {} }, sendMessage() { return Promise.resolve(); } },
-       storage: { local: {
-         get: (k) => Promise.resolve(k in area ? { [k]: area[k] } : {}),
-         set: (items) => { for (const key in items) area[key]=items[key]; return Promise.resolve(); }
-       } }
+       runtime: {
+         onMessage: { addListener(cb) { runtimeListeners.push(cb); } },
+         sendMessage(msg, callback) {
+                     return new Promise((resolve) => {
+                       let responded = false;
+                       const finish = (r) => {
+                         if (responded) return;
+                         responded = true;
+                         if (typeof callback === 'function') callback(r);
+                         resolve(r);
+                       };
+                       let syncResponse;
+                       let sawAsync = false;
+                       for (const cb of runtimeListeners) {
+                         let replied = false;
+                         const sendResponse = (r) => { replied = true; finish(r); };
+                         try {
+                           const ret = cb(msg, {}, sendResponse);
+                           if (ret === true) {
+                             sawAsync = true;
+                             continue;
+                           }
+                           if (!replied && ret !== undefined) syncResponse = ret;
+                         } catch { /* listener error - try next */ }
+                       }
+                       if (!responded && syncResponse !== undefined) finish(syncResponse);
+                       // Only auto-resolve when NO listener waits on an async
+                       // sendResponse: if any returned true, the real reply wins.
+                       if (!responded && !sawAsync) queueMicrotask(() => finish(syncResponse));
+                     });
+                   },
+       },
+       storage: {
+         local: {
+           get: (k) => Promise.resolve(k in area ? { [k]: area[k] } : {}),
+           set: (items) => { for (const key in items) area[key]=items[key]; return Promise.resolve(); },
+         },
+       },
      };
      window.__storageArea = area;
+     window.__runtimeListeners = runtimeListeners;
+     window.__sendRuntime = (msg) => new Promise((res) => window.chrome.runtime.sendMessage(msg, res));
      return true;
    })()`,
   false,
@@ -178,28 +229,60 @@ async function injectModule(src) {
 
 // ---- Install the REAL MAIN-world bridge bundle (dist/bridge.js) ----
 const bridgeBundle = readFileSync(path.join(ROOT, 'dist', 'bridge.js'), 'utf8');
-const bridgeSrc = bridgeBundle.replace(/export\s*\{[^}]*\};?\s*$/, '');
+const bridgeSrc = bridgeBundle.replace(/export\s*\{[^}]*\};\?\s*$/, '');
 await injectModule(bridgeSrc);
 await sleep(300);
 console.log('MAIN bridge installed:', await evaluate('!!window.addEventListener', false));
 
-// ---- Install the REAL content-script bundle (isolated world) ----
+// ---- Install the REAL content-script bundle (auto-inits, registers listener) ----
 const csBundle = readFileSync(path.join(ROOT, 'dist', 'content-script.js'), 'utf8');
-const csSrc = csBundle.replace(/export\s*\{[^}]*\};?\s*$/, '');
+const csSrc = csBundle.replace(/export\s*\{[^}]*\};\?\s*$/, '');
 await injectModule(csSrc);
 await sleep(300);
-console.log(
-  'content-script bundle installed:',
-  await evaluate('typeof createContentScript', false),
+const listenerCount = await evaluate(
+  'window.__runtimeListeners ? window.__runtimeListeners.length : 0',
+  false,
 );
+console.log('content-script bundle installed (listeners):', listenerCount);
 
-// ---- Seed the software-review preset into the stubbed storage ----
+// ---- Seed a VALID proof preset into the stubbed storage ----
+// The planner blocks `content.source: 'inline-html'` (preset-engine), so the
+// proof preset uses `inline-lexical` with an only-if-empty excerpt + merged tag.
+const proofLexical = JSON.stringify({
+  root: {
+    children: [
+      {
+        children: [
+          {
+            detail: 0,
+            format: 0,
+            mode: 'normal',
+            style: '',
+            text: 'Proof body applied by the live Ghost browser proof.',
+            type: 'text',
+            version: 1,
+          },
+        ],
+        direction: null,
+        format: '',
+        indent: 0,
+        type: 'paragraph',
+        version: 1,
+      },
+    ],
+    direction: null,
+    format: '',
+    indent: 0,
+    type: 'root',
+    version: 1,
+  },
+});
 await evaluate(
   `(() => {
      window.__storageArea.presetStore = { schemaVersion: 1, version: 1, presets: [
        { schemaVersion:1, id:'software-review', name:'Software Review',
-         content:{source:'inline-html',mode:'replace',html:'<p>Proof body</p>'},
-         metadata:{ excerpt:{mode:'replace',value:'Applied via Phase-5 proof'},
+         content:{source:'inline-lexical',mode:'replace',lexical: ${JSON.stringify(proofLexical)}},
+         metadata:{ excerpt:{mode:'only-if-empty',value:'Applied via Phase-5 proof'},
                     tags:{mode:'merge',values:['ProofTag']} } }
      ] };
      return true;
@@ -207,30 +290,56 @@ await evaluate(
   false,
 );
 
-// ---- Drive the apply: emulate the popup delegating to the content script ----
-// The content script's handleMessage is pure; we obtain it via a fresh
-// createContentScript wired to the page bridge + storage + API, then call
-// handleMessage({source: popup, op: 'apply', presetId}).
-const applyResult = await evaluate(
-  `(async () => {
-     // Re-create the content script with in-page seams.
-     const cs = createContentScript({
-       isGhostAdminPage: () => true,
-       addRuntimeMessageListener: () => {},
-       createBridgeEnv: () => ({
-         addEventListener: (cb) => window.addEventListener('message', cb),
-         removeEventListener: () => {},
-         postMessage: (m) => window.postMessage(m, '*'),
-         setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
-         clearTimeoutFn: (id) => clearTimeout(id),
-       }),
-       getAdminApiBase: () => ({ base: 'http://localhost:2368/ghost/api/admin/' }),
-       createApiClient: (base) => new GhostAdminClient(window.fetch.bind(window), base),
-     });
-     const discover = await cs.handleMessage({ source: 'ghost-preset-toolbar/popup/v1', op: 'discover' });
-     const apply = await cs.handleMessage({ source: 'ghost-preset-toolbar/popup/v1', op: 'apply', presetId: 'software-review' });
-     return { discover, apply };
+// ---- Drive apply EXACTLY as the production popup does ----
+// The MAIN bridge is DORMANT by design; activate it with a fresh per-enable
+// token (the same real capability protocol the isolated client uses).
+await evaluate(
+  `(() => {
+     const token = 'proof-' + Array.from({length:24}, () => Math.floor(Math.random()*36).toString(36)).join('');
+     window.postMessage({ capSource: 'ghost-preset-toolbar/page-bridge-capability/v1', action: 'activate', token }, '*');
+     return true;
    })()`,
+  false,
+);
+await sleep(400);
+
+// 1) Confirm the MAIN bridge answers discover (real capability protocol).
+const discovered = await evaluate(
+  `(() => new Promise((resolve) => {
+     const nonce = crypto.randomUUID();
+     const onMsg = (e) => {
+       if (e.data && e.data.nonce === nonce && e.data.source === 'ghost-preset-toolbar/page-bridge/v1' && e.data.ok === true) {
+         window.removeEventListener('message', onMsg);
+         resolve(e.data);
+       }
+     };
+     window.addEventListener('message', onMsg);
+     window.postMessage({ v: 1, source: 'ghost-preset-toolbar/page-bridge/v1', op: 'discover', nonce, payload: {} }, '*');
+     setTimeout(() => { window.removeEventListener('message', onMsg); resolve(null); }, 5000);
+   }))()`,
+  true,
+);
+console.log(
+  'discover from MAIN bridge (after activation):',
+  JSON.stringify(discovered).slice(0, 300),
+);
+
+// 2) Apply via window.sendRuntime — the exact call the popup makes
+//    (chrome.runtime.sendMessage → content-script handleMessage → page bridge
+//    → MAIN bridge → real Ghost editor + native save).
+const applyResult = await evaluate(
+  `(() => new Promise((resolve) => {
+     const t = setTimeout(
+       () => resolve({ ok: false, error: 'TIMEOUT', note: 'no reply within 20s' }),
+       20000,
+     );
+     window.__sendRuntime(
+       { source: 'ghost-preset-toolbar/popup/v1', op: 'apply', presetId: 'software-review' },
+     ).then((r) => { clearTimeout(t); resolve(r); });
+   }))()`,
+  true,
+).then(
+  (r) => r ?? { ok: false, error: 'NO_REPLY', note: 'content-script never replied (undefined)' },
 );
 console.log('apply result:', JSON.stringify(applyResult).slice(0, 600));
 
@@ -254,9 +363,9 @@ const evidence = [
   '',
   `- editor route reached: ${routeOk}`,
   `- MAIN bridge installed: true`,
-  `- content-script bundle installed: true`,
-  `- discover reply: ${JSON.stringify(applyResult?.discover).slice(0, 300)}`,
-  `- apply reply: ${JSON.stringify(applyResult?.apply).slice(0, 400)}`,
+  `- content-script bundle installed (listeners): ${listenerCount}`,
+  `- discover reply: ${JSON.stringify(discovered).slice(0, 300)}`,
+  `- apply reply: ${JSON.stringify(applyResult).slice(0, 400)}`,
   `- API persisted post count: ${verify?.count}`,
   `- newest post after apply: ${JSON.stringify(verify?.newest)}`,
   '',

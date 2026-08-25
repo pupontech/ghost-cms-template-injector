@@ -124,7 +124,10 @@ function asArray(raw: unknown): Preset[] {
 
 /**
  * Read and migrate the stored document. Returns null when nothing valid is
- * stored; never throws for corrupt data (callers fall back to defaults).
+ * stored; never throws for corrupt data (read callers fall back to defaults).
+ * Write callers use `readStoredDocForWrite`, which FAILS CLOSED on an
+ * unreadable document instead of treating it as empty (an empty read-modify-
+ * write would silently destroy every other stored preset).
  */
 async function readStoredDoc(): Promise<PresetStoreDoc | null> {
   const area = getLocalStorage();
@@ -144,6 +147,23 @@ async function readStoredDoc(): Promise<PresetStoreDoc | null> {
     );
     return null;
   }
+}
+
+/**
+ * Read the stored document for a WRITE (save/import). Unlike the read path
+ * (which fails over to defaults), a write must never proceed from an empty
+ * base when a stored document exists but cannot be parsed/migrated/validated:
+ * the read-modify-write would replace the whole `presetStore` document with a
+ * single new preset and permanently destroy every other user override.
+ */
+async function readStoredDocForWrite(): Promise<PresetStoreDoc | null> {
+  const area = getLocalStorage();
+  const result = await area.get(STORAGE_KEY);
+  const raw = result[STORAGE_KEY];
+  if (raw === undefined) return null;
+  const migrated = migrateDocument(raw); // throws on unreadable
+  validatePresets(migrated.presets); // throws on invalid content
+  return migrated;
 }
 
 /**
@@ -239,11 +259,13 @@ export async function loadPreset(id: string): Promise<Preset | null> {
 
 /**
  * Validate and upsert one preset by id (atomic single-key write).
- * Throws without writing anything when validation fails.
+ * Throws without writing anything when validation fails. Also FAILS CLOSED
+ * when the existing stored document is unreadable (corrupt/migrated-future):
+ * writing from an empty base would silently destroy every other stored preset.
  */
 export async function savePreset(input: unknown): Promise<Preset> {
   const preset = validatePreset(input); // throws before any I/O
-  const stored = (await readStoredDoc())?.presets ?? [];
+  const stored = (await readStoredDocForWrite())?.presets ?? [];
   const next = [...stored];
   const index = next.findIndex((p) => p.id === preset.id);
   if (index >= 0) next[index] = preset;
@@ -294,10 +316,16 @@ export function importPresets(serialized: string): Preset[] {
 
 /**
  * Validate an imported collection and replace the stored document with it in
- * one atomic write.
+ * one atomic write. FAILS CLOSED when a pre-existing stored document is
+ * unreadable (corrupt/migrated-future): replacing it would destroy existing
+ * user overrides that the new import does not carry.
  */
 export async function importPresetsIntoStore(serialized: string): Promise<Preset[]> {
   const presets = importPresets(serialized); // validates before any write
+  // Touch the existing document WITHOUT falling back to an empty base: an
+  // unreadable (corrupt/future-schema) stored doc must surface an error, not
+  // be silently destroyed by a replace that starts from nothing.
+  await readStoredDocForWrite();
   await writeStoredDoc(presets);
   return presets;
 }
