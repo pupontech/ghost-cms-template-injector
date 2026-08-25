@@ -60,6 +60,7 @@ export interface SetupRenderEl {
   textContent: string | null;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
+  classList?: { add(c: string): void; remove(c: string): void };
 }
 
 export interface SetupView {
@@ -80,6 +81,7 @@ export interface SetupClickable {
 function setStatus(view: SetupView, message: string, isError = false): void {
   view.statusEl.textContent = message;
   view.statusEl.setAttribute('role', isError ? 'alert' : 'status');
+  view.statusEl.classList?.add('visible');
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ghost-CMS Template Injector",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Injects validated CMS templates (presets) into Ghost Admin posts and pages: local template management, an optional injected toolbar, explicit per-installation host consent, and Ghost-native saves.",
   "minimum_chrome_version": "116",
   "action": {

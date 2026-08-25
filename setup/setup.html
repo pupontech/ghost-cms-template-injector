@@ -6,102 +6,240 @@
     <title>Ghost-CMS Template Injector — Setup</title>
     <style>
       :root {
-        color-scheme: light dark;
+        --bg: #f5f5f7;
+        --surface: #ffffff;
+        --surface-2: #fbfbfd;
+        --text: #1d1d1f;
+        --text-2: #6e6e73;
+        --text-3: #a1a1a6;
+        --line: rgba(0, 0, 0, 0.08);
+        --accent: #0a84ff;
+        --danger: #ff3b30;
+        --radius: 10px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161617;
+          --surface: #232325;
+          --surface-2: #1c1c1e;
+          --text: #f5f5f7;
+          --text-2: #98989d;
+          --text-3: #636366;
+          --line: rgba(255, 255, 255, 0.09);
+          --accent: #409cff;
+          --danger: #ff453a;
+        }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
         margin: 0;
-        font-family: system-ui, sans-serif;
-        padding: 16px 20px;
-        max-width: 680px;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          'SF Pro Text',
+          'Helvetica Neue',
+          system-ui,
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        justify-content: center;
+        padding: 48px 20px 64px;
+      }
+      .app {
+        width: 100%;
+        max-width: 600px;
+      }
+
+      /* ---- header ---- */
+      header {
+        margin-bottom: 28px;
       }
       h1 {
-        font-size: 18px;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
         margin: 0 0 4px;
       }
-      p#setup-status {
+      .subtitle {
+        color: var(--text-2);
         font-size: 13px;
-        margin: 8px 0;
-        min-height: 18px;
+        margin: 0;
       }
-      p#setup-status[role='alert'] {
-        color: #b3261e;
+
+      /* ---- status pill ---- */
+      #setup-status {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 16px;
+        font-size: 12.5px;
+        font-weight: 500;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.14);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 180ms ease,
+          translateY 180ms ease;
+        max-width: 80vw;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        z-index: 10;
       }
-      fieldset {
-        border: 1px solid rgba(128, 128, 128, 0.4);
-        border-radius: 6px;
-        padding: 12px 14px;
-        margin: 12px 0;
+      #setup-status[role='alert'] {
+        color: var(--danger);
       }
-      legend {
-        font-size: 13px;
-        padding: 0 6px;
+      #setup-status.visible {
+        opacity: 1;
+      }
+
+      /* ---- section ---- */
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-2);
+        margin: 30px 0 10px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      /* ---- connection card ---- */
+      .setup-card {
+        padding: 20px;
+        display: grid;
+        gap: 16px;
       }
       p.purpose {
-        font-size: 13px;
-        margin: 0 0 10px;
+        margin: 0;
+        color: var(--text-2);
+        font-size: 12.5px;
       }
-      label {
+      p.purpose code {
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 11.5px;
+        color: var(--text);
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .field label {
         display: block;
-        font-size: 13px;
-        margin-bottom: 4px;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 5px;
       }
-      input#setup-origin {
+      input {
         font: inherit;
-        padding: 6px 8px;
-        width: 100%;
-        box-sizing: border-box;
-        border: 1px solid rgba(128, 128, 128, 0.5);
-        border-radius: 6px;
-        background: transparent;
         color: inherit;
+        width: 100%;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 11px;
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease;
       }
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      input::placeholder {
+        color: var(--text-3);
+      }
+
+      /* ---- buttons ---- */
       .actions {
         display: flex;
         gap: 8px;
-        margin-top: 10px;
+        justify-content: flex-end;
       }
       button {
         font: inherit;
-        padding: 6px 12px;
-        border: 1px solid rgba(128, 128, 128, 0.5);
-        border-radius: 6px;
-        background: transparent;
-        color: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
         cursor: pointer;
+        border-radius: 8px;
+        padding: 7px 14px;
+        transition:
+          filter 120ms ease,
+          background-color 120ms ease,
+          opacity 120ms ease;
+      }
+      button:hover {
+        filter: brightness(1.06);
+      }
+      button:active {
+        filter: brightness(0.94);
       }
       button:disabled {
         opacity: 0.5;
         cursor: default;
+        filter: none;
+      }
+      #setup-enable {
+        background: var(--accent);
+        border: none;
+        color: #fff;
+      }
+      #setup-disable {
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--text);
       }
     </style>
   </head>
   <body>
-    <h1>Ghost-CMS Template Injector — Setup</h1>
-    <p id="setup-status" role="status">Loading…</p>
+    <div class="app">
+      <header>
+        <h1>Ghost-CMS Template Injector</h1>
+        <p class="subtitle">Connect the extension to your Ghost Admin installation.</p>
+      </header>
 
-    <fieldset>
-      <legend>Connect to your Ghost Admin</legend>
-      <p class="purpose">
-        This extension needs access to your Ghost Admin installation to inject the preset toolbar
-        and apply presets. Enter the URL you use to open Ghost Admin — with or without a
-        subdirectory (for example <code>https://ghost.example.com</code> or
-        <code>https://example.com/blog</code>). Access is requested only for that exact
-        installation’s <code>/ghost/*</code> path and only after you click “Enable”. No other sites
-        are touched, and no long-lived secret is stored.
-      </p>
-      <label for="setup-origin">Ghost Admin installation URL</label>
-      <input
-        id="setup-origin"
-        type="text"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="https://example.com/blog"
-      />
-      <div class="actions">
-        <button id="setup-enable" type="button">Enable</button>
-        <button id="setup-disable" type="button">Disable</button>
+      <p id="setup-status" role="status">Loading…</p>
+
+      <h2>Connection</h2>
+      <div class="card setup-card">
+        <p class="purpose">
+          The extension injects the preset toolbar and applies your templates inside Ghost Admin.
+          Enter the URL you use to open it — with or without a subdirectory (for example
+          <code>https://ghost.example.com</code> or <code>https://example.com/blog</code>). Access
+          is requested only for that exact installation's <code>/ghost/*</code> path and only after
+          you click “Enable”. No other sites are touched, and no long-lived secret is stored.
+        </p>
+        <div class="field">
+          <label for="setup-origin">Ghost Admin installation URL</label>
+          <input
+            id="setup-origin"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://example.com/blog"
+          />
+        </div>
+        <div class="actions">
+          <button id="setup-disable" type="button">Disable</button>
+          <button id="setup-enable" type="button">Enable</button>
+        </div>
       </div>
-    </fieldset>
+    </div>
 
     <script type="module" src="../dist/setup.js"></script>
   </body>
