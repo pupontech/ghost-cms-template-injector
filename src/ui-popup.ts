@@ -66,10 +66,17 @@ export type PopupState =
   | { state: 'capable'; capability: CapabilityReport; route: DetectedRoute }
   | { state: 'error'; reason: string; route?: DetectedRoute };
 
+export interface ApplyPrompt {
+  field: string;
+  question: string;
+}
+
 export interface ApplyResult {
   ok: boolean;
   delegated: boolean;
   error?: string | undefined;
+  /** Present when apply needs a yes/no decision before it can proceed. */
+  prompts?: ApplyPrompt[];
 }
 
 /** Runtime seams the controller depends on (chrome.* and store injected). */
@@ -133,7 +140,21 @@ function validateReply(reply: ContentReply | undefined): {
     return { ok: false, error: 'reply identity mismatch' };
   }
   if (reply.ok) return { ok: true, result: reply.result };
-  return { ok: false, error: reply.error ?? 'UNKNOWN_ERROR' };
+  // Preserve the payload on failure so NEEDS_PROMPT can carry its prompt list.
+  return { ok: false, result: reply.result, error: reply.error ?? 'UNKNOWN_ERROR' };
+}
+
+/** Coerce a bridge `result` payload into the popup's structured prompt list. */
+function asApplyPrompts(result: unknown): ApplyPrompt[] {
+  if (!Array.isArray(result)) return [];
+  return result.flatMap((item) => {
+    if (typeof item !== 'object' || item === null) return [];
+    const r = item as Record<string, unknown>;
+    const field = r['field'];
+    const question = typeof r['question'] === 'string' ? (r['question'] as string) : '';
+    if (typeof field !== 'string' || field.length === 0) return [];
+    return [{ field, question }];
+  });
 }
 
 export function createPopupController(runtime: PopupRuntime): PopupController {
@@ -243,7 +264,18 @@ export function createPopupController(runtime: PopupRuntime): PopupController {
     }
 
     const checked = validateReply(reply);
-    return { ok: checked.ok, delegated: checked.ok, error: checked.error };
+    if (checked.ok) {
+      return { ok: true, delegated: true };
+    }
+    // A NEEDS_PROMPT reply carries the questions the plan is awaiting; surface
+    // them to the UI so the user can answer and re-apply (C1 wiring).
+    if (checked.error === 'NEEDS_PROMPT' && checked.result) {
+      const prompts = asApplyPrompts(checked.result);
+      if (prompts.length > 0) {
+        return { ok: false, delegated: false, error: 'NEEDS_PROMPT', prompts };
+      }
+    }
+    return { ok: false, delegated: false, error: checked.error };
   }
 
   function lastStatus(): PopupState {

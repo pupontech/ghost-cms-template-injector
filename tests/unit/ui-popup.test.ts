@@ -194,6 +194,34 @@ describe('popup controller — apply delegation (survives popup closure)', () =>
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/identity|source/i);
   });
+
+  it('surfaces NEEDS_PROMPT prompts so the UI can collect answers (C1)', async () => {
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValue(
+        reply(false, [{ field: 'body', question: 'Overwrite the body?' }], 'NEEDS_PROMPT'),
+      );
+    const rt = makeRuntime({ sendMessage });
+    const ctrl = createPopupController(rt);
+    const result = await ctrl.applyPreset('p1');
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('NEEDS_PROMPT');
+    expect(result.prompts).toEqual([{ field: 'body', question: 'Overwrite the body?' }]);
+  });
+
+  it('ignores a malformed NEEDS_PROMPT result as a generic failure', async () => {
+    // A NEEDS_PROMPT error without a usable prompt list must not be reported as
+    // a prompt decision; it falls through to a plain failure.
+    const sendMessage = vi
+      .fn()
+      .mockResolvedValue(reply(false, [{ notAField: 'x' }], 'NEEDS_PROMPT'));
+    const rt = makeRuntime({ sendMessage });
+    const ctrl = createPopupController(rt);
+    const result = await ctrl.applyPreset('p1');
+    expect(result.ok).toBe(false);
+    expect(result.prompts).toBeUndefined();
+    expect(result.error).toBe('NEEDS_PROMPT');
+  });
 });
 
 describe('popup controller — status snapshot', () => {

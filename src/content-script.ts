@@ -48,6 +48,10 @@ export interface ContentScriptDeps {
 export interface ContentScriptHandle {
   init: () => void;
   handleMessage: (message: unknown) => Promise<unknown>;
+  /** Resolve the dependency context (snippets/templates) — exported for tests. */
+  resolveContext: () => Promise<PlanContext>;
+  /** Drop the cached dependency context (snippets/templates). */
+  resetResolveContextCache: () => void;
 }
 
 /** Reply shape handed back to the popup / toolbar. */
@@ -69,6 +73,23 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   }
 
   /**
+   * Resolve-context TTL cache. Two Admin API round-trips (snippet list +
+   * active-theme templates) happen on every apply; the allowlists are cheap
+   * and change rarely within a session, so a short-lived cache removes the
+   * redundant work. Only *successful* resolutions are cached — a fail-closed
+   * empty result is never cached, so a transient API outage cannot pin the
+   * allowlist permanently empty. The cache is keyed by the derived admin base
+   * so a tab that navigates between Ghost installs re-resolves correctly.
+   */
+  const CONTEXT_CACHE_TTL_MS = 60_000;
+  let cachedContext: { base: string; context: PlanContext; at: number } | null = null;
+
+  /** Test/lifecycle hook: drop any cached dependency context. */
+  function resetResolveContextCache(): void {
+    cachedContext = null;
+  }
+
+  /**
    * Resolve the dependency context (snippet names + active-theme template
    * filenames) from the cookie-authenticated Admin API. Any failure yields an
    * empty allowlist so the planner fails closed (no mutation).
@@ -76,6 +97,14 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   async function resolveContext(): Promise<PlanContext> {
     const derived = deps.getAdminApiBase();
     if (!derived) return {};
+    const now = Date.now();
+    if (
+      cachedContext &&
+      cachedContext.base === derived.base &&
+      now - cachedContext.at < CONTEXT_CACHE_TTL_MS
+    ) {
+      return cachedContext.context;
+    }
     try {
       const client = deps.createApiClient(derived.base);
       const [snippets, templates] = await Promise.all([
@@ -93,7 +122,13 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
         client.getActiveThemeTemplates().catch(() => []),
       ]);
       if (!snippets) return {};
-      return { snippets: snippets.names, snippetLexical: snippets.lexical, templates };
+      const context: PlanContext = {
+        snippets: snippets.names,
+        snippetLexical: snippets.lexical,
+        templates,
+      };
+      cachedContext = { base: derived.base, context, at: Date.now() };
+      return context;
     } catch {
       return {};
     }
@@ -180,6 +215,13 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       return { source: POPUP_MESSAGE_SOURCE, ok: true, result };
     }
     if (op === 'apply') {
+      // Guard at the message boundary too, so a rapid double-click or a second
+      // apply that arrives before the async transaction begins is rejected
+      // cleanly instead of racing the bridge BUSY lock. (Refinement of Flash #3
+      // — belt-and-suspenders over the in-apply `inFlight` flag.)
+      if (inFlight) {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+      }
       const presetId = msg['presetId'];
       if (typeof presetId !== 'string') {
         return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_PRESET_ID' };
@@ -197,6 +239,8 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       deps.addRuntimeMessageListener((message) => handleMessage(message));
     },
     handleMessage,
+    resolveContext,
+    resetResolveContextCache,
   };
 }
 

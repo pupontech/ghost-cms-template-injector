@@ -3,8 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildPopupRuntime,
   renderPresetList,
+  renderPromptPanel,
+  buildPromptAnswers,
+  initPopup,
   resolveActiveTab,
   statusSummary,
+  type PopupView,
   type RenderEl,
 } from '../../src/ui-popup-main';
 import { createPopupController } from '../../src/ui-popup';
@@ -30,6 +34,9 @@ function makeEl(): TestEl {
     },
     addEventListener(type: string, cb: () => void) {
       this.listeners[type] = cb;
+    },
+    removeAttribute(name: string) {
+      delete this.attrs[name];
     },
   };
   return el;
@@ -218,5 +225,121 @@ describe('ui-popup-main — active tab resolution + runtime', () => {
     });
     const presets = await runtime.loadPresets();
     expect(Array.isArray(presets)).toBe(true);
+  });
+});
+
+describe('ui-popup-main — prompt panel (C1 wiring)', () => {
+  it('buildPromptAnswers maps each prompt field to the chosen answer', () => {
+    const prompts = [
+      { field: 'body', question: 'Overwrite body?' },
+      { field: 'customTemplate', question: 'Set template?' },
+    ];
+    expect(buildPromptAnswers(prompts, true)).toEqual({ body: true, customTemplate: true });
+    expect(buildPromptAnswers(prompts, false)).toEqual({ body: false, customTemplate: false });
+  });
+
+  it('renderPromptPanel lists each question and keeps the panel hidden', () => {
+    const panel = makeEl();
+    const list = makeEl();
+    const prompts = [
+      { field: 'body', question: 'Overwrite body?' },
+      { field: 'tags', question: 'Add tags?' },
+    ];
+    renderPromptPanel(panel as RenderEl, list as RenderEl, prompts, () => makeEl());
+    expect(list.children).toHaveLength(2);
+    expect((list.children[0] as unknown as { textContent: string }).textContent).toBe(
+      'Overwrite body?',
+    );
+    // The caller toggles visibility; render leaves the `hidden` attribute set.
+    expect(panel.attrs['hidden']).toBe('');
+  });
+
+  it('initPopup shows the prompt panel on NEEDS_PROMPT and re-applies with answers on confirm', async () => {
+    const sendMessage = vi
+      .fn()
+      .mockImplementation(async (_tabId: unknown, message: { op: string }) => {
+        if (message.op === 'discover') {
+          return {
+            source: 'ghost-preset-toolbar/popup/v1',
+            ok: true,
+            result: {
+              supported: true,
+              capability: {
+                resourceType: 'post',
+                resourceId: 'abc',
+                dirty: false,
+                updatedAt: 'x',
+                hasLexical: true,
+                canMutateRelations: true,
+                canNativeSave: true,
+                canRollback: true,
+                adapterVersion: 1,
+              },
+            },
+          };
+        }
+        // apply → first NEEDS_PROMPT, then applied (set below).
+        return sendMessageApplyReply;
+      });
+    // First apply → NEEDS_PROMPT
+    let sendMessageApplyReply: Record<string, unknown> = {
+      source: 'ghost-preset-toolbar/popup/v1',
+      ok: false,
+      error: 'NEEDS_PROMPT',
+      result: [{ field: 'body', question: 'Overwrite body?' }],
+    };
+    const api = {
+      tabs: {
+        query: vi
+          .fn()
+          .mockResolvedValue([{ id: 1, url: 'https://example.com/ghost/#/editor/edit/post/abc' }]),
+        sendMessage,
+      },
+    };
+    const statusEl = makeEl();
+    const listEl = makeEl();
+    const promptPanel = makeEl();
+    const promptListEl = makeEl();
+    const promptYes = makeEl();
+    const promptNo = makeEl();
+    const view: PopupView = {
+      statusEl: statusEl as RenderEl,
+      listEl: listEl as RenderEl,
+      promptPanel: promptPanel as RenderEl,
+      promptListEl: promptListEl as RenderEl,
+      promptYes: promptYes as RenderEl,
+      promptNo: promptNo as RenderEl,
+      document: { createElement: () => makeEl() },
+    };
+    await initPopup(api as never, view);
+    // Click the first preset button → triggers NEEDS_PROMPT.
+    const presetButton = listEl.children[0]!.children[0] as unknown as {
+      listeners: Record<string, () => void>;
+    };
+    presetButton.listeners['click']?.();
+    // Allow the async apply + NEEDS_PROMPT → showPromptPanel chain to settle.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(promptListEl.children).toHaveLength(1);
+    expect(promptPanel.attrs['hidden']).toBeUndefined();
+    // Confirm via the Yes button → re-applies with promptAnswers.
+    sendMessageApplyReply = {
+      source: 'ghost-preset-toolbar/popup/v1',
+      ok: true,
+      result: { delegated: true },
+    };
+    const yesCb = (promptYes as unknown as { listeners: Record<string, () => void> }).listeners[
+      'click'
+    ];
+    yesCb?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sendMessage).toHaveBeenCalledTimes(3);
+    const reapply = sendMessage.mock.calls[2]?.[1] as {
+      op: string;
+      presetId: string;
+      promptAnswers?: Record<string, boolean>;
+    };
+    expect(reapply.op).toBe('apply');
+    expect(reapply.promptAnswers).toEqual({ body: true });
+    expect(promptPanel.attrs['hidden']).toBe('');
   });
 });

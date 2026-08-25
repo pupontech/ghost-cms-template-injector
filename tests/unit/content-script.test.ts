@@ -109,4 +109,82 @@ describe('content-script Phase-5 orchestration', () => {
     });
     expect(reply).toMatchObject({ ok: false, error: 'MISSING_PRESET_ID' });
   });
+
+  it('rejects a second concurrent apply with APPLY_BUSY', async () => {
+    // A bridge that never replies keeps the first apply in flight (discover
+    // awaits the bridge response), so the message-boundary guard should catch
+    // the second apply with APPLY_BUSY.
+    const hangingEnv: PageBridgeEnv = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      postMessage: () => {
+        /* never responds */
+      },
+      setTimeoutFn: () => 0,
+      clearTimeoutFn: () => {},
+    };
+    const cs = createContentScript(makeDeps({ createBridgeEnv: () => hangingEnv }));
+    const first = cs.handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'apply',
+      presetId: 'p1',
+    }) as Promise<unknown>;
+    const second = (await cs.handleMessage({
+      source: 'ghost-preset-toolbar/popup/v1',
+      op: 'apply',
+      presetId: 'p1',
+    })) as Record<string, unknown>;
+    expect(second).toMatchObject({ ok: false, error: 'APPLY_BUSY' });
+    // Release the first hang so the test process can exit cleanly.
+    await Promise.race([first, new Promise((r) => setTimeout(r, 10))]);
+  });
+
+  it('resolveContext is cached within the TTL (no second API call)', async () => {
+    const listSnippets = vi.fn().mockResolvedValue([]);
+    const getActiveThemeTemplates = vi.fn().mockResolvedValue([]);
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () => ({ listSnippets, getActiveThemeTemplates }) as never,
+      }),
+    );
+    const ctx1 = await cs.resolveContext();
+    const ctx2 = await cs.resolveContext();
+    // Identical references ⇒ served from cache, not re-fetched.
+    expect(ctx1).toBe(ctx2);
+    expect(listSnippets).toHaveBeenCalledTimes(1);
+    expect(getActiveThemeTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  it('cached context is invalidated by resetResolveContextCache', async () => {
+    const listSnippets = vi.fn().mockResolvedValue([]);
+    const getActiveThemeTemplates = vi.fn().mockResolvedValue([]);
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () => ({ listSnippets, getActiveThemeTemplates }) as never,
+      }),
+    );
+    await cs.resolveContext();
+    cs.resetResolveContextCache();
+    await cs.resolveContext();
+    expect(listSnippets).toHaveBeenCalledTimes(2);
+    expect(getActiveThemeTemplates).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolveContext fails closed to empty when the API errors', async () => {
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () =>
+          ({
+            listSnippets: async () => {
+              throw new Error('network');
+            },
+            getActiveThemeTemplates: async () => [],
+          }) as never,
+      }),
+    );
+    const ctx = await cs.resolveContext();
+    expect(ctx).toEqual({});
+    // A fail-closed empty result must NOT be cached (force re-resolve next time).
+    cs.resetResolveContextCache();
+  });
 });

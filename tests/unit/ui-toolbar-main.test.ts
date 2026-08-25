@@ -31,6 +31,9 @@ function makeEl(): TestEl {
     addEventListener(type: string, cb: () => void) {
       this.listeners[type] = cb;
     },
+    removeAttribute(name: string) {
+      delete this.attrs[name];
+    },
   };
   return el;
 }

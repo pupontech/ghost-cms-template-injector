@@ -111,6 +111,64 @@
       .gpt-setup-link:hover {
         text-decoration: underline;
       }
+      #gpt-prompt-panel {
+        margin: 0 0 4px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--text) 3%, transparent);
+      }
+      #gpt-prompt-panel[hidden] {
+        display: none;
+      }
+      .gpt-prompt-heading {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-2);
+      }
+      #gpt-prompt-list {
+        list-style: none;
+        margin: 0 0 10px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #gpt-prompt-list li {
+        font-size: 12.5px;
+        line-height: 1.35;
+        color: var(--text);
+      }
+      .gpt-prompt-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .gpt-prompt-btn {
+        flex: 1;
+        font: inherit;
+        font-weight: 600;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        transition: background-color 120ms ease;
+      }
+      .gpt-prompt-yes {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .gpt-prompt-yes:hover {
+        background: color-mix(in srgb, var(--accent) 85%, #000);
+      }
+      .gpt-prompt-no:hover {
+        background: color-mix(in srgb, var(--text) 8%, transparent);
+      }
     </style>
   </head>
   <body>
@@ -118,6 +176,18 @@
     <p class="subtitle">Apply a preset to the open editor.</p>
     <p id="gpt-status" role="status" aria-live="polite">Detecting editor…</p>
     <ul id="gpt-preset-list"></ul>
+    <section id="gpt-prompt-panel" hidden aria-live="polite">
+      <p class="gpt-prompt-heading">This preset needs a decision:</p>
+      <ul id="gpt-prompt-list"></ul>
+      <div class="gpt-prompt-actions">
+        <button type="button" id="gpt-prompt-yes" class="gpt-prompt-btn gpt-prompt-yes">
+          Apply
+        </button>
+        <button type="button" id="gpt-prompt-no" class="gpt-prompt-btn gpt-prompt-no">
+          Cancel
+        </button>
+      </div>
+    </section>
     <a class="gpt-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
     <script type="module" src="../dist/popup.js"></script>
   </body>
