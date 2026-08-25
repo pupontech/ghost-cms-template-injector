@@ -136,12 +136,57 @@ function recordIdentityToken(rec: GhostModelLike): string {
 }
 
 /**
+ * How long to wait after a successful apply before reloading the Ghost editor.
+ * MUST be long enough for the C3 bridge reply to reach the isolated content
+ * script (and the popup/toolbar to render "Applied") — a reload that fires
+ * before the reply is posted would make the popup report a timeout even though
+ * the apply succeeded. A short delay is a small UX cost for correct feedback.
+ */
+export const EDITOR_RELOAD_DELAY_MS = 1_500;
+
+/**
+ * Default post-apply reload: after the transaction persisted, force the Ghost
+ * Admin SPA to re-fetch the SAVED record so the editor shows the applied text
+ * without a manual refresh. The URL is normalized to the canonical editor
+ * route for the record first — for a newly-saved draft, a plain reload of the
+ * bare `#/editor/post` route would open ANOTHER blank draft instead of the
+ * post that was just created and saved.
+ *
+ * Runs in the page's MAIN world (this is the ONLY world with page-level
+ * privileges in the extension); best-effort with try/catch so a hostile or
+ * unusual environment can never break the apply reply path.
+ */
+function defaultAfterApply(resourceType: 'post' | 'page', resourceId: string): void {
+  const win = globalThis as typeof globalThis & {
+    location?: Location;
+    setTimeout?: typeof setTimeout;
+  };
+  if (typeof win.setTimeout !== 'function') return;
+  win.setTimeout(() => {
+    try {
+      const loc = win.location;
+      if (!loc) return;
+      const target = `#/editor/${resourceType}/${resourceId}`;
+      if (loc.hash !== target) loc.hash = target;
+      loc.reload();
+    } catch {
+      /* reload is best-effort — never break the apply reply */
+    }
+  }, EDITOR_RELOAD_DELAY_MS);
+}
+
+/**
  * Build the C3 responder environment that wires the real Ghost surface into the
  * versioned `ghost-state` adapter. Exposed purely as a `handle(message)` so the
  * entry layer (`ui-toolbar-main`/content-script) can install it as the MAIN
  * bridge responder.
  */
-export function createGhostMainBridge(): {
+export function createGhostMainBridge(
+  opts: {
+    /** Post-apply hook; defaults to an editor reload of the saved record. */
+    afterApply?: (resourceType: 'post' | 'page', resourceId: string) => void;
+  } = {},
+): {
   handle: (message: unknown) => BridgeResponse | Promise<BridgeResponse>;
 } {
   const surface: GhostLiveSurface = {
@@ -417,11 +462,21 @@ export function createGhostMainBridge(): {
     snapshot: () => adapter.snapshot(),
     planApply: (payload) =>
       adapter.planApply(payload['plan'] as Parameters<typeof adapter.planApply>[0]),
-    apply: (payload) =>
-      adapter.apply(
+    apply: async (payload) => {
+      const result = await adapter.apply(
         payload['plan'] as Parameters<typeof adapter.apply>[0],
         payload['expected'] as GhostSnapshot | undefined,
-      ),
+      );
+      // The applied transaction persisted: reload the Ghost editor so the
+      // preset text is visible WITHOUT a manual page refresh. Only after a
+      // genuine save of a record that now has a server id (a failed or rolled
+      // back apply throws before we get here and never triggers a reload).
+      if (result.saved && result.resourceId) {
+        const afterApply = opts.afterApply ?? defaultAfterApply;
+        afterApply(surface.getResourceType(), result.resourceId);
+      }
+      return result;
+    },
     save: () => surface.nativeSave().then((r) => r),
     rollback: (payload) =>
       adapter.rollback(payload['token'] as Parameters<typeof adapter.rollback>[0]),

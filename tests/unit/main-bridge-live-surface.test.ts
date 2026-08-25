@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createGhostMainBridge } from '../../src/main-bridge';
 import { BRIDGE_SOURCE_ID } from '../../src/bridge-protocol';
@@ -81,7 +81,11 @@ function makeOwnerHarness(post: FakeEmberPost, storeTags: FakeTag[] = []) {
     post,
     actions: { save: () => {} },
     send: (action: string) => {
-      if (action === 'save') void post.save();
+      // Real Ghost save actions RETURN the save promise (nativeSave awaits it);
+      // `return` (not `void`) lets a rejection propagate to the transaction's
+      // failure path instead of being swallowed into the poll fallback.
+      if (action === 'save') return post.save();
+      return undefined;
     },
     save: () => post.save(),
   };
@@ -187,6 +191,55 @@ describe('MAIN bridge live transaction vs real Ghost 6.60 semantics (t_ef2721b1)
       expect(s['tags']).toEqual(['Reviews']);
       const parsed = JSON.parse(s['lexical'] as string) as { root?: { children?: unknown[] } };
       expect((parsed.root?.children ?? []).length).toBeGreaterThan(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('schedules the editor auto-reload after a successful apply (saved record)', async () => {
+    const post = new FakeEmberPost();
+    const cleanup = makeOwnerHarness(post);
+    const afterApply = vi.fn();
+    try {
+      const { handle } = createGhostMainBridge({ afterApply });
+      const res = await handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-00000000000b',
+        op: 'apply',
+        payload: { plan: readyPlan() },
+      });
+      expect(res.ok).toBe(true);
+      // The saved record now has a server id → the bridge reloads the editor
+      // so the applied text is visible without a manual refresh.
+      expect(afterApply).toHaveBeenCalledTimes(1);
+      expect(afterApply).toHaveBeenCalledWith('post', post.id);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does NOT schedule a reload when apply fails (rollback path — nothing persisted)', async () => {
+    const post = new FakeEmberPost();
+    post.save = () => {
+      // Save fails and leaves the record dirty → adapter.apply throws after
+      // rollback; no reload may fire for content that was never persisted.
+      post.hasDirtyAttributes = true;
+      return Promise.reject(new Error('save failed'));
+    };
+    const cleanup = makeOwnerHarness(post);
+    const afterApply = vi.fn();
+    try {
+      const { handle } = createGhostMainBridge({ afterApply });
+      const res = await handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-00000000000c',
+        op: 'apply',
+        payload: { plan: readyPlan() },
+      });
+      expect(res.ok).toBe(false);
+      expect(afterApply).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }

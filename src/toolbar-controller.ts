@@ -211,7 +211,10 @@ export function createToolbarController(deps: ToolbarControllerDeps): {
             return { ok: false, delegated: true, error: 'Unrecognized apply response.' };
           }
         }
-        emitStatus('');
+        // The MAIN bridge reloads the Ghost editor shortly after the apply
+        // persists, so the applied text becomes visible without a manual
+        // refresh. Tell the user this is imminent rather than clearing.
+        emitStatus('Applied — reloading the editor…');
         return { ok: true, delegated: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'apply delegation failed';

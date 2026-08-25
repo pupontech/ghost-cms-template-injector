@@ -343,6 +343,32 @@ const applyResult = await evaluate(
 );
 console.log('apply result:', JSON.stringify(applyResult).slice(0, 600));
 
+// ---- Verify the AUTO-RELOAD: after a successful apply the MAIN bridge
+//      normalizes the URL to the saved record and reloads the editor (the
+//      user's "must reload the site to see the applied text" — automated).
+const applySaved = Boolean(
+  applyResult &&
+  applyResult.ok === true &&
+  applyResult.result &&
+  applyResult.result.saved === true &&
+  applyResult.result.resourceId,
+);
+const hashBeforeReload = await evaluate(
+  `globalThis.location ? globalThis.location.hash : ''`,
+  false,
+);
+// The bridge schedules the reload 1.5s after replying; watch for the hash to
+// be normalized to the saved editor route (and/or the page to reload).
+if (applySaved) {
+  await sleep(2500);
+  const hashAfterReload = await evaluate(
+    `globalThis.location ? globalThis.location.hash : ''`,
+    false,
+  );
+  console.log('hash before reload:', hashBeforeReload);
+  console.log('hash after reload window:', hashAfterReload);
+}
+
 // ---- Verify persistence via Admin API (cookie auth, redacted) ----
 const verify = await evaluate(
   `(async () => {

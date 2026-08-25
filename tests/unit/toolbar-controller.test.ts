@@ -226,7 +226,10 @@ describe('toolbar controller — apply delegation', () => {
     });
     await ctrl.applyPreset('p1');
     expect(statuses.some((s) => /applying/i.test(s))).toBe(true);
-    expect(statuses.at(-1)).toBe('');
+    // After a successful delegation the toolbar announces the imminent
+    // editor reload (the MAIN bridge refreshes the page so the applied text
+    // is visible without a manual refresh).
+    expect(statuses.at(-1)).toMatch(/reloading/i);
   });
 
   it('clears the applying status once delegation is acknowledged', async () => {
@@ -236,7 +239,9 @@ describe('toolbar controller — apply delegation', () => {
     const statuses: string[] = [];
     ctrl.onStatus((msg) => statuses.push(msg));
     await ctrl.applyPreset('p1');
-    expect(statuses.at(-1)).toBe('');
+    // The final status no longer says "applying" (the pre-reload message is
+    // emitted instead of a plain empty string).
+    expect(statuses.at(-1)).not.toMatch(/applying/i);
   });
 });
 

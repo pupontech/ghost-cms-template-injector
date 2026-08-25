@@ -233,7 +233,9 @@ describe('initToolbar — apply delegation through the mounted toolbar', () => {
 
     resolveSend();
     await flush();
-    expect(status.textContent).toBe('');
+    // Delegation acknowledged: the toolbar announces the imminent editor
+    // reload (the MAIN bridge refreshes so applied text is visible).
+    expect((status.textContent as string) ?? '').toMatch(/reloading/i);
   });
 });
 

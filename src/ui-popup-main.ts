@@ -199,7 +199,7 @@ export async function initPopup(api: PopupChromeApi, view: PopupView): Promise<v
         continue;
       }
       view.statusEl.textContent = result.ok
-        ? 'Applying preset — you can close this popup.'
+        ? 'Applying preset — the editor will reload to show the changes.'
         : `Apply failed: ${result.error ?? 'unknown error'}`;
       return;
     }
