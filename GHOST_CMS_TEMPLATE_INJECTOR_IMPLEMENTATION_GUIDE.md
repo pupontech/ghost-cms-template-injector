@@ -180,7 +180,7 @@ After the implementation repository exists:
 
 ```bash
 hermes kanban init
-hermes kanban boards create ghost-cms-template-injector \
+hermes kanban boards create ghost-preset-toolbar \
   --name "Ghost-CMS Template Injector" \
   --description "MV3 Ghost Admin preset toolbar implementation" \
   --icon "👻" \
@@ -191,8 +191,8 @@ hermes kanban boards create ghost-cms-template-injector \
 Use the board slug explicitly in automation:
 
 ```bash
-hermes kanban --board ghost-cms-template-injector list
-hermes kanban --board ghost-cms-template-injector watch
+hermes kanban --board ghost-preset-toolbar list
+hermes kanban --board ghost-preset-toolbar watch
 hermes dashboard
 ```
 
@@ -217,22 +217,22 @@ Even when profile defaults are correct, pin provider/model on critical cards for
 
 ```bash
 # Examples only; replace title/body with the full card specification.
-hermes kanban --board ghost-cms-template-injector create "Architecture and contracts" \
+hermes kanban --board ghost-preset-toolbar create "Architecture and contracts" \
   --assignee ghostterra --provider openai-codex --model gpt-5.6-terra \
   --workspace dir:/root/ghost-research --goal --goal-max-turns 20 \
   --idempotency-key ghost-preset-architecture
 
-hermes kanban --board ghost-cms-template-injector create "Implement preset engine" \
+hermes kanban --board ghost-preset-toolbar create "Implement preset engine" \
   --assignee ghostox --provider openrouter --model stealth/ox-alpha \
   --workspace worktree --branch wt/preset-engine --goal --goal-max-turns 30 \
   --idempotency-key ghost-preset-engine
 
-hermes kanban --board ghost-cms-template-injector create "Adversarial architecture review" \
+hermes kanban --board ghost-preset-toolbar create "Adversarial architecture review" \
   --assignee ghostnim --provider nvidia --model nvidia/nemotron-3-ultra-550b-a55b \
   --workspace worktree --branch wt/architecture-review --goal --goal-max-turns 20 \
   --idempotency-key ghost-preset-architecture-review
 
-hermes kanban --board ghost-cms-template-injector create "Build test fixtures and QA matrix" \
+hermes kanban --board ghost-preset-toolbar create "Build test fixtures and QA matrix" \
   --assignee ghostluna --provider openai-codex --model gpt-5.6-luna \
   --workspace worktree --branch wt/test-matrix --goal --goal-max-turns 25 \
   --idempotency-key ghost-preset-tests

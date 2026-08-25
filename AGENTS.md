@@ -16,7 +16,7 @@ If the decision and implementation guide conflict, stop and resolve the conflict
 
 When the user asks to build, implement, scaffold, or finish the Ghost-CMS Template Injector:
 
-- Use the durable Hermes board `ghost-cms-template-injector`; do not manage the main build only with an ephemeral `delegate_task` swarm or a private TODO list.
+- Use the durable Hermes board `ghost-preset-toolbar` (kanban slug — immutable; display name "Ghost-CMS Template Injector"); do not manage the main build only with an ephemeral `delegate_task` swarm or a private TODO list.
 - Inspect existing board cards and idempotency keys before creating cards.
 - Use named profiles and pin the requested provider/model on critical cards:
   - `ghostterra`: `openai-codex` / `gpt-5.6-terra` — architecture, decomposition, synthesis.
