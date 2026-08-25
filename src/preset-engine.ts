@@ -331,12 +331,23 @@ export function planPresetApplication(
   const actions: PlanAction[] = [body];
 
   const metadata = preset.metadata;
-  if (metadata?.title) actions.push(planTitle(metadata.title, snapshot));
-  if (metadata?.excerpt) actions.push(planExcerpt(metadata.excerpt, snapshot));
-  if (metadata?.customTemplate) {
-    actions.push(planCustomTemplate(metadata.customTemplate, context));
+  try {
+    if (metadata?.title) actions.push(planTitle(metadata.title, snapshot));
+    if (metadata?.excerpt) actions.push(planExcerpt(metadata.excerpt, snapshot));
+    if (metadata?.customTemplate) {
+      actions.push(planCustomTemplate(metadata.customTemplate, context));
+    }
+    if (metadata?.tags) actions.push(planTags(metadata.tags, snapshot));
+  } catch (error) {
+    // A malformed/unknown metadata mode should block the plan, not escape as an
+    // unhandled rejection (matches how body resolution failures are handled).
+    return freezePlan({
+      presetId: preset.id,
+      status: 'blocked',
+      actions: [],
+      problems: [error instanceof Error ? error.message : 'metadata field could not be planned'],
+    });
   }
-  if (metadata?.tags) actions.push(planTags(metadata.tags, snapshot));
 
   // ---- Phase C: aggregate.
   const status: PlanStatus = actions.some((a) => a.status === 'prompt') ? 'needs-prompt' : 'ready';

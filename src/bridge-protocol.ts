@@ -34,6 +34,7 @@ export type BridgeErrorCode =
   | 'TIMEOUT'
   | 'BUSY'
   | 'APPLY_FAILED'
+  | 'ROLLBACK_FAILED'
   /** Request arrived while the MAIN bridge is dormant (no capability active). */
   | 'CAPABILITY_REQUIRED';
 
@@ -83,6 +84,24 @@ function isCloneable(value: unknown, seen: Set<object>): boolean {
   return Object.values(obj).every((item) => isCloneable(item, seen));
 }
 
+/** Cryptographically secure nonce. Prefers randomUUID; falls back to
+ * getRandomValues (available in every browser target, min Chrome 116).
+ * Math.random is never used — nonces must be unguessable. */
+function createNonce(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') {
+    return c.randomUUID();
+  }
+  const bytes = c.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // variant 10
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20)}`.slice(
+    0,
+    36,
+  );
+}
+
 export function createBridgeRequest(
   op: BridgeOperation,
   payload: Record<string, unknown>,
@@ -90,12 +109,7 @@ export function createBridgeRequest(
   return {
     v: BRIDGE_PROTOCOL_VERSION,
     op,
-    nonce:
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now().toString(16).padStart(12, '0')}-${Math.random()
-            .toString(16)
-            .slice(2, 10)}-4${Math.random().toString(16).slice(2, 9)}`.slice(0, 36),
+    nonce: createNonce(),
     source: BRIDGE_SOURCE_ID,
     payload,
   };
@@ -135,6 +149,7 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
         'TIMEOUT',
         'BUSY',
         'APPLY_FAILED',
+        'ROLLBACK_FAILED',
         'CAPABILITY_REQUIRED',
       ].includes(r['error'])
     );

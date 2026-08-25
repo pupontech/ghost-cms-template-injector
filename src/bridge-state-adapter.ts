@@ -36,6 +36,8 @@ export function createBridgeStateAdapter(bridge: PageBridge): ApplyPipelineAdapt
     apply(plan: ApplicationPlan): Promise<ApplyResult> {
       return bridge.request('apply', { plan }).then((r) => {
         if (r.ok) return r.result as ApplyResult;
+        // Distinguish ROLLBACK_FAILED — the error message is the bridge code,
+        // so a UI layer can warn the user the editor may be left inconsistent.
         throw new Error(r.error);
       });
     },

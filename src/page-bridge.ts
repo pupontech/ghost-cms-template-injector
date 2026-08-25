@@ -203,25 +203,36 @@ export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBrid
                   result: value,
                 } satisfies BridgeResponse;
               },
-              () => {
+              (rejectionReason) => {
                 busy = false;
+                // Preserve the higher-severity ROLLBACK_FAILED so the UI can
+                // tell the user the editor may be left inconsistent. The
+                // GhostStateException carries it in `.code`, not the message.
+                const code: BridgeErrorCode =
+                  (rejectionReason as { code?: string } | undefined)?.code === 'ROLLBACK_FAILED'
+                    ? 'ROLLBACK_FAILED'
+                    : 'APPLY_FAILED';
                 return {
                   v: BRIDGE_PROTOCOL_VERSION,
                   source: BRIDGE_SOURCE_ID,
                   nonce: request.nonce,
                   ok: false,
-                  error: 'APPLY_FAILED',
+                  error: code,
                 } satisfies BridgeResponse;
               },
             );
           }
           busy = false;
           return respond(request, () => ({ ok: true, result }));
-        } catch {
+        } catch (e) {
           busy = false;
+          const code: BridgeErrorCode =
+            e instanceof Error && (e as { code?: string }).code === 'ROLLBACK_FAILED'
+              ? 'ROLLBACK_FAILED'
+              : 'APPLY_FAILED';
           return respond(request, () => ({
             ok: false,
-            error: 'APPLY_FAILED',
+            error: code,
           }));
         }
       }

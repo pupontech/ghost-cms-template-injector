@@ -115,7 +115,8 @@ export function installMainBridge(
   // a previous enable cycle. A fresh enable always mints a NEW token, which is
   // not consumed, so it re-activates cleanly.
   globalThis.addEventListener('pagehide', () => {
-    gate.deactivate(gate.currentToken() ?? '');
+    const tok = gate.currentToken();
+    if (tok) gate.deactivate(tok);
     globalThis.removeEventListener('message', listener as EventListener);
   });
 

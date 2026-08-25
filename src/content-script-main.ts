@@ -25,8 +25,8 @@ const deps = {
     addEventListener: (cb) => globalThis.addEventListener('message', cb),
     removeEventListener: (cb) => globalThis.removeEventListener('message', cb),
     postMessage: (message) => globalThis.postMessage(message, '*'),
-    setTimeoutFn: (fn, ms) => new Promise(() => setTimeout(fn, ms)),
-    clearTimeoutFn: (id) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+    setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
+    clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
   }),
   getAdminApiBase: () => {
     try {

@@ -28,7 +28,7 @@
  * go through the live model property and persist via the one native save.
  */
 
-import { createGhostStateAdapter, type GhostLiveSurface } from './ghost-state';
+import { createGhostStateAdapter, GhostStateException, type GhostLiveSurface } from './ghost-state';
 import { createPageBridgeResponder, type PageBridgeResponderEnv } from './page-bridge';
 import type { BridgeResponse } from './bridge-protocol';
 
@@ -152,7 +152,22 @@ export function createGhostMainBridge(): {
       try {
         const parsed = JSON.parse(lex) as { root?: { children?: unknown[] } };
         const children = parsed?.root?.children ?? [];
-        return children.length === 0;
+        // A real Lexical doc almost always has ≥1 node (Ghost initializes the
+        // editor with an empty paragraph), so child count is the wrong signal.
+        // Walk for any non-empty text/embed content instead — matches Ghost's
+        // own "empty document" definition and makes only-if-empty work.
+        let hasContent = false;
+        const walk = (node: unknown): void => {
+          if (hasContent || !node || typeof node !== 'object') return;
+          const n = node as { text?: unknown; children?: unknown[] };
+          if (typeof n.text === 'string' && n.text.trim().length > 0) {
+            hasContent = true;
+            return;
+          }
+          if (Array.isArray(n.children)) n.children.forEach(walk);
+        };
+        children.forEach(walk);
+        return !hasContent;
       } catch {
         return false;
       }
@@ -270,7 +285,14 @@ export function createGhostMainBridge(): {
       if (r && typeof (r as { then?: unknown }).then === 'function') {
         await r;
       } else {
-        await new Promise<void>((res) => setTimeout(res, 1500));
+        // Fire-and-forget save path: poll for the editor to become clean
+        // instead of a fixed sleep, so slow saves (large posts) are not cut
+        // short. Give up after 10s and let the dirty-check fail closed.
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline) {
+          await new Promise<void>((res) => setTimeout(res, 100));
+          if (!getRecord(ctrl)?.hasDirtyAttributes) break;
+        }
       }
       // Verify the save actually persisted (spike C4: Ember's save resolves
       // even on failure, so we confirm via clean state).
@@ -291,7 +313,11 @@ export function createGhostMainBridge(): {
     captureRollback(): unknown {
       const ctrl = getEditorController(findEmberOwner());
       const rec = getRecord(ctrl);
-      if (!rec) return null;
+      // No record means we cannot snapshot the editor state, so a subsequent
+      // failure could not be rolled back. Refuse to start the transaction
+      // rather than leave a mutation unrecoverable.
+      if (!rec)
+        throw new GhostStateException('ROLLBACK_FAILED', 'no live record to snapshot for rollback');
       // Snapshot the mutable fields the apply may touch (camelCase Ember attrs).
       // titleScratch lives on the POST MODEL (see setField title note).
       return {
@@ -307,11 +333,17 @@ export function createGhostMainBridge(): {
       };
     },
     restoreRollback(snapshot: unknown): void {
-      if (!snapshot || typeof snapshot !== 'object') return;
+      // A null/non-object snapshot means there was nothing to restore, but the
+      // caller expected a real recovery point — treat as a failed rollback
+      // rather than silently succeeding.
+      if (!snapshot || typeof snapshot !== 'object') {
+        throw new GhostStateException('ROLLBACK_FAILED', 'cannot restore from an empty snapshot');
+      }
       const snap = snapshot as Record<string, unknown>;
       const ctrl = getEditorController(findEmberOwner());
       const rec = getRecord(ctrl);
-      if (!rec) throw new Error('live record unavailable for rollback');
+      if (!rec)
+        throw new GhostStateException('ROLLBACK_FAILED', 'live record unavailable for rollback');
       if ('lexical' in snap) {
         rec.set?.('lexical', snap['lexical']);
         // keep the save-time scratch mirror consistent (see setLexical)
