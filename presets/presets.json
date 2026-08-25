@@ -1,18 +1,78 @@
 [
   {
     "schemaVersion": 1,
-    "id": "starter-post",
-    "name": "Starter Post",
-    "description": "A minimal starting structure. Edit this preset or create your own.",
+    "id": "life-update",
+    "name": "Life Update",
+    "description": "Dated personal life update with Animals / Work / Apartment / Blog / Sites sections.",
     "content": {
       "source": "inline-text",
       "mode": "replace",
-      "text": "<A short intro sentence that sets up what this post is about.>\n\nFirst point\n<Explain the first idea here in one or two plain sentences.>\n<Add any supporting detail or example.>\n\nSecond point\n<Explain the second idea here in one or two plain sentences.>\n<Tie it back to the main topic of the post.>\n\n<A closing line that wraps up the post or invites a reply.>"
+      "text": "It's been a while since the last one, so here's what's going on in my life lately.\n\n<Opening line or two — casual, first-person, whatever's on your mind.>\n\nAnimals\n\n<How the animals are doing. Names, antics, new additions.>\n\nWork\n\n<What's happening with work right now.>\n\nApartment\n\n<Apartment news — moves, fixes, setups.>\n\nBlog\n\n<Blog updates — posts written, ideas brewing, stats if you care.>\n\nSites\n\n<Site updates — launches, redesigns, experiments.>\n\nThat's it for this update. See you next time."
     },
     "metadata": {
-      "title": { "mode": "replace", "value": "<Post title here>" },
-      "excerpt": { "mode": "only-if-empty", "value": "<One-sentence summary of this post.>" },
-      "tags": { "mode": "merge", "values": ["General"] }
+      "title": { "mode": "replace", "value": "Life Update <M/D/YY>" },
+      "excerpt": {
+        "mode": "only-if-empty",
+        "value": "A dated personal update covering animals, work, apartment, blog, and sites."
+      },
+      "tags": { "mode": "merge", "values": ["LIfe"] }
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "hot-take-tech-rant",
+    "name": "Hot Take (Tech Rant)",
+    "description": "Single-voice opinion post on Windows, Adobe, AI, or general tech-industry frustrations.",
+    "content": {
+      "source": "inline-text",
+      "mode": "replace",
+      "text": "<Strong opinion opener — one blunt sentence stating exactly where things went wrong.>\n\n<Paragraph 2: the specific thing that happened to you today that proves the point. Concrete details beat abstractions.>\n\n<Paragraph 3: how long this has been broken and who keeps shipping past it.>\n\n<Paragraph 4: what would actually fix it, or why you've given up expecting a fix.>\n\n<Optional closing line — dry, resigned, or defiant.>"
+    },
+    "metadata": {
+      "title": { "mode": "replace", "value": "<Windows has failed everyone.>" },
+      "excerpt": {
+        "mode": "only-if-empty",
+        "value": "Another tech rant: <one-line summary of the frustration>."
+      },
+      "tags": { "mode": "merge", "values": ["tech"] }
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "the-weekly-sniff",
+    "name": "The Weekly Sniff",
+    "description": "Linkdump roundup issue with Best in show / Small web finds / Tools and systems / Loose links sections.",
+    "content": {
+      "source": "inline-text",
+      "mode": "replace",
+      "text": "This is the weekly sniff. A roundup of links (linkdump) from the optimistically last week but more likely last month.\n\nBest in show\n\n[https://example.com - why it's worth a click]\n\nSmall web finds\n\n[https://example.com - short commentary on this small-web gem]\n\nTools and systems\n\n[https://example.com - what it does and why you'd use it]\n\nLoose links\n\n[https://example.com - quick note]\n\n[https://example.com - another quick note]\n\nThis is day <NN> of #100DaysToOffload"
+    },
+    "metadata": {
+      "title": { "mode": "replace", "value": "The Weekly Sniff <NNN>" },
+      "excerpt": {
+        "mode": "only-if-empty",
+        "value": "A roundup of links (linkdump) from the optimistically last week but more likely last month."
+      },
+      "tags": { "mode": "merge", "values": ["The Weekly Sniff"] }
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "id": "blog-post-starter",
+    "name": "Blog Post Starter",
+    "description": "Bare-bones starter for any post: hook, body, wrap-up.",
+    "content": {
+      "source": "inline-text",
+      "mode": "replace",
+      "text": "<Hook — the one sentence that makes someone keep reading.>\n\n<Set up the idea or story. What is this post about and why now?>\n\n<Section topic label>\n\n<Body — develop the main point, add detail or examples. Add more section-label + paragraph blocks as needed.>\n\n<Wrap-up — where you land, and maybe what's next.>"
+    },
+    "metadata": {
+      "title": { "mode": "replace", "value": "<Post title goes here>" },
+      "excerpt": {
+        "mode": "only-if-empty",
+        "value": "<One-sentence summary of what this post is about.>"
+      },
+      "tags": { "mode": "merge", "values": ["blog"] }
     }
   }
 ]

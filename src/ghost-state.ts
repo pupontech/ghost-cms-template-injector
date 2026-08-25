@@ -189,6 +189,7 @@ function validateActionValue(action: PlanAction): string | null {
       return isSerializedLexical(action.value)
         ? null
         : 'body value must be structurally valid serialized Lexical; refusing to submit invalid lexical';
+    case 'title':
     case 'excerpt':
     case 'customTemplate':
       return typeof action.value === 'string' ? null : `${action.field} value must be a string`;

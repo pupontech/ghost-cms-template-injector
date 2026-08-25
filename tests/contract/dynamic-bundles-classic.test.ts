@@ -103,8 +103,8 @@ describe('built classic bundles inline the seed (no content-script fetch)', () =
   for (const file of SEED_BUNDLES) {
     it(`${file} embeds the inlined seed`, () => {
       const code = readFileSync(path.join(DIST, file), 'utf8');
-      // The seed id from the shipped presets.json must be present (inlined).
-      expect(code, `${file} must inline the bundled seed preset`).toContain('starter-post');
+      // The seed ids from the shipped presets.json must be present (inlined).
+      expect(code, `${file} must inline the bundled seed preset`).toContain('life-update');
     });
   }
 

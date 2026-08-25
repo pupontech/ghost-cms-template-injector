@@ -161,10 +161,9 @@ export function createGhostMainBridge(): {
       const owner = findEmberOwner();
       const ctrl = getEditorController(owner);
       const rec = getRecord(ctrl);
-      // Ghost keeps the unsaved title in the controller's titleScratch (plain
-      // property); the record attribute is `title`.
-      const scratch = ctrl as unknown as Record<string, unknown> | null;
-      const s = scratch?.['titleScratch'];
+      // Ghost keeps the unsaved title in the POST MODEL's titleScratch
+      // (models/post.js:137); the controller has no such property.
+      const s = rec?.get?.('titleScratch');
       if (typeof s === 'string') return s;
       const v = rec?.get?.('title') ?? (rec as Record<string, unknown> | null)?.['title'] ?? null;
       return typeof v === 'string' ? v : null;
@@ -219,13 +218,25 @@ export function createGhostMainBridge(): {
       } else if (field === 'excerpt') {
         rec.set?.('customExcerpt', value as string);
       } else if (field === 'title') {
-        // Title writes mirror the controller's own updateTitleScratch: the
-        // editor binds to titleScratch, and beforeSaveTask persists the
-        // scratch into post.title at native-save time. Writing only the
-        // record attribute would be clobbered by the save pipeline.
+        // Title writes mirror the controller's own updateTitleScratch
+        // (lexical-editor.js:334): `this.set('post.titleScratch', title)`.
+        // titleScratch lives on the POST MODEL (models/post.js:137), not on
+        // the controller — writing a plain `ctrl.titleScratch` property is a
+        // no-op that beforeSaveTask never reads, so the save pipeline resets
+        // the title to '(Untitled)' (live defect found on Ghost 6.59).
         const v = value as string;
+        if (ctrl) {
+          const ctrlAny = ctrl as unknown as {
+            set?: (key: string, val: unknown) => void;
+            post?: { set?: (key: string, val: unknown) => void };
+          };
+          if (typeof ctrlAny.set === 'function') {
+            ctrlAny.set('post.titleScratch', v);
+          } else {
+            rec.set?.('titleScratch', v);
+          }
+        }
         rec.set?.('title', v);
-        if (ctrl) (ctrl as unknown as Record<string, unknown>)['titleScratch'] = v;
       } else {
         rec.set?.('customTemplate', value as string);
       }
@@ -282,16 +293,12 @@ export function createGhostMainBridge(): {
       const rec = getRecord(ctrl);
       if (!rec) return null;
       // Snapshot the mutable fields the apply may touch (camelCase Ember attrs).
+      // titleScratch lives on the POST MODEL (see setField title note).
       return {
         lexical: rec.get?.('lexical') ?? null,
         lexicalScratch:
           (rec as unknown as { lexicalScratch?: string | null }).lexicalScratch ?? null,
-        title:
-          (getEditorController(findEmberOwner()) as unknown as Record<string, unknown> | null)?.[
-            'titleScratch'
-          ] ??
-          rec.get?.('title') ??
-          null,
+        title: rec.get?.('titleScratch') ?? rec.get?.('title') ?? null,
         customExcerpt: rec.get?.('customExcerpt') ?? null,
         customTemplate: rec.get?.('customTemplate') ?? null,
         tags: (rec.get?.('tags') as Array<{ name?: string }> | undefined) ?? [],
@@ -312,9 +319,9 @@ export function createGhostMainBridge(): {
       }
       if ('customExcerpt' in snap) rec.set?.('customExcerpt', snap['customExcerpt']);
       if ('title' in snap) {
+        // restore BOTH the model scratch and the attribute (see setField title)
+        rec.set?.('titleScratch', snap['title']);
         rec.set?.('title', snap['title']);
-        const ctrl2 = getEditorController(findEmberOwner());
-        if (ctrl2) (ctrl2 as unknown as Record<string, unknown>)['titleScratch'] = snap['title'];
       }
       if ('customTemplate' in snap) rec.set?.('customTemplate', snap['customTemplate']);
       if ('tags' in snap) rec.set?.('tags', snap['tags']);
