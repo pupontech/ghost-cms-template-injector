@@ -16,7 +16,7 @@ The final C8 worktree passed `npm run verify`:
 - ESLint
 - Strict TypeScript check
 - Production build
-- Vitest: 32 files, 326 tests
+- Vitest: 32 files, 353 tests
 - Manifest and built-artifact validation
 
 Focused bridge/capability verification also passed: 5 files, 39 tests.
@@ -28,6 +28,8 @@ The manifest uses only `storage` and `scripting`, has no static host permission,
 ### Preset persistence
 
 A genuine headed Chromium run against authenticated Ghost Admin verified that the body, custom excerpt, and tag persisted after the native save and remained correct beyond the subsequent autosave interval. See `evidence/ef2721b1-headed-rerun.md`.
+
+The `real-ghost-browser-proof.mjs` harness was repaired (it previously referenced a non-existent global and could not pass): it now drives the REAL `dist/` bundles through the production `chrome.runtime` message path against the live authenticated Ghost at :2368, activates the MAIN bridge via the real capability token, and records evidence in `evidence/live-proof.md` — discover `ok`, apply `ok: { saved: true }`, and API read-back showing the applied excerpt + tag persisted to the newest post.
 
 ### Disable/re-enable lifecycle
 
