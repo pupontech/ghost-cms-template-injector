@@ -24,7 +24,9 @@ const deps = {
   createBridgeEnv: (): PageBridgeEnv => ({
     addEventListener: (cb) => globalThis.addEventListener('message', cb),
     removeEventListener: (cb) => globalThis.removeEventListener('message', cb),
-    postMessage: (message) => globalThis.postMessage(message, '*'),
+    // Both bridge ends share this window, so target our own origin rather
+    // than '*' — replies never fan out to embedding frames.
+    postMessage: (message) => globalThis.postMessage(message, globalThis.location?.origin || '*'),
     setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
     clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
   }),

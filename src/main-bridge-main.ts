@@ -103,8 +103,12 @@ export function installMainBridge(
     if (!isPageBridgeInbound(data)) return;
     void handleGated(data).then((reply) => {
       if (reply === undefined) return; // dormant: silence
+      // Reply only to the requesting frame. The target origin is the page's
+      // own origin: both bridge ends live in this same window, so '*' would
+      // needlessly leak replies (nonces, state) to any embedding frame.
       const source = event.source as { postMessage?: (m: unknown, t: string) => void } | null;
-      source?.postMessage?.(reply, '*');
+      const ownOrigin = globalThis.location?.origin ?? '';
+      source?.postMessage?.(reply, ownOrigin || '*');
     });
   };
 

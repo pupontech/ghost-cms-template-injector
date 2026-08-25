@@ -23,6 +23,17 @@ export interface CapabilityClientDeps {
   postToWindow: (message: unknown) => void;
   /** Subscribe to consent-revocation notifications; returns unsubscribe. */
   onConsentRevoked: (cb: () => void) => () => void;
+  /** True when the MAIN bridge has answered with this client's token and is awake. */
+  isBridgeActive: () => boolean;
+  /**
+   * Polling interval (ms) used while waiting for the MAIN bridge to install and
+   * acknowledge activation. Guards against the fire-and-forget activation being
+   * lost when the isolated content script runs before the MAIN bridge listener
+   * is installed (registration/execution ordering at document_idle).
+   */
+  pollIntervalMs?: number;
+  /** Cap on activation retries (each retry re-posts the held token). */
+  maxActivationAttempts?: number;
 }
 
 export interface CapabilityClient {
@@ -42,21 +53,63 @@ function envelope(action: 'activate' | 'deactivate', token: string): unknown {
   return { capSource: BRIDGE_CAPABILITY_SOURCE, action, token };
 }
 
+const DEFAULT_POLL_INTERVAL_MS = 150;
+const DEFAULT_MAX_ATTEMPTS = 40; // ~6s at 150ms — covers document_idle registration ordering
+
 export function createCapabilityClient(deps: CapabilityClientDeps): CapabilityClient {
   let token: string | null = null;
   let unsubscribe: (() => void) | null = null;
+  let poll: ReturnType<typeof setTimeout> | null = null;
+
+  function clearPoll(): void {
+    if (poll !== null) {
+      clearTimeout(poll);
+      poll = null;
+    }
+  }
+
+  function activateOnce(): void {
+    if (token !== null) deps.postToWindow(envelope('activate', token));
+  }
 
   return {
     activateForDocument() {
-      // One token per document lifecycle: first call mints and posts the
-      // one-time activation; subsequent calls are idempotent (the MAIN gate
-      // also refuses a second activation while already active).
+      // One token per document lifecycle: the first call mints the token and
+      // begins the activation handshake. Because the MAIN bridge listener may
+      // not yet be installed when this isolated script runs (it is registered
+      // after this content script at document_idle), the one-time activation
+      // envelope can be silently lost. We therefore re-post the held token on a
+      // short poll until the bridge acknowledges activation (`isBridgeActive`)
+      // or we hit the attempt cap. This is not a fresh handshake per cycle — the
+      // MAIN gate refuses a second activation while already active, so retries
+      // are harmless once awake, and a genuinely new enable always mints a new
+      // token.
       if (token === null) {
         token = deps.randomToken();
-        deps.postToWindow(envelope('activate', token));
       }
+      const interval = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+      const maxAttempts = deps.maxActivationAttempts ?? DEFAULT_MAX_ATTEMPTS;
+      let attempts = 0;
+      activateOnce();
+      const tick = (): void => {
+        if (token === null || poll === null) return;
+        if (deps.isBridgeActive()) {
+          clearPoll();
+          return;
+        }
+        if (attempts >= maxAttempts) {
+          clearPoll();
+          return;
+        }
+        attempts += 1;
+        activateOnce();
+        poll = setTimeout(tick, interval);
+      };
+      clearPoll();
+      poll = setTimeout(tick, interval);
     },
     deactivate() {
+      clearPoll();
       if (token === null) return;
       deps.postToWindow(envelope('deactivate', token));
     },
@@ -67,6 +120,7 @@ export function createCapabilityClient(deps: CapabilityClientDeps): CapabilityCl
     dispose() {
       unsubscribe?.();
       unsubscribe = null;
+      clearPoll();
       token = null;
     },
     holdsToken: () => token !== null,
