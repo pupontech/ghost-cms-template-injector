@@ -209,16 +209,18 @@ describe('MAIN bridge capability gate — disable/revoke regression (C8)', () =>
     expect(handle).toHaveBeenCalledTimes(3);
   });
 
-  it('wires the REAL gate: __ghostPresetToolbarBridgeActive reflects live state', async () => {
+  it('responder drops a no-op when deactivated by a wrong token (stale token)', async () => {
     const win = makeFakeWindow();
-    const g = globalThis as unknown as Record<string, unknown>;
-    withFakeWindow(win, () => installMainBridge(okResponder as never));
-    expect(typeof g.__ghostPresetToolbarBridgeActive).toBe('function');
-    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(false);
-    await win.dispatch(activateMsg(TOKEN('f')));
-    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(true);
-    await win.dispatch(deactivateMsg(TOKEN('f')));
-    expect((g.__ghostPresetToolbarBridgeActive as () => boolean)()).toBe(false);
+    const handle = vi.fn(okResponder) as unknown as ReturnType<typeof vi.fn>;
+    withFakeWindow(win, () => installMainBridge(handle));
+
+    await win.dispatch(activateMsg(TOKEN('g')));
+    expect(((await discover(win)) as { ok?: boolean }).ok).toBe(true);
+
+    // A wrong-token deactivate must NOT put the bridge to sleep.
+    await win.dispatch(deactivateMsg(TOKEN('wrong')));
+    const stillActive = await discover(win);
+    expect((stillActive as { ok?: boolean } | null)?.ok).toBe(true);
   });
 });
 
@@ -286,6 +288,52 @@ describe('isolated capability client', () => {
     // a genuinely new token re-activates cleanly
     expect(gate.activate('c'.repeat(32))).toBe(true);
     expect(gate.isActive()).toBe(true);
+  });
+
+  it('re-activates with a fresh token after deactivate (re-enable without reload)', () => {
+    const h = baseDeps();
+    const client = createCapabilityClient(h.deps);
+    client.activateForDocument();
+    expect(typeof (h.sent[0] as { token: string }).token).toBe('string');
+    const firstToken = (h.sent[0] as { token: string }).token;
+    client.deactivate();
+    // Token is cleared locally so the next enable mints a NEW one.
+    expect(client.holdsToken()).toBe(false);
+    client.activateForDocument();
+    expect(h.sent).toHaveLength(3); // activate, deactivate, re-activate
+    expect((h.sent[2] as { token: string }).token).not.toBe(firstToken);
+  });
+
+  it('retries activation until the MAIN bridge acknowledges (lost-envelope race)', () => {
+    // Simulate the real registration-ordering race: the MAIN bridge listener is
+    // not yet installed, so the first activation is lost; the client must keep
+    // re-posting until `isBridgeActive` reports the bridge is awake.
+    let active = false;
+    const h = baseDeps();
+    let counter = 0;
+    const deps = {
+      ...h.deps,
+      randomToken: () => `token-${++counter}-${'x'.repeat(20)}`,
+      isBridgeActive: () => active,
+      pollIntervalMs: 5,
+      maxActivationAttempts: 20,
+    };
+    const client = createCapabilityClient(deps);
+    client.activateForDocument();
+    const firstCount = h.sent.length;
+    expect(firstCount).toBeGreaterThanOrEqual(1);
+    // After activation is acknowledged, no further envelopes are posted.
+    active = true;
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const afterAck = h.sent.length;
+        // Allow a couple of ticks to confirm the poll stops.
+        setTimeout(() => {
+          expect(h.sent.length).toBe(afterAck);
+          resolve();
+        }, 40);
+      }, 40);
+    });
   });
 });
 

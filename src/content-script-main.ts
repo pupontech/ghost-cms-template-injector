@@ -72,6 +72,14 @@ function buildCapabilityDeps(): CapabilityClientDeps {
               .padStart(8, '0'),
           ).join(''),
     postToWindow: (message) => globalThis.postMessage(message, '*'),
+    // The MAIN bridge installs the live-state introspection hook only under
+    // test/evidence builds; in production we don't expose it. When present we
+    // treat a truthy result as "awake", otherwise fall back to repeated
+    // activation retries (the gateway below) to guarantee delivery.
+    isBridgeActive: () => {
+      const hook = (globalThis as Record<string, unknown>)['__ghostPresetToolbarBridgeActive'];
+      return typeof hook === 'function' && Boolean((hook as () => boolean)());
+    },
     onConsentRevoked: (cb) => {
       let lastConsent: unknown = undefined;
       // Snapshot initial consent so we only fire on an actual revocation

@@ -95,6 +95,7 @@ export type GhostStateError =
   | 'UNSUPPORTED_CAPABILITY'
   | 'UNSAVED_RECORD'
   | 'CAPABILITY_MISSING'
+  | 'BUSY'
   | 'APPLY_FAILED'
   | 'SAVE_FAILED'
   | 'ROLLBACK_FAILED'
@@ -117,6 +118,8 @@ export class GhostStateException extends Error {
 export interface GhostLiveSurface {
   getResourceType(): GhostResourceType;
   getResourceId(): string | null;
+  /** True only when a concrete live Ember post/page record is reachable. */
+  hasRecord(): boolean;
   isDirty(): boolean;
   getUpdatedAt(): string | null;
   /** Lexical state as serialized JSON, or null if none reachable. */
@@ -221,6 +224,14 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       typeof this.#surface.captureRollback === 'function' &&
       typeof this.#surface.restoreRollback === 'function';
 
+    // A live editor record MUST be reachable. The surface methods always exist
+    // (they are the capability surface), but without a concrete record there is
+    // nothing to mutate; a missing/unsynced editor must fail closed rather than
+    // report a phantom capability that then throws deep inside apply().
+    if (!this.#surface.hasRecord()) {
+      return unsupported('no live editor record reachable');
+    }
+
     // Capability gate: every required capability must be proven reachable.
     if (!hasLexical) {
       return unsupported('live Lexical state unreachable');
@@ -286,7 +297,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
 
   async apply(plan: ApplicationPlan): Promise<ApplyResult> {
     if (this.#busy) {
-      throw new GhostStateException('CAPABILITY_MISSING', 'transaction already in flight');
+      throw new GhostStateException('BUSY', 'transaction already in flight');
     }
     this.#busy = true;
     try {

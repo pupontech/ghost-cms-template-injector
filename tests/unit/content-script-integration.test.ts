@@ -20,6 +20,7 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
   return {
     getResourceType: () => 'post',
     getResourceId: () => 'post-1',
+    hasRecord: () => true,
     isDirty: () => false,
     getUpdatedAt: () => '2026-08-21T00:00:00.000Z',
     getLexical: () => '{"root":{"children":[]}}',
@@ -156,7 +157,7 @@ describe('content-script → bridge → ghost-state integration', () => {
     };
     void responderEnv;
     // The ghost-state adapter itself serializes: a second apply() while the
-    // first is mid-nativeSave throws CAPABILITY_MISSING (transaction in flight).
+    // first is mid-nativeSave is refused with BUSY (transaction in flight).
     const r1 = adapter.apply({
       presetId: 'p',
       status: 'ready',
@@ -175,6 +176,6 @@ describe('content-script → bridge → ghost-state integration', () => {
       secondErr = (e as { code?: string }).code ?? 'unknown';
     }
     await r1;
-    expect(secondErr).toBe('CAPABILITY_MISSING');
+    expect(secondErr).toBe('BUSY');
   });
 });

@@ -135,7 +135,10 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
   if (r['source'] !== BRIDGE_SOURCE_ID) return false;
   if (typeof r['nonce'] !== 'string' || !UUID_RE.test(r['nonce'])) return false;
   if (r['ok'] === true) {
-    return typeof r['result'] === 'object';
+    const result = r['result'];
+    // Any structured-cloneable value (object, string, number, boolean, null) is
+    // a valid result. Reject only unsupported shapes (undefined, function, etc.).
+    return result !== undefined;
   }
   if (r['ok'] === false) {
     return (

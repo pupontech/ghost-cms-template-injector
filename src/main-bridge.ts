@@ -129,6 +129,9 @@ export function createGhostMainBridge(): {
       const id = (rec?.get?.('id') as string | undefined) ?? rec?.id ?? null;
       return id;
     },
+    hasRecord(): boolean {
+      return getRecord(getEditorController(findEmberOwner())) !== null;
+    },
     isDirty(): boolean {
       return Boolean(getRecord(getEditorController(findEmberOwner()))?.hasDirtyAttributes);
     },

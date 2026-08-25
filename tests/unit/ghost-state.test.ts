@@ -13,6 +13,7 @@ function capableSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSur
   return {
     getResourceType: () => 'post',
     getResourceId: () => 'post-1',
+    hasRecord: () => true,
     isDirty: () => false,
     getUpdatedAt: () => '2026-08-21T00:00:00.000Z',
     getLexical: () => '{"root":{}}',
@@ -60,6 +61,18 @@ describe('C2 capability discovery', () => {
     expect(outcome.reason).toMatch(/native save/i);
     // Discovery must not mutate.
     expect(setField).not.toHaveBeenCalled();
+  });
+
+  it('returns UNSUPPORTED_CAPABILITY when no live editor record is reachable (M4)', () => {
+    // A page where Ember internals exist but the editor record is not yet
+    // hydrated (e.g. mid-navigation) must fail closed, not report a phantom
+    // capability that later throws deep inside apply().
+    const surface = capableSurface({ hasRecord: () => false });
+    const adapter = createGhostStateAdapter(surface);
+    const outcome = adapter.discover();
+    expect(outcome.supported).toBe(false);
+    if (outcome.supported) throw new Error('expected unsupported');
+    expect(outcome.reason).toMatch(/no live editor record/i);
   });
 
   it('returns UNSUPPORTED_CAPABILITY when rollback path is unreachable', () => {

@@ -120,6 +120,7 @@ function makeSurface(): GhostLiveSurface {
   return {
     getResourceType: () => 'post',
     getResourceId: () => 'post-1',
+    hasRecord: () => true,
     isDirty: () => false,
     getUpdatedAt: () => '2026-08-21T00:00:00.000Z',
     getLexical: () => '{"root":{"children":[]}}',

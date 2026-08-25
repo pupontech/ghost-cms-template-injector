@@ -40,8 +40,8 @@ export interface UnknownRoute {
 
 export type DetectedRoute = EditorRoute | ListRoute | UnknownRoute;
 
-const HASH_ROUTE_RE = /^#?\/?editor\/(new|edit)\/(post|page)(?:\/([^/]+))?\/?$/;
-const LEGACY_ROUTE_RE = /^#?\/?editor\/(post|page)(?:\/([^/]+))?\/?$/;
+const HASH_ROUTE_RE = /^#?\/?editor\/(new|edit)\/(post|page)(?:\/([^/?#]+))?(?:\/[^/?#]+)*\/?$/;
+const LEGACY_ROUTE_RE = /^#?\/?editor\/(post|page)(?:\/([^/?#]+))?(?:\/[^/?#]+)*\/?$/;
 const LIST_RE = /^#?\/?posts\/?$/;
 
 function isGhostAdmin(originPath: string): boolean {

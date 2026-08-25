@@ -123,10 +123,6 @@ export function installMainBridge(
     if (tok) gate.deactivate(tok);
     globalThis.removeEventListener('message', listener as EventListener);
   });
-
-  // Test/evidence introspection hook (no page-reachable capability).
-  (globalThis as Record<string, unknown>)['__ghostPresetToolbarBridgeActive'] = () =>
-    gate.isActive();
 }
 
 type BridgeReply = BridgeResponse;

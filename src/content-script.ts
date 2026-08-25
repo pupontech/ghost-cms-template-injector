@@ -102,10 +102,14 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   async function discover(): Promise<unknown> {
     const reply = await getBridge().request('discover', {});
     if (!reply.ok) {
+      // Fail closed with the actual bridge error (e.g. TIMEOUT when the MAIN
+      // bridge is still dormant). Reporting ok:true here masked capability
+      // failures as a successful-but-unsupported probe and forced the caller to
+      // wait the full 5s bridge timeout before surfacing a confusing reason.
       return {
-        supported: false,
-        capability: null,
-        reason: reply.error,
+        source: POPUP_MESSAGE_SOURCE,
+        ok: false,
+        error: reply.error,
       };
     }
     return reply.result;
