@@ -6,6 +6,7 @@
 - Governance issue: https://github.com/pupontech/ghost-cms-template-injector/issues/4
 - OpenSpec: `openspec/changes/4-governance-release-safety/proposal.md`
 - Kanban board/card: `ghost-preset-toolbar` / `t_96555f52`
+- Draft PR: https://github.com/pupontech/ghost-cms-template-injector/pull/5
 - Extension/package version: `0.2.3` (manifest, package.json, and package-lock.json synchronized)
 - Genuine headed lifecycle implementation/evidence lineage: `45f7fc0`
 - Compatibility target exercised: Ghost 6.60
@@ -58,5 +59,5 @@ Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset 
 
 1. Keep the passing full verification and high-severity dependency audit attached to any subsequent remediation commit.
 2. Resolve the P2 `AGENTS.md` routing-policy conflict by owner-authorized edit or an explicit precedence rule.
-3. Update the Issue #4 and Kanban card with the exact PR URL, OpenSpec path, current CI status, native Luna result, DeepSeek 401 status, and owner-gate state.
+3. Update Issue #4 and Kanban card with the exact PR #5 URL, OpenSpec path, current CI status, native Luna result, DeepSeek 401 status, and owner-gate state.
 4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run.
