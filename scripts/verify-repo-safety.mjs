@@ -310,10 +310,9 @@ function inspectFile(absolute, relative, tracked) {
       const bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
       if (!bytesRead) break;
       const chunk = buffer.subarray(0, bytesRead);
-      const nulIndex = chunk.indexOf(0);
-      const text = carry + chunk.subarray(0, nulIndex >= 0 ? nulIndex : bytesRead).toString('utf8');
+      // Scan beyond NUL bytes because binary prefixes must not hide injected text.
+      const text = carry + chunk.toString('utf8');
       scanWindow(relative, text, scanCommands);
-      if (nulIndex >= 0) break;
       carry = text.slice(-8192);
     }
   } catch {
@@ -346,10 +345,9 @@ function scanStagedFile(relative) {
     record(relative, 'unable to inspect staged file');
     return;
   }
-  const nulIndex = content.indexOf(0);
   scanWindow(
     relative,
-    content.subarray(0, nulIndex >= 0 ? nulIndex : content.length).toString('utf8'),
+    content.toString('utf8'),
     commandExtensions.has(path.extname(relative).toLowerCase()),
   );
 }

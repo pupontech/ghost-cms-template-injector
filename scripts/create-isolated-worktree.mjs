@@ -34,6 +34,7 @@ if (args.includes('--help')) {
   console.log(
     'Creates one new wt/<slug> branch and worktree. It never removes or overwrites a worktree.',
   );
+  console.log('The --base ref must resolve to a commit, not a tree or blob.');
   process.exit(0);
 }
 
@@ -69,7 +70,7 @@ function git(...parameters) {
 
 try {
   git('rev-parse', '--is-inside-work-tree');
-  git('rev-parse', '--verify', '--quiet', base);
+  git('rev-parse', '--verify', '--quiet', `${base}^{commit}`);
 } catch {
   console.error(`base ref is unavailable: ${base}`);
   process.exit(2);

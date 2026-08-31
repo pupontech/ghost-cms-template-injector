@@ -1,4 +1,5 @@
 import {
+  existsSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
@@ -84,6 +85,18 @@ describe('repository safety scripts', () => {
       ]),
     );
     expect(runSafety(binaryPrefix).status).toBe(1);
+
+    const binarySuffix = fixture();
+    writeFileSync(
+      join(binarySuffix, 'binary.dat'),
+      Buffer.concat([
+        Buffer.from([0, 1, 2, 3]),
+        Buffer.from(`const ${'access' + 'Token'} = 'binary-suffix-secret-value';\n`),
+      ]),
+    );
+    const binarySuffixLeak = runSafety(binarySuffix);
+    expect(binarySuffixLeak.status).toBe(1);
+    expect(binarySuffixLeak.stderr).toContain('binary.dat');
 
     const ignoredConfig = gitFixture();
     writeFileSync(join(ignoredConfig, '.gitignore'), 'config.js\n');
@@ -186,10 +199,22 @@ describe('repository safety scripts', () => {
     execFileSync('git', ['-C', directory, 'add', 'staged-binary.bin']);
     writeFileSync(stagedBinary, Buffer.from([0, 1, 2]));
 
+    const stagedAfterNul = join(directory, 'staged-after-nul.bin');
+    writeFileSync(
+      stagedAfterNul,
+      Buffer.concat([
+        Buffer.from([0, 1, 2]),
+        Buffer.from(`const ${['DEEPSEEK_API', 'KEY'].join('_')} = 'staged-after-nul-secret';\n`),
+      ]),
+    );
+    execFileSync('git', ['-C', directory, 'add', 'staged-after-nul.bin']);
+    writeFileSync(stagedAfterNul, Buffer.from([0, 1, 2]));
+
     const result = runSafety(directory);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('staged.js');
     expect(result.stderr).toContain('staged-binary.bin');
+    expect(result.stderr).toContain('staged-after-nul.bin');
   });
 
   it('rejects a staged symlink even when the working copy is regular', () => {
@@ -407,7 +432,7 @@ describe('repository safety scripts', () => {
     expect(readdirSync(outside)).toEqual([]);
   });
 
-  it('refuses dangling worktree targets and creates a normal isolated worktree', () => {
+  it('refuses dangling worktree targets, creates a normal isolated worktree, and leaves it intact on repeat', () => {
     const directory = gitFixture();
     execFileSync('git', [
       '-C',
@@ -457,6 +482,24 @@ describe('repository safety scripts', () => {
     expect(created.status).toBe(0);
     expect(created.stdout).toContain('branch=wt/normal-target');
     expect(readdirSync(join(directory, '.worktrees', 'normal-target'))).toContain('.git');
+
+    const repeated = spawnSync(
+      'node',
+      [
+        'scripts/create-isolated-worktree.mjs',
+        '--root',
+        directory,
+        '--name',
+        'normal-target',
+        '--base',
+        'HEAD',
+      ],
+      { cwd: root, encoding: 'utf8' },
+    );
+    expect(repeated.status).toBe(2);
+    expect(repeated.stderr).toContain('refusing to overwrite existing worktree');
+    expect(readdirSync(join(directory, '.worktrees', 'normal-target'))).toContain('.git');
+
     execFileSync('git', [
       '-C',
       directory,
@@ -464,6 +507,107 @@ describe('repository safety scripts', () => {
       'remove',
       '--force',
       join(directory, '.worktrees', 'normal-target'),
+    ]);
+  });
+
+  it('rejects an existing non-commit base ref before it can create a worktree', () => {
+    const directory = gitFixture();
+    execFileSync('git', [
+      '-C',
+      directory,
+      '-c',
+      'user.email=fixture@example.invalid',
+      '-c',
+      'user.name=Fixture',
+      'commit',
+      '--quiet',
+      '--allow-empty',
+      '-m',
+      'fixture',
+    ]);
+
+    const result = spawnSync(
+      'node',
+      [
+        'scripts/create-isolated-worktree.mjs',
+        '--root',
+        directory,
+        '--name',
+        'non-commit-base',
+        '--base',
+        'HEAD^{tree}',
+      ],
+      { cwd: root, encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('base ref is unavailable: HEAD^{tree}');
+    expect(existsSync(join(directory, '.worktrees', 'non-commit-base'))).toBe(false);
+    expect(
+      spawnSync('git', [
+        '-C',
+        directory,
+        'show-ref',
+        '--verify',
+        '--quiet',
+        'refs/heads/wt/non-commit-base',
+      ]).status,
+    ).toBe(1);
+  });
+
+  it('accepts an annotated tag that resolves to a commit as a worktree base', () => {
+    const directory = gitFixture();
+    execFileSync('git', [
+      '-C',
+      directory,
+      '-c',
+      'user.email=fixture@example.invalid',
+      '-c',
+      'user.name=Fixture',
+      'commit',
+      '--quiet',
+      '--allow-empty',
+      '-m',
+      'fixture',
+    ]);
+    execFileSync('git', [
+      '-C',
+      directory,
+      '-c',
+      'user.email=fixture@example.invalid',
+      '-c',
+      'user.name=Fixture',
+      'tag',
+      '--annotate',
+      '--message',
+      'fixture tag',
+      'fixture-tag',
+      'HEAD',
+    ]);
+
+    const result = spawnSync(
+      'node',
+      [
+        'scripts/create-isolated-worktree.mjs',
+        '--root',
+        directory,
+        '--name',
+        'annotated-tag',
+        '--base',
+        'fixture-tag',
+      ],
+      { cwd: root, encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('base=fixture-tag');
+    execFileSync('git', [
+      '-C',
+      directory,
+      'worktree',
+      'remove',
+      '--force',
+      join(directory, '.worktrees', 'annotated-tag'),
     ]);
   });
 });

@@ -5,10 +5,10 @@ Create `openspec/changes/<issue-number>-<slug>/proposal.md`:
 ```md
 # <title>
 
-- Issue: #<number>
-- Kanban: <card id/link>
-- Owner approval: pending/approved
-- Independent reviewer: pending/approved
+- Issue: https://github.com/<owner>/<repository>/issues/<number>
+- Kanban: <board> / t_<8+ lowercase-hex card-id>
+- Owner approval: pending/approved/blocked
+- Independent reviewer: pending/approved/blocked
 
 ## Problem and non-goals
 

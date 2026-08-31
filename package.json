@@ -11,12 +11,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "manifest:validate": "node scripts/validate-manifest.mjs",
+    "governance:check": "node scripts/verify-governance.mjs",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "build:debug": "DEBUG_BUILD=1 npm run build",
     "audit:high": "npm audit --audit-level=high",
     "safety:check": "node scripts/verify-repo-safety.mjs",
     "worktree:init": "node scripts/create-isolated-worktree.mjs",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm test && npm run manifest:validate && npm run safety:check"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm test && npm run manifest:validate && npm run governance:check && npm run safety:check"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.1",

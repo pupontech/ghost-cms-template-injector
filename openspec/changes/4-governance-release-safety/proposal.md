@@ -4,7 +4,7 @@
 - Kanban: `ghost-preset-toolbar` / `t_96555f52`
 - Pull request: https://github.com/pupontech/ghost-cms-template-injector/pull/5 (draft)
 - Owner approval: approved 2026-08-28
-- Independent reviewers: native Luna read-only review PASS on the earlier remediation; `ghostnim` read-only review PASS on the current remediation delta; DeepSeek Flash review blocked by official API HTTP 401
+- Independent reviewers: approved — native Luna read-only review PASS on the earlier remediation and `ghostnim` read-only review PASS on the current remediation delta; DeepSeek Flash review blocked by official API HTTP 401
 
 ## Problem and non-goals
 
