@@ -19,9 +19,9 @@ The current remediation working tree's latest full release gate passed:
 
 - Vitest: 34 test files, 374 tests
 
-The earlier implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the aggregate `npm run verify` gate after commit; this remediation delta must be recorded against its own commit and hosted CI run before merge. `npm run audit:high` found 0 vulnerabilities.
+The remediation commit `a044a066a03675b2879bebb572c771ebf773fc15` passed the aggregate `npm run verify` gate after commit; `npm run audit:high` found 0 vulnerabilities.
 
-Hosted GitHub Actions also passed on pushed tip `80f017d14a6f2414f8b66d0790b1fb6ea11a467e`: `verify (Node 20)` and `verify (Node 22)`; run `33401081288`.
+Hosted GitHub Actions passed on pushed tip `a044a066a03675b2879bebb572c771ebf773fc15`: `verify (Node 20)` and `verify (Node 22)`; run `33426316268`. GitHub emitted only the existing Node 20 action-deprecation annotation.
 
 The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
@@ -59,7 +59,7 @@ Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset 
 
 ## Remaining gates
 
-1. Commit and push this remediation delta, then attach its exact hosted CI run and final `npm run verify` output.
+1. Keep the passing local gate and hosted run `33426316268` attached to any subsequent source change.
 2. Resolve the P2 `AGENTS.md` routing-policy conflict by a separately approved owner edit or an explicit precedence rule.
 3. Re-authenticate official DeepSeek Flash only if that optional reviewer lane is required; its last attempt returned HTTP 401 and no fallback was used.
 4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run; no agent may merge.

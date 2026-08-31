@@ -31,7 +31,7 @@ One writer owns this isolated remediation worktree. No other worktree is modifie
 ## Acceptance matrix
 
 - [x] Focused RED→GREEN tests for repository safety helper and proof-harness local boundaries.
-- [x] Current remediation working tree: `npm run verify`, `npm run audit:high`, manifest validation, and safety scan pass; exact commit and hosted CI run are recorded after push.
+- [x] Remediation commit `a044a066a03675b2879bebb572c771ebf773fc15`: `npm run verify`, `npm run audit:high`, manifest validation, and safety scan pass; hosted CI run `33426316268` passes Node 20 and Node 22.
 - [x] Package, lockfile, and manifest versions are synchronized at `0.2.3`.
 - [x] GitHub `main` received protected-branch settings while public; after approved privacy change, GitHub Free cannot expose/enforce those controls on the private repository, documented as an external plan limitation.
 - [x] Native Luna and `ghostnim` independent reviews are recorded in `docs/release-status.md`; official DeepSeek Flash review remains blocked until its credential is re-authenticated.
@@ -39,4 +39,4 @@ One writer owns this isolated remediation worktree. No other worktree is modifie
 
 ## Implementation and review log
 
-Native Luna independent review: PASS for the earlier implementation and safety controls. `ghostnim` independently reviewed the current remediation delta and returned PASS with no security or logic blockers. Official DeepSeek Flash could not run because `https://api.deepseek.com/v1` returned HTTP 401. The current working tree passes the full local verification and high-severity audit; exact commit and hosted CI are recorded after push. One P2 `AGENTS.md` routing-policy conflict remains protected from automatic edit. The current branch remains unmerged. No agent will self-approve or self-merge.
+Native Luna independent review: PASS for the earlier implementation and safety controls. `ghostnim` independently reviewed the current remediation delta and returned PASS with no security or logic blockers. Official DeepSeek Flash could not run because `https://api.deepseek.com/v1` returned HTTP 401. Remediation commit `a044a066a03675b2879bebb572c771ebf773fc15` passes the full local verification and high-severity audit; hosted CI run `33426316268` passes Node 20 and Node 22. One P2 `AGENTS.md` routing-policy conflict remains protected from automatic edit. The current branch remains unmerged. No agent will self-approve or self-merge.
