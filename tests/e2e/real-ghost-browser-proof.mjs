@@ -7,35 +7,40 @@
  *
  *   discover → load preset → live snapshot → plan → one native save → persisted
  *
- * Evidence (redacted, no cookie values) is written to evidence/live-proof.md.
- * The session cookie is read from /tmp/cj.txt (outside the repo) and injected
- * via CDP Network.setCookie; its value is never printed or committed.
+ * Evidence (redacted, no cookie values) is written locally under evidence/local/.
+ * The session cookie is read from the explicit ignored path supplied by
+ * GHOST_PROOF_COOKIE_JAR and injected via CDP Network.setCookie; its value is
+ * never printed or committed.
  *
  * This is a PROOF harness, not shipped extension code.
  */
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { resolveProofPaths, writeProofArtifact } from '../../scripts/proof-path-safety.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(DIR, '..', '..');
-const OUT = path.join(ROOT, 'evidence');
-mkdirSync(OUT, { recursive: true });
-
-const COOKIE_JAR = '/tmp/cj.txt';
+const { evidenceDirectory: OUT, cookieJar: COOKIE_JAR } = resolveProofPaths(
+  ROOT,
+  process.env.GHOST_PROOF_COOKIE_JAR,
+);
+const ARTIFACT_NAME =
+  process.env.GHOST_PROOF_ARTIFACT_NAME || `live-proof-${Date.now()}-${process.pid}.md`;
 const jar = readFileSync(COOKIE_JAR, 'utf8');
 const sessionLine = jar.split('\n').find((l) => l.includes('ghost-admin-api-session'));
 const parts = (sessionLine ?? '').trim().split('\t');
 const cookieName = parts.length >= 7 ? parts[5] : 'ghost-admin-api-session';
 const cookieValue = parts.length >= 7 ? parts[6] : '';
 if (!cookieValue) {
-  console.error('Could not read session cookie from /tmp/cj.txt');
+  console.error('Could not read session cookie from GHOST_PROOF_COOKIE_JAR');
   process.exit(1);
 }
 
 const ADMIN = 'http://localhost:2368/ghost/';
 const PORT = process.env.SPIKE_CDP_PORT ?? 9341;
+let pageDiagnosticCount = 0;
 
 const chromium = spawn(
   '/usr/bin/chromium',
@@ -83,10 +88,9 @@ bws.on('message', (data) => {
     // Surface content-script diagnostics and page errors without dumping Ghost's
     // own chatty console output.
     if (txt.includes('ghost-cms-template-injector') || txt.includes('error'))
-      console.log('[page]', txt.slice(0, 200));
+      pageDiagnosticCount += 1;
   } else if (m.method === 'Runtime.exceptionThrown') {
-    const d = m.params.exceptionDetails;
-    console.log('[page exc]', (d.exception?.description ?? d.text ?? '').slice(0, 300));
+    pageDiagnosticCount += 1;
   }
 });
 function send(method, params = {}, sessionId) {
@@ -319,10 +323,7 @@ const discovered = await evaluate(
    }))()`,
   true,
 );
-console.log(
-  'discover from MAIN bridge (after activation):',
-  JSON.stringify(discovered).slice(0, 300),
-);
+console.log('discover reply ok:', discovered?.ok === true);
 
 // 2) Apply via window.sendRuntime — the exact call the popup makes
 //    (chrome.runtime.sendMessage → content-script handleMessage → page bridge
@@ -341,7 +342,7 @@ const applyResult = await evaluate(
 ).then(
   (r) => r ?? { ok: false, error: 'NO_REPLY', note: 'content-script never replied (undefined)' },
 );
-console.log('apply result:', JSON.stringify(applyResult).slice(0, 600));
+console.log('apply reply ok:', applyResult?.ok === true);
 
 // ---- Verify the AUTO-RELOAD: after a successful apply the MAIN bridge
 //      normalizes the URL to the saved record and reloads the editor (the
@@ -365,8 +366,14 @@ if (applySaved) {
     `globalThis.location ? globalThis.location.hash : ''`,
     false,
   );
-  console.log('hash before reload:', hashBeforeReload);
-  console.log('hash after reload window:', hashAfterReload);
+  console.log(
+    'hash before reload present:',
+    typeof hashBeforeReload === 'string' && hashBeforeReload.length > 0,
+  );
+  console.log(
+    'hash after reload present:',
+    typeof hashAfterReload === 'string' && hashAfterReload.length > 0,
+  );
 }
 
 // ---- Verify persistence via Admin API (cookie auth, redacted) ----
@@ -382,7 +389,13 @@ const verify = await evaluate(
      };
    })()`,
 );
-console.log('API verification:', JSON.stringify(verify));
+const verifySummary = {
+  count: verify?.count ?? 0,
+  newestPresent: Boolean(verify?.newest),
+  excerptPresent: Boolean(verify?.newest?.custom_excerpt),
+  tagCount: verify?.newest?.tags?.length ?? 0,
+};
+console.log('API verification summary:', JSON.stringify(verifySummary));
 
 const evidence = [
   '# Phase-5 real Ghost browser proof',
@@ -390,15 +403,19 @@ const evidence = [
   `- editor route reached: ${routeOk}`,
   `- MAIN bridge installed: true`,
   `- content-script bundle installed (listeners): ${listenerCount}`,
-  `- discover reply: ${JSON.stringify(discovered).slice(0, 300)}`,
-  `- apply reply: ${JSON.stringify(applyResult).slice(0, 400)}`,
-  `- API persisted post count: ${verify?.count}`,
-  `- newest post after apply: ${JSON.stringify(verify?.newest)}`,
+  `- discover reply ok: ${discovered?.ok === true}`,
+  `- apply reply ok: ${applyResult?.ok === true}`,
+  `- apply saved: ${applySaved}`,
+  `- API persisted post count: ${verifySummary.count}`,
+  `- newest post present after apply: ${verifySummary.newestPresent}`,
+  `- newest excerpt present: ${verifySummary.excerptPresent}`,
+  `- newest tag count: ${verifySummary.tagCount}`,
+  `- page diagnostic count: ${pageDiagnosticCount}`,
   '',
   'No cookie values appear in this evidence file.',
 ].join('\n');
-writeFileSync(path.join(OUT, 'live-proof.md'), evidence);
+writeProofArtifact(ROOT, OUT, ARTIFACT_NAME, evidence);
 
 bws.close();
 chromium.kill('SIGTERM');
-console.log('DONE — evidence in', OUT);
+console.log('DONE — evidence in', path.join(OUT, ARTIFACT_NAME));

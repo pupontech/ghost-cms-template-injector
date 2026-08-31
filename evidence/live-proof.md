@@ -1,11 +1,16 @@
-# Phase-5 real Ghost browser proof
+# Phase-5 real Ghost browser proof — redacted summary
+
+This tracked file is a reviewed, boolean-only summary. Raw live-proof output belongs in ignored `evidence/local/` and must not be committed.
 
 - editor route reached: true
 - MAIN bridge installed: true
-- content-script bundle installed (listeners): 1
-- discover reply: {"v":1,"source":"ghost-cms-template-injector/page-bridge/v1","nonce":"5bfdcfed-692f-45ab-9048-adccc54e227c","ok":true,"result":{"supported":true,"capability":{"adapterVersion":1,"resourceType":"post","resourceId":null,"hasLexical":true,"canMutateRelations":true,"canNativeSave":true,"canRollback":true,"dirt
-- apply reply: {"source":"ghost-cms-template-injector/popup/v1","ok":true,"result":{"resourceId":"6a8df59321d5c300018536ab","updatedAt":null,"saved":true}}
-- API persisted post count: 5
-- newest post after apply: {"id":"6a8df59321d5c300018536ab","title":"(Untitled)","custom_excerpt":"Applied via Phase-5 proof","tags":["ProofTag"]}
+- content-script listeners installed: true
+- discover reply succeeded: true
+- apply reply succeeded: true
+- native save reported: true
+- persisted resource was present: true
+- persisted excerpt was present: true
+- persisted tags were present: true
+- page diagnostic count: 0
 
-No cookie values appear in this evidence file.
+No cookie values, bridge nonces, capability tokens, resource identifiers, titles, excerpts, tags, or request/response payloads are included.

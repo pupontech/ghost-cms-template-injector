@@ -1,5 +1,5 @@
 /**
- * t_ef2721b1 HONEST HEADED RERUN — live Ghost 6.60, subdirectory /blog, https.
+ * t_ef2721b1 HEADLESS CDP RERUN — live Ghost 6.60, subdirectory /blog, https.
  *
  * Drives the REAL production bundle (dist/bridge.js MAIN world) against the
  * live, authenticated Ghost Admin at https://localhost:2368/blog/ghost/, using
@@ -14,27 +14,32 @@
  *   → Admin API readback shows body + excerpt + tag all persisted from ONE apply,
  *     and a subsequent autosave does not revert.
  *
- * The session cookie is read from /tmp/cj.txt (outside the repo) and injected
- * via CDP; its value is never printed or committed.
+ * The session cookie is read from an explicit safe local path supplied by
+ * GHOST_PROOF_COOKIE_JAR and injected via CDP; its value is never printed or
+ * committed. Raw output remains under ignored evidence/local/.
  */
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { resolveProofPaths, writeProofArtifact } from '../../scripts/proof-path-safety.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(DIR, '..', '..');
-const OUT = path.join(ROOT, 'evidence');
-mkdirSync(OUT, { recursive: true });
-
-const COOKIE_JAR = '/tmp/cj.txt';
+const { evidenceDirectory: OUT, cookieJar: COOKIE_JAR } = resolveProofPaths(
+  ROOT,
+  process.env.GHOST_PROOF_COOKIE_JAR,
+);
+const ARTIFACT_NAME =
+  process.env.GHOST_PROOF_ARTIFACT_NAME ||
+  `ef2721b1-headless-rerun-${Date.now()}-${process.pid}.md`;
 const jar = readFileSync(COOKIE_JAR, 'utf8');
 const sessionLine = jar.split('\n').find((l) => l.includes('ghost-admin-api-session'));
 const parts = (sessionLine ?? '').trim().split('\t');
 const cookieName = parts.length >= 7 ? parts[5] : 'ghost-admin-api-session';
 const cookieValue = parts.length >= 7 ? parts[6] : '';
 if (!cookieValue) {
-  console.error('Could not read session cookie from /tmp/cj.txt');
+  console.error('Could not read session cookie from GHOST_PROOF_COOKIE_JAR');
   process.exit(1);
 }
 
@@ -143,7 +148,7 @@ for (let i = 0; i < 90 && !routeOk; i++) {
 }
 console.log('lexical editor route reached:', routeOk);
 if (!routeOk) {
-  console.error('Editor route never came up — aborting headed rerun.');
+  console.error('Editor route never came up — aborting headless rerun.');
   bws.close();
   chromium.kill('SIGTERM');
   process.exit(1);
@@ -214,11 +219,7 @@ await evaluate(
 );
 await sleep(2000);
 const discoverRaw = await bridgeRequest('discover', {});
-console.log(
-  'discover reply ok:',
-  discoverRaw?.ok,
-  discoverRaw?.ok ? '' : JSON.stringify(discoverRaw).slice(0, 200),
-);
+console.log('discover reply ok:', discoverRaw?.ok === true);
 if (!discoverRaw?.ok) {
   console.error('MAIN bridge discover failed — aborting.');
   bws.close();
@@ -285,16 +286,23 @@ const newPost = await evaluate(
   })()`,
   false,
 ).catch((e) => ({ error: String(e) }));
-console.log('disposable new post created:', JSON.stringify(newPost));
+console.log('disposable new post created:', newPost?.error ? false : newPost?.isNew === true);
 
 const applyRaw = await bridgeRequest('apply', { plan });
-console.log('apply reply:', JSON.stringify(applyRaw).slice(0, 400));
+console.log('apply reply ok:', applyRaw?.ok === true);
 
 // ---- Verify persistence via Admin API (cookie auth, redacted) ----
 const verify1 = await evaluate(
   `(() => { const r=null; return fetch(${JSON.stringify(BASE + 'posts/?limit=5&order=updated_at%20desc&include=tags')}, { credentials:'include' }).then(x=>x.json()).then(j=>{ const posts=j.posts||[]; const newest=posts[0]||null; let lexEmpty=true, lexChildren=0; try { const l=JSON.parse(newest.lexical); lexChildren=(l.root&&l.root.children||[]).length; lexEmpty=lexChildren===0; } catch {} return { count:posts.length, newest: newest?{ id:newest.id, custom_excerpt:newest.custom_excerpt, lexical_children:lexChildren, lexical_empty:lexEmpty, tags:(newest.tags||[]).map(t=>t.name) }:null }; }); })()`,
 );
-console.log('API verification after apply:', JSON.stringify(verify1));
+const verify1Summary = {
+  count: verify1?.count ?? 0,
+  newestPresent: Boolean(verify1?.newest),
+  excerptPresent: Boolean(verify1?.newest?.custom_excerpt),
+  tagCount: verify1?.newest?.tags?.length ?? 0,
+  lexicalChildren: verify1?.newest?.lexical_children ?? 0,
+};
+console.log('API verification after apply summary:', JSON.stringify(verify1Summary));
 
 // ---- Subsequent autosave must NOT revert ----
 await sleep(6000); // allow any ghost autosave window to pass
@@ -307,7 +315,13 @@ const persisted =
   verify1.newest.lexical_empty === false &&
   JSON.stringify(verify1.newest.tags) === JSON.stringify(['Reviews']) &&
   verify2?.newest?.lexical_children === verify1.newest.lexical_children;
-console.log('API verification after idle:', JSON.stringify(verify2));
+const verify2Summary = {
+  newestPresent: Boolean(verify2?.newest),
+  excerptPresent: Boolean(verify2?.newest?.custom_excerpt),
+  tagCount: verify2?.newest?.tags?.length ?? 0,
+  lexicalChildren: verify2?.newest?.lexical_children ?? 0,
+};
+console.log('API verification after idle summary:', JSON.stringify(verify2Summary));
 console.log('PERSISTED BODY+EXCERPT+TAG FROM ONE APPLY:', persisted);
 console.log(
   'NO REVERT AFTER AUTOSAVE:',
@@ -316,23 +330,27 @@ console.log(
 );
 
 const evidence = [
-  '# t_ef2721b1 headed rerun — live Ghost 6.60 (https /blog)',
+  '# t_ef2721b1 headless rerun — live Ghost 6.60 (https /blog)',
   '',
   `- target: ${ADMIN}#/editor/post`,
   `- lexical editor route reached: ${routeOk}`,
   `- MAIN bridge discover ok: ${discoverRaw?.ok}`,
-  `- disposable new post created: ${Boolean(newPost)}`,
-  `- apply reply: ${JSON.stringify(applyRaw).slice(0, 400)}`,
-  `- API persisted post count: ${verify1?.count}`,
-  `- newest post after apply: ${JSON.stringify(verify1?.newest)}`,
-  `- newest post after idle (autosave window): ${JSON.stringify(verify2?.newest)}`,
+  `- disposable new post created: ${newPost?.error ? false : newPost?.isNew === true}`,
+  `- apply reply ok: ${applyRaw?.ok === true}`,
+  `- API persisted post count: ${verify1Summary.count}`,
+  `- newest post present after apply: ${verify1Summary.newestPresent}`,
+  `- excerpt present after apply: ${verify1Summary.excerptPresent}`,
+  `- tag count after apply: ${verify1Summary.tagCount}`,
+  `- newest post present after idle: ${verify2Summary.newestPresent}`,
+  `- excerpt present after idle: ${verify2Summary.excerptPresent}`,
+  `- tag count after idle: ${verify2Summary.tagCount}`,
   `- body+excerpt+tag all persisted from ONE apply: ${persisted}`,
   `- no revert after autosave: ${verify2?.newest?.custom_excerpt === 'A hands-on review.' && verify2?.newest?.lexical_children === verify1.newest.lexical_children}`,
   '',
   'No cookie values appear in this evidence file.',
 ].join('\n');
-writeFileSync(path.join(OUT, 'ef2721b1-headed-rerun.md'), evidence);
+writeProofArtifact(ROOT, OUT, ARTIFACT_NAME, evidence);
 
 bws.close();
 chromium.kill('SIGTERM');
-console.log('DONE — evidence in', path.join(OUT, 'ef2721b1-headed-rerun.md'));
+console.log('DONE — evidence in', path.join(OUT, ARTIFACT_NAME));

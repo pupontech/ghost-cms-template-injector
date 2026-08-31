@@ -1,8 +1,13 @@
-# Release status — owner acceptance pending
+# Release status — independent review and owner acceptance pending
 
 ## Candidate
 
-- Final private-main candidate: the current `main` HEAD
+- Candidate worktree: `chore/governance-release-safety-4` (not merged to `main`)
+- Governance issue: https://github.com/pupontech/ghost-cms-template-injector/issues/4
+- OpenSpec: `openspec/changes/4-governance-release-safety/proposal.md`
+- Kanban board/card: `ghost-preset-toolbar` / `t_96555f52`
+- Draft PR: https://github.com/pupontech/ghost-cms-template-injector/pull/5
+- Extension/package version: `0.2.3` (manifest, package.json, and package-lock.json synchronized)
 - Genuine headed lifecycle implementation/evidence lineage: `45f7fc0`
 - Compatibility target exercised: Ghost 6.60
 - Chromium: 151.0.7922.169
@@ -10,16 +15,13 @@
 
 ## Automated verification
 
-The final C8 worktree passed `npm run verify`:
+The current remediation working tree's latest full release gate passed:
 
-- Prettier format check
-- ESLint
-- Strict TypeScript check
-- Production build
-- Vitest: 32 files, 353 tests
-- Manifest and built-artifact validation
+- Vitest: 35 test files, 385 tests
 
-Focused bridge/capability verification also passed: 5 files, 39 tests.
+The remediation commit `c548e807ded27f7d95e9f9a4a80b61bcab3eb8b2` passed the aggregate `npm run verify` gate, including `governance:check`, after commit; `npm run audit:high` found 0 vulnerabilities.
+
+Hosted GitHub Actions passed on pushed tip `c548e807ded27f7d95e9f9a4a80b61bcab3eb8b2`: `verify (Node 20)` and `verify (Node 22)`; run `33433054809`. GitHub emitted only the existing Node 20 action-deprecation annotation.
 
 The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
@@ -27,9 +29,9 @@ The manifest uses only `storage` and `scripting`, has no static host permission,
 
 ### Preset persistence
 
-A genuine headed Chromium run against authenticated Ghost Admin verified that the body, custom excerpt, and tag persisted after the native save and remained correct beyond the subsequent autosave interval. See `evidence/ef2721b1-headed-rerun.md`.
+The persistence harness is a headless CDP production-bundle proof, not genuine headed-browser acceptance evidence. It verifies body, custom excerpt, and tag persistence after the native save and beyond the subsequent autosave interval; its raw output remains local-only under `evidence/local/`.
 
-The `real-ghost-browser-proof.mjs` harness was repaired (it previously referenced a non-existent global and could not pass): it now drives the REAL `dist/` bundles through the production `chrome.runtime` message path against the live authenticated Ghost at :2368, activates the MAIN bridge via the real capability token, and records evidence in `evidence/live-proof.md` — discover `ok`, apply `ok: { saved: true }`, and API read-back showing the applied excerpt + tag persisted to the newest post.
+The `real-ghost-browser-proof.mjs` harness drives the real `dist/` bundles through the production `chrome.runtime` message path against live authenticated Ghost, activates the MAIN bridge via the real capability token, and writes sanitized local-only output through the exclusive proof-artifact writer. It is headless and stubs `window.chrome`, so it is not genuine headed-browser acceptance evidence.
 
 ### Disable/re-enable lifecycle
 
@@ -47,8 +49,17 @@ See `evidence/eacca232-headed-revoke-proof.md`. Capability values, cookies, and 
 
 ## Independent review
 
-The round-two source/security review is recorded in `evidence/c8-luna-round2-review.md`. Its original headed-evidence blocker was resolved by commits `d1b1a1f` and `45f7fc0`, followed by the genuine all-green C8 run above.
+The 2026-08-31 independent security and governance audit found FIX-FIRST issues in the prior staged remediation. A fresh `ghostnim` read-only review of the current remediation delta returned `passed: true` with no security or logic blockers. The earlier native Luna review also passed the implementation and safety controls. One P2 governance/documentation conflict remains in protected `AGENTS.md`: it still prohibits all GPT-family worker lanes and omits `dsflash`.
 
-## Remaining gate
+The requested official DeepSeek Flash review could not start. Profile `dsflash` reached `https://api.deepseek.com/v1` with `deepseek-v4-flash` but returned HTTP 401 (`Authentication Fails`); no fallback provider or alternate model was used. Re-authentication is required before claiming a DeepSeek review.
 
-Technical verification is complete. Final acceptance remains with the repository owner. Follow `TESTING.md` against the owner's Ghost installation and Chromium environment before treating the private pre-1.0 release as accepted.
+## Branch-protection limitation
+
+Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset endpoints because this private repository/plan does not expose enforceable controls there. CODEOWNERS and the pull-request template are advisory in this state. Until the owner enables a supported required-review/ruleset control or explicitly accepts an equivalent external process, the owner must perform the final merge and no agent may self-approve, self-merge, force-push, or bypass checks.
+
+## Remaining gates
+
+1. Keep the passing local gate and hosted run `33433054809` attached to any subsequent source change.
+2. Resolve the P2 `AGENTS.md` routing-policy conflict by a separately approved owner edit or an explicit precedence rule.
+3. Re-authenticate official DeepSeek Flash only if that optional reviewer lane is required; its last attempt returned HTTP 401 and no fallback was used.
+4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run; no agent may merge.

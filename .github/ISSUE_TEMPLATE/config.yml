@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security reporting
+    url: https://github.com/pupontech/ghost-cms-template-injector/security/advisories/new
+    about: Do not disclose credentials, private Ghost content, or exploit details in a public issue.
