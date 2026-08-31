@@ -18,7 +18,7 @@ The current pre-commit working tree's latest full test run passed:
 
 - Vitest: 34 test files, 372 tests
 
-The aggregate gate has also passed on the current pre-commit tree (`npm run verify`); it must be rerun against the exact committed tree before merge. `npm run audit:high` found 0 vulnerabilities.
+The implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the aggregate `npm run verify` gate after commit; `npm run audit:high` found 0 vulnerabilities. Re-run both after any further source change and before merge.
 
 The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
@@ -56,7 +56,7 @@ Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset 
 
 ## Remaining gates
 
-1. Complete the final full verification and high-severity dependency audit on the exact remediation commit.
+1. Keep the passing full verification and high-severity dependency audit attached to any subsequent remediation commit.
 2. Resolve the P2 `AGENTS.md` routing-policy conflict by owner-authorized edit or an explicit precedence rule.
 3. Update the Issue #4 and Kanban card with the exact PR URL, OpenSpec path, current CI status, native Luna result, DeepSeek 401 status, and owner-gate state.
 4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run.
