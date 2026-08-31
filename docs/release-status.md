@@ -21,6 +21,8 @@ The current pre-commit working tree's latest full test run passed:
 
 The implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the aggregate `npm run verify` gate after commit; `npm run audit:high` found 0 vulnerabilities. Re-run both after any further source change and before merge.
 
+Hosted GitHub Actions also passed on pushed tip `80f017d14a6f2414f8b66d0790b1fb6ea11a467e`: `verify (Node 20)` and `verify (Node 22)`; run `33401081288`.
+
 The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
 ## Real Ghost/browser gates
