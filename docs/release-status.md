@@ -17,11 +17,11 @@
 
 The current remediation working tree's latest full release gate passed:
 
-- Vitest: 34 test files, 374 tests
+- Vitest: 35 test files, 385 tests
 
-The remediation commit `a044a066a03675b2879bebb572c771ebf773fc15` passed the aggregate `npm run verify` gate after commit; `npm run audit:high` found 0 vulnerabilities.
+The remediation commit `c548e807ded27f7d95e9f9a4a80b61bcab3eb8b2` passed the aggregate `npm run verify` gate, including `governance:check`, after commit; `npm run audit:high` found 0 vulnerabilities.
 
-Hosted GitHub Actions passed on pushed tip `a044a066a03675b2879bebb572c771ebf773fc15`: `verify (Node 20)` and `verify (Node 22)`; run `33426316268`. GitHub emitted only the existing Node 20 action-deprecation annotation.
+Hosted GitHub Actions passed on pushed tip `c548e807ded27f7d95e9f9a4a80b61bcab3eb8b2`: `verify (Node 20)` and `verify (Node 22)`; run `33433054809`. GitHub emitted only the existing Node 20 action-deprecation annotation.
 
 The manifest uses only `storage` and `scripting`, has no static host permission, and declares the existing optional HTTPS Ghost Admin pattern. The setup page requests explicit native permission for one concrete installation before dynamically registering isolated and MAIN-world scripts for that installation's `/ghost/*` pages.
 
@@ -59,7 +59,7 @@ Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset 
 
 ## Remaining gates
 
-1. Keep the passing local gate and hosted run `33426316268` attached to any subsequent source change.
+1. Keep the passing local gate and hosted run `33433054809` attached to any subsequent source change.
 2. Resolve the P2 `AGENTS.md` routing-policy conflict by a separately approved owner edit or an explicit precedence rule.
 3. Re-authenticate official DeepSeek Flash only if that optional reviewer lane is required; its last attempt returned HTTP 401 and no fallback was used.
 4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run; no agent may merge.
