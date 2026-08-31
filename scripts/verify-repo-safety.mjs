@@ -103,7 +103,10 @@ function isForbiddenConfigName(relative) {
 
 function readTrackedPaths() {
   try {
-    const output = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'buffer' });
+    const output = execFileSync('git', ['-C', root, 'ls-files', '-z'], {
+      encoding: 'buffer',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
     return output
       .toString('utf8')
       .split('\0')
@@ -118,6 +121,7 @@ function readStagedMode(relative) {
   try {
     const output = execFileSync('git', ['-C', root, 'ls-files', '--stage', '-z', '--', relative], {
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
     const entry = output.split('\0').find(Boolean);
     return entry?.split(/\s+/, 2)[0] ?? null;
@@ -131,6 +135,7 @@ function readStagedContent(relative) {
     return execFileSync('git', ['-C', root, 'show', `:${relative}`], {
       encoding: 'buffer',
       maxBuffer: stagedBlobMaxBuffer,
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
   } catch {
     return null;
@@ -147,6 +152,15 @@ function isGitIgnored(absolute) {
   } catch {
     return false;
   }
+}
+
+function hasSymlinkComponent(relative) {
+  let current = root;
+  for (const component of relative.split('/')) {
+    current = path.join(current, component);
+    if (tryLstat(current)?.isSymbolicLink()) return true;
+  }
+  return false;
 }
 
 const secretPatterns = [
@@ -193,9 +207,59 @@ const placeholderValues = new Set([
   'replace_me',
 ]);
 const shellPipelinePattern =
-  /\b(?:curl|wget)\b[^\n|]*(?:\|\s*(?:sudo\s+)?(?:env\s+\S+\s+)?(?:ba|z|fi)?sh\b|\|\s*(?:sudo\s+)?(?:python3?|perl)\b)/i;
-const destructiveGitPattern =
-  /\bgit\s+(?:clean\b[^\n]*(?:-f\b|--force\b)|reset\b[^\n]*--hard\b|checkout\b[^\n]*\.\s*$)/im;
+  // Cover POSIX sh plus common shell names and absolute/busybox invocations.
+  /\b(?:curl|wget)\b[^\n|]*\|\s*(?:(?:sudo|env|busybox)\s+)*(?:(?:\/|[A-Za-z0-9_.-]+\/))*(?:ba|z|fi|da|a|k)?sh\b|\b(?:curl|wget)\b[^\n|]*\|\s*(?:(?:sudo|env)\s+)*(?:python3?|perl)\b/i;
+
+// Skip Git global options (and their values) before checking the subcommand.
+function hasDestructiveGitCommand(text) {
+  for (const match of text.matchAll(/\bgit\b[^\n;&|]*/gi)) {
+    const tokens = match[0].trim().split(/\s+/);
+    const gitIndex = tokens.indexOf('git');
+    if (gitIndex < 0) continue;
+    let index = gitIndex + 1;
+    while (index < tokens.length && tokens[index].startsWith('-')) {
+      const option = tokens[index];
+      index += 1;
+      if (
+        option === '-C' ||
+        option === '-c' ||
+        option === '--git-dir' ||
+        option === '--work-tree' ||
+        option === '--namespace'
+      ) {
+        index += 1;
+      }
+    }
+    const command = tokens[index];
+    const argumentsAfterCommand = tokens.slice(index + 1);
+    if (!command) continue;
+    if (
+      command === 'clean' &&
+      argumentsAfterCommand.some(
+        (argument) =>
+          argument === '--force' || /^--force=/.test(argument) || /^-[^-]*f/.test(argument),
+      )
+    )
+      return true;
+    if (command === 'reset' && argumentsAfterCommand.some((argument) => argument === '--hard'))
+      return true;
+    if (
+      command === 'push' &&
+      argumentsAfterCommand.some(
+        (argument) => argument === '--force' || /^--force=/.test(argument) || argument === '-f',
+      )
+    )
+      return true;
+    if (command === 'branch' && argumentsAfterCommand.some((argument) => /^-[^-]*D/.test(argument)))
+      return true;
+    if (
+      (command === 'checkout' || command === 'restore') &&
+      argumentsAfterCommand.some((argument) => argument === '.' || argument.endsWith('/.'))
+    )
+      return true;
+  }
+  return false;
+}
 
 function scanWindow(relative, text, scanCommands) {
   for (const { pattern, reason } of secretPatterns) {
@@ -210,10 +274,14 @@ function scanWindow(relative, text, scanCommands) {
   }
   if (!scanCommands) return;
   if (shellPipelinePattern.test(text)) record(relative, 'unverified curl-to-shell installer');
-  if (destructiveGitPattern.test(text)) record(relative, 'destructive Git command');
+  if (hasDestructiveGitCommand(text)) record(relative, 'destructive Git command');
 }
 
 function inspectFile(absolute, relative, tracked) {
+  if (hasSymlinkComponent(relative)) {
+    record(relative, 'symbolic link in release input path');
+    return;
+  }
   const info = tryLstat(absolute);
   if (!info) return;
   if (info.isSymbolicLink()) {

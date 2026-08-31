@@ -366,8 +366,14 @@ if (applySaved) {
     `globalThis.location ? globalThis.location.hash : ''`,
     false,
   );
-  console.log('hash before reload:', hashBeforeReload);
-  console.log('hash after reload window:', hashAfterReload);
+  console.log(
+    'hash before reload present:',
+    typeof hashBeforeReload === 'string' && hashBeforeReload.length > 0,
+  );
+  console.log(
+    'hash after reload present:',
+    typeof hashAfterReload === 'string' && hashAfterReload.length > 0,
+  );
 }
 
 // ---- Verify persistence via Admin API (cookie auth, redacted) ----

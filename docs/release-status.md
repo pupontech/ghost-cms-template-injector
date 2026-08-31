@@ -15,11 +15,11 @@
 
 ## Automated verification
 
-The current pre-commit working tree's latest full test run passed:
+The current remediation working tree's latest full release gate passed:
 
-- Vitest: 34 test files, 372 tests
+- Vitest: 34 test files, 374 tests
 
-The implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the aggregate `npm run verify` gate after commit; `npm run audit:high` found 0 vulnerabilities. Re-run both after any further source change and before merge.
+The earlier implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the aggregate `npm run verify` gate after commit; this remediation delta must be recorded against its own commit and hosted CI run before merge. `npm run audit:high` found 0 vulnerabilities.
 
 Hosted GitHub Actions also passed on pushed tip `80f017d14a6f2414f8b66d0790b1fb6ea11a467e`: `verify (Node 20)` and `verify (Node 22)`; run `33401081288`.
 
@@ -49,7 +49,7 @@ See `evidence/eacca232-headed-revoke-proof.md`. Capability values, cookies, and 
 
 ## Independent review
 
-The 2026-08-31 independent security and governance audit found FIX-FIRST issues in the prior staged remediation. A fresh native Luna read-only review of the stabilized tree returned PASS for the implementation and safety controls, with one P2 governance/documentation conflict remaining in protected `AGENTS.md`: it still prohibits all GPT-family worker lanes and omits `dsflash`. No code/security blocker remained.
+The 2026-08-31 independent security and governance audit found FIX-FIRST issues in the prior staged remediation. A fresh `ghostnim` read-only review of the current remediation delta returned `passed: true` with no security or logic blockers. The earlier native Luna review also passed the implementation and safety controls. One P2 governance/documentation conflict remains in protected `AGENTS.md`: it still prohibits all GPT-family worker lanes and omits `dsflash`.
 
 The requested official DeepSeek Flash review could not start. Profile `dsflash` reached `https://api.deepseek.com/v1` with `deepseek-v4-flash` but returned HTTP 401 (`Authentication Fails`); no fallback provider or alternate model was used. Re-authentication is required before claiming a DeepSeek review.
 
@@ -59,7 +59,7 @@ Read-only GitHub inspection reported HTTP 403 for branch-protection and ruleset 
 
 ## Remaining gates
 
-1. Keep the passing full verification and high-severity dependency audit attached to any subsequent remediation commit.
-2. Resolve the P2 `AGENTS.md` routing-policy conflict by owner-authorized edit or an explicit precedence rule.
-3. Update Issue #4 and Kanban card with the exact PR #5 URL, OpenSpec path, current CI status, native Luna result, DeepSeek 401 status, and owner-gate state.
-4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run.
+1. Commit and push this remediation delta, then attach its exact hosted CI run and final `npm run verify` output.
+2. Resolve the P2 `AGENTS.md` routing-policy conflict by a separately approved owner edit or an explicit precedence rule.
+3. Re-authenticate official DeepSeek Flash only if that optional reviewer lane is required; its last attempt returned HTTP 401 and no fallback was used.
+4. Keep final owner acceptance pending until the owner completes `TESTING.md` and any required genuine headed persistence run; no agent may merge.

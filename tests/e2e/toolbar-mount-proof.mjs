@@ -165,7 +165,6 @@ const failedToFetch = consoleErrors.some((e) => /failed to fetch|typeerror/i.tes
 console.log('--- toolbar mount proof ---');
 console.log('toolbar mounted [data-gcti-toolbar="1"]:', mounted);
 console.log('console/page errors captured:', consoleErrors.length);
-for (const e of consoleErrors.slice(0, 8)) console.log('   !', e.split('\n')[0]);
 console.log('contains "Failed to fetch":', failedToFetch);
 
 bws.close();

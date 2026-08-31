@@ -4,7 +4,7 @@
 - Kanban: `ghost-preset-toolbar` / `t_96555f52`
 - Pull request: https://github.com/pupontech/ghost-cms-template-injector/pull/5 (draft)
 - Owner approval: approved 2026-08-28
-- Independent reviewer: native Luna read-only review PASS on the pre-commit tree; DeepSeek Flash review blocked by official API HTTP 401
+- Independent reviewers: native Luna read-only review PASS on the earlier remediation; `ghostnim` read-only review PASS on the current remediation delta; DeepSeek Flash review blocked by official API HTTP 401
 
 ## Problem and non-goals
 
@@ -19,7 +19,7 @@ The change preserves the existing `GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md` cont
 ## Security, privacy, permissions, and rollback
 
 - No new extension permissions or network endpoints are introduced.
-- The safety scanner enumerates tracked files regardless of ignore rules, scans generated `dist/` artifacts including source maps and large text files in chunks, rejects credential-like assignments/provider tokens, dangerous shell pipelines, destructive Git commands, symlinked release inputs, and tracked runtime-config filenames.
+- The safety scanner enumerates tracked files regardless of ignore rules and symlinked parents, scans generated `dist/` artifacts including source maps and large text files in chunks, rejects credential-like assignments/provider tokens, dangerous shell pipelines, destructive Git commands, symlinked release inputs, and tracked runtime-config filenames. Manifest validation additionally rejects source maps, symlinked/non-regular `dist` entries, out-of-bound references, and artifacts over 2,000,000 bytes.
 - Proof artifacts use an exclusive no-follow writer that rejects symlinks, hardlinks, tracked destinations, traversal, and stale output paths.
 - Worktree initialization creates a new unique `wt/<slug>` branch/worktree only, verifies a non-symlink in-repository `.worktrees` parent, and refuses reuse/overwrite.
 - Rollback is a standard PR revert; no data migration is performed.
@@ -31,12 +31,12 @@ One writer owns this isolated remediation worktree. No other worktree is modifie
 ## Acceptance matrix
 
 - [x] Focused RED→GREEN tests for repository safety helper and proof-harness local boundaries.
-- [x] `npm run verify`, `npm run audit:high`, manifest validation, and safety scan pass on implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16`.
+- [x] Current remediation working tree: `npm run verify`, `npm run audit:high`, manifest validation, and safety scan pass; exact commit and hosted CI run are recorded after push.
 - [x] Package, lockfile, and manifest versions are synchronized at `0.2.3`.
 - [x] GitHub `main` received protected-branch settings while public; after approved privacy change, GitHub Free cannot expose/enforce those controls on the private repository, documented as an external plan limitation.
-- [x] Native Luna independent review recorded in `docs/release-status.md`; official DeepSeek Flash review remains blocked until its credential is re-authenticated.
+- [x] Native Luna and `ghostnim` independent reviews are recorded in `docs/release-status.md`; official DeepSeek Flash review remains blocked until its credential is re-authenticated.
 - [ ] Owner acceptance/disposition recorded; runtime browser acceptance may be marked N/A only with the owner's explicit approval because no extension behavior changed.
 
 ## Implementation and review log
 
-Native Luna independent review: PASS for implementation and safety controls, with one P2 `AGENTS.md` routing-policy conflict. Official DeepSeek Flash could not run because `https://api.deepseek.com/v1` returned HTTP 401. Implementation commit `3389885298a8c7e0c337ee1986f8809d38f4fa16` passed the full local verification and high-severity audit. The current branch remains unmerged. No agent will self-approve or self-merge.
+Native Luna independent review: PASS for the earlier implementation and safety controls. `ghostnim` independently reviewed the current remediation delta and returned PASS with no security or logic blockers. Official DeepSeek Flash could not run because `https://api.deepseek.com/v1` returned HTTP 401. The current working tree passes the full local verification and high-severity audit; exact commit and hosted CI are recorded after push. One P2 `AGENTS.md` routing-policy conflict remains protected from automatic edit. The current branch remains unmerged. No agent will self-approve or self-merge.

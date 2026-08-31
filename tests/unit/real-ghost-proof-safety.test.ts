@@ -210,4 +210,24 @@ describe('live Ghost proof safety', () => {
       expect(source).not.toContain('JSON.stringify(applyRaw)');
     }
   });
+
+  it('keeps browser diagnostics boolean/count-only on stdout', () => {
+    const realProof = readFileSync(
+      join(repositoryRoot, 'tests/e2e/real-ghost-browser-proof.mjs'),
+      'utf8',
+    );
+    expect(realProof).toContain('hash before reload present:');
+    expect(realProof).not.toContain("console.log('hash before reload:', hashBeforeReload)");
+    expect(realProof).not.toContain("console.log('hash after reload window:', hashAfterReload)");
+
+    const mountProof = readFileSync(
+      join(repositoryRoot, 'tests/e2e/toolbar-mount-proof.mjs'),
+      'utf8',
+    );
+    expect(mountProof).toContain(
+      "console.log('console/page errors captured:', consoleErrors.length)",
+    );
+    expect(mountProof).not.toContain("console.log('   !',");
+    expect(mountProof).not.toContain('consoleErrors.slice');
+  });
 });

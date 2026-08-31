@@ -148,7 +148,7 @@ for (let i = 0; i < 90 && !routeOk; i++) {
 }
 console.log('lexical editor route reached:', routeOk);
 if (!routeOk) {
-  console.error('Editor route never came up — aborting headed rerun.');
+  console.error('Editor route never came up — aborting headless rerun.');
   bws.close();
   chromium.kill('SIGTERM');
   process.exit(1);
@@ -330,7 +330,7 @@ console.log(
 );
 
 const evidence = [
-  '# t_ef2721b1 headed rerun — live Ghost 6.60 (https /blog)',
+  '# t_ef2721b1 headless rerun — live Ghost 6.60 (https /blog)',
   '',
   `- target: ${ADMIN}#/editor/post`,
   `- lexical editor route reached: ${routeOk}`,

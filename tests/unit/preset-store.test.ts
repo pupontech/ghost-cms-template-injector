@@ -310,20 +310,19 @@ describe('importPresets / exportPresets — bounded, validated round-trip', () =
  * fetching the blocked extension resource), proving the regression is covered.
  */
 describe('content-script runtime loads inlined seeds with no extension-resource fetch', () => {
-  const savedProcess = globalThis.process;
   let savedSeed: unknown;
 
   beforeAll(async () => {
-    // Simulate the content-script world: no Node `process`, a `chrome` global,
-    // and the build-time `BUNDLED_SEED_PRESETS` define reflected as a global.
-    (globalThis as { process?: unknown }).process = undefined;
+    // Simulate the content-script world with a `chrome` global and the
+    // build-time `BUNDLED_SEED_PRESETS` define reflected as a global. The
+    // inlined seed forces the browser branch; leave Node's global `process`
+    // intact so this test remains safe under Vitest's parallel workers.
     savedSeed = (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS;
     (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS =
       JSON.stringify(bundledSeedPresets());
   });
 
   afterAll(() => {
-    (globalThis as { process?: unknown }).process = savedProcess;
     (globalThis as { BUNDLED_SEED_PRESETS?: unknown }).BUNDLED_SEED_PRESETS = savedSeed;
   });
 

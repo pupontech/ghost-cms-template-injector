@@ -62,7 +62,7 @@ For each failed or blocked case, record: matrix ID, Ghost/Chromium versions, san
 
 ## Current verified runs
 
-- Latest local test run: `npm test` passed with 34 test files / 372 tests. The full release gate must be rerun and recorded against the final remediation commit.
+- Latest local test run: `npm test` passed with 34 test files / 374 tests. The full release gate must be rerun and recorded against the final remediation commit.
 - Hosted GitHub Actions on pushed tip `80f017d14a6f2414f8b66d0790b1fb6ea11a467e`: `verify (Node 20)` PASS and `verify (Node 22)` PASS; see run `33401081288`.
 - Preset-persistence production-bundle proof: headless CDP only; it is **not** genuine headed-browser acceptance. Keep its raw output local under `evidence/local/` and do not link it as headed evidence.
 - Genuine headed C8 lifecycle: PASS for explicit native consent, exact scoped registrations, current/new-document silence after Disable, stale-token rejection, and fresh-capability re-enable; see `evidence/eacca232-headed-revoke-proof.md`.
