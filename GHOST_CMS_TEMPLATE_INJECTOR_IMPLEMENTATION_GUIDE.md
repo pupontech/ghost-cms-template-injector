@@ -36,21 +36,23 @@ All workers must read the decision document before changing code. The following 
 
 ## 3. Agent fleet and model assignment
 
-Use four named Hermes profiles. The human-facing/default session remains the orchestrator; it creates and routes Kanban cards but should avoid implementing major features itself.
+The primary session owns architecture, decomposition, reconciliation, and final synthesis but never self-merges. The owner may explicitly name a worker lane for a particular run; that request overrides this default roster without permitting silent model substitution.
 
 | Profile | Provider / model | Primary role | Typical cards |
 | --- | --- | --- | --- |
-| `ghostterra` | `openai-codex` / `gpt-5.6-terra` | Architect and decomposer | contracts, task DAG, bridge feasibility criteria, architecture decisions, final synthesis |
-| `ghostox` | `openrouter` / `stealth/ox-alpha` | Primary coding worker | extension scaffolding, API client, state bridge, preset engine, UI integration |
-| `ghostnim` | `nvidia` / `nvidia/nemotron-3-ultra-550b-a55b` | Independent adversarial reviewer | MV3 boundary, security, autosave races, API payload review, change requests |
-| `ghostluna` | `openai-codex` / `gpt-5.6-luna` | Test, QA, and documentation worker | fixtures, unit/E2E tests, browser matrix, docs, release checklist |
+| `default` | primary chat / configured orchestrator | Orchestrator only, never a worker unless explicitly requested | contracts, task DAG, architecture decisions, final synthesis |
+| `ghostluna` | `openai-codex` / `gpt-5.6-luna` | Owner-directed native Luna worker | focused implementation, independent review, browser-proof analysis |
+| `dsflash` | `deepseek` / `deepseek-v4-flash` | Owner-directed DeepSeek Flash worker via the official DeepSeek API | fast implementation/review passes and bounded security analysis |
+| `ghostox` | `openrouter` / `stealth/ox-alpha` | Approved free coding fallback | extension scaffolding, API client, state bridge, preset engine, UI integration |
+| `ghostnim` | `nvidia` / `nvidia/nemotron-3-ultra-550b-a55b` | Approved free adversarial-review fallback | MV3 boundary, security, autosave races, API payload review, change requests |
 
 ### Why these assignments
 
-- **Terra** handles architecture and decomposition, where broad context and balanced reasoning matter.
-- **Ox Alpha** is assigned sustained implementation and production coding.
-- **Nemotron 3 Ultra 550B-A55B** serves as a genuinely independent reviewer rather than reviewing its own implementation.
-- **Luna** handles bounded, high-volume verification and documentation tasks economically.
+- **The primary chat orchestrator** owns architecture and decomposition but does not become a worker lane unless the owner explicitly directs that exception.
+- **Native Luna** is permitted only as an owner-directed worker lane and must be identified as `gpt-5.6-luna` in the run record.
+- **DeepSeek Flash** must use the official `deepseek` provider and `deepseek-v4-flash`; DeepInfra is not an acceptable route for this project.
+- **Ox Alpha** and **Nemotron** remain available as explicitly approved free fallbacks.
+- A failed or unfunded requested lane is a blocker. The orchestrator must report the exact provider status and wait for approval before changing lanes.
 
 Model identifiers can change. Before creating cards, query each provider’s live model catalog with `hermes model --refresh` or its provider picker. If an identifier has changed, update this guide and `AGENTS.md` with the verified replacement. Do not silently substitute a different model.
 
@@ -59,74 +61,65 @@ Model identifiers can change. Before creating cards, query each provider’s liv
 ### Current canonical identifiers
 
 ```text
-ChatGPT/Codex subscription:
-  provider: openai-codex
-  models:   gpt-5.6-terra, gpt-5.6-luna
+OpenRouter:
+  provider: openrouter
+  model:    stealth/ox-alpha
 
 NVIDIA Build/NIM:
   provider: nvidia
   model:    nvidia/nemotron-3-ultra-550b-a55b
 
-OpenRouter:
-  provider: openrouter
-  model:    stealth/ox-alpha
+OpenAI Codex:
+  provider: openai-codex
+  model:    gpt-5.6-luna
+
+DeepSeek API:
+  provider: deepseek
+  model:    deepseek-v4-flash
 ```
 
 The NVIDIA model is **Nemotron**, not “Omnitron.” The full model has 550B total parameters and 55B active parameters.
 
 ### Authentication facts
 
-- Hermes supports **ChatGPT or Codex Subscription** through the `openai-codex` OAuth provider. Hermes documentation does not currently guarantee exact plan/quota accounting, so verify access instead of assuming it.
 - NVIDIA Build/NIM requires `NVIDIA_API_KEY` in the relevant Hermes profile’s `.env` or a configured secret source.
 - OpenRouter requires `OPENROUTER_API_KEY` in the relevant profile’s `.env` or a configured secret source.
+- DeepSeek Flash requires the official `DEEPSEEK_API_KEY` route through the `deepseek` provider. DeepInfra is not a permitted substitute.
 - Never put keys in this repository, Kanban card bodies, comments, logs, or screenshots.
+- Do not copy credentials between profiles as a convenience. The profile owner configures credentials through Hermes without disclosing them to workers.
 
-### Create the profiles
+### Create and verify worker profiles
 
 Run once, from outside an active worker run:
 
 ```bash
-hermes profile create ghostterra --clone \
-  --description "Architect for the Ghost-CMS Template Injector; decomposes work, owns contracts, and synthesizes architecture decisions."
-
 hermes profile create ghostox --clone \
-  --description "Primary implementation engineer for the Ghost MV3 extension; writes production code and tests in isolated worktrees."
+  --description "Primary non-GPT implementation engineer for the Ghost MV3 extension; writes production code and tests in isolated worktrees."
 
 hermes profile create ghostnim --clone \
   --description "Independent adversarial reviewer for Ghost API, MV3 security, autosave consistency, and code quality."
-
-hermes profile create ghostluna --clone \
-  --description "QA, test, and documentation engineer for the Ghost-CMS Template Injector and browser integration matrix."
 ```
 
-`--clone` copies profile configuration and `.env`; verify what was copied without printing secrets. Configure each alias/profile with the normal Hermes provider wizard or profile alias:
+Configure the assigned profiles with the normal Hermes provider wizard or profile-scoped commands:
 
 ```bash
-# Generated profile aliases can run every Hermes subcommand.
-ghostterra model   # choose ChatGPT/Codex subscription → gpt-5.6-terra
-ghostluna model    # choose ChatGPT/Codex subscription → gpt-5.6-luna
-ghostnim model     # choose NVIDIA Build/NIM → nvidia/nemotron-3-ultra-550b-a55b
-ghostox model      # choose OpenRouter → stealth/ox-alpha
+hermes --profile ghostnim model     # choose NVIDIA Build/NIM → nvidia/nemotron-3-ultra-550b-a55b
+hermes --profile ghostox model      # choose OpenRouter → stealth/ox-alpha
+hermes --profile ghostluna config get model
+hermes --profile dsflash config get model
 ```
 
-For ChatGPT/Codex OAuth, authenticate inside each relevant profile if its cloned auth is unavailable:
-
-```bash
-ghostterra auth add openai-codex
-ghostluna auth add openai-codex
-```
-
-Then verify all profiles:
+Then verify every assigned profile, including owner-directed lanes:
 
 ```bash
 hermes profile list
-ghostterra doctor
-ghostluna doctor
-ghostnim doctor
-ghostox doctor
+hermes --profile ghostnim doctor
+hermes --profile ghostox doctor
+hermes --profile ghostluna doctor
+hermes --profile dsflash doctor
 ```
 
-A build must not start until all four profiles appear and can complete a harmless one-shot inference. If a provider is unavailable, block the Kanban root card and ask the user whether to wait or approve a specific substitute.
+A build must not start until each assigned worker can complete a harmless one-shot inference. If a requested provider is unavailable or returns an auth/balance error, block that lane and ask the owner whether to wait or approve a specific alternative; never relabel another provider as the requested lane.
 
 ## 5. Repository and workspace layout
 
@@ -217,11 +210,7 @@ Even when profile defaults are correct, pin provider/model on critical cards for
 
 ```bash
 # Examples only; replace title/body with the full card specification.
-hermes kanban --board ghost-preset-toolbar create "Architecture and contracts" \
-  --assignee ghostterra --provider openai-codex --model gpt-5.6-terra \
-  --workspace dir:/root/ghost-research --goal --goal-max-turns 20 \
-  --idempotency-key ghost-preset-architecture
-
+# Architecture/reconciliation are performed by the primary orchestrator, not a worker card.
 hermes kanban --board ghost-preset-toolbar create "Implement preset engine" \
   --assignee ghostox --provider openrouter --model stealth/ox-alpha \
   --workspace worktree --branch wt/preset-engine --goal --goal-max-turns 30 \
@@ -233,7 +222,7 @@ hermes kanban --board ghost-preset-toolbar create "Adversarial architecture revi
   --idempotency-key ghost-preset-architecture-review
 
 hermes kanban --board ghost-preset-toolbar create "Build test fixtures and QA matrix" \
-  --assignee ghostluna --provider openai-codex --model gpt-5.6-luna \
+  --assignee ghostox --provider openrouter --model stealth/ox-alpha \
   --workspace worktree --branch wt/test-matrix --goal --goal-max-turns 25 \
   --idempotency-key ghost-preset-tests
 ```
@@ -244,7 +233,7 @@ The orchestrator should create and link this dependency graph. Parallelize only 
 
 ### Gate 0 — Preconditions
 
-1. **Architecture contract and task decomposition — Terra**
+1. **Architecture contract and task decomposition — primary orchestrator**
    - Turn the decision into testable interfaces and card bodies.
    - Define the bridge capability contract and failure semantics.
    - Produce no production implementation.
@@ -263,7 +252,7 @@ The orchestrator should create and link this dependency graph. Parallelize only 
    - Independently inspect source, spike code, browser evidence, and race tests.
    - Request changes for unsupported assumptions.
 
-5. **Architecture gate — Terra**
+5. **Architecture gate — primary orchestrator**
    - Synthesize the spike/review results.
    - Mark the root build ready only if both spikes pass.
    - Otherwise block the board with the exact unresolved decision.
@@ -273,7 +262,7 @@ No scaffold or feature card may pass this gate by assuming the bridge works.
 ### Phase 1 — Foundation
 
 6. **MV3/TypeScript scaffold — Ox Alpha**
-7. **Contract fixtures and test harness — Luna**
+7. **Contract fixtures and test harness — Ox Alpha**
 8. **Security/threat-model baseline — Nemotron**
 
 Required outputs include linting, type checking, unit test runner, extension build, fixture payloads, and a documented compatibility target.
@@ -283,7 +272,7 @@ Required outputs include linting, type checking, unit test runner, extension bui
 9. **Preset schema and validator — Ox Alpha**
 10. **Per-field merge/planning engine — Ox Alpha**
 11. **Packaged defaults + `chrome.storage.local` repository — Ox Alpha**
-12. **Unit/property tests for modes and validation — Luna**
+12. **Unit/property tests for modes and validation — Ox Alpha**
 13. **Independent logic/storage review — Nemotron**
 
 The pure engine must be testable without a browser or Ghost instance.
@@ -293,9 +282,9 @@ The pure engine must be testable without a browser or Ghost instance.
 14. **Admin API client — Ox Alpha**
 15. **MAIN-world bridge protocol — Ox Alpha**
 16. **Versioned live Ghost state adapter — Ox Alpha**
-17. **Autosave/collision/recovery tests — Luna**
+17. **Autosave/collision/recovery tests — Ox Alpha**
 18. **MV3/API/race adversarial review — Nemotron**
-19. **Architecture reconciliation — Terra**
+19. **Architecture reconciliation — primary orchestrator**
 
 Cards 14–16 should not edit the same files concurrently unless each has an explicitly separated module and integration ownership is assigned to a later card.
 
@@ -304,7 +293,7 @@ Cards 14–16 should not edit the same files concurrently unless each has an exp
 20. **Popup and route detection — Ox Alpha**
 21. **Options CRUD/import/export UI — Ox Alpha**
 22. **Optional injected toolbar — Ox Alpha**
-23. **Accessibility, popup-closure, and permission UX tests — Luna**
+23. **Accessibility, popup-closure, and permission UX tests — Ox Alpha**
 24. **Security/privacy review — Nemotron**
 
 Host permissions should be exact or optional and user-granted; do not ship a literal wildcard placeholder.
@@ -312,9 +301,9 @@ Host permissions should be exact or optional and user-granted; do not ship a lit
 ### Phase 5 — Integration and release gate
 
 25. **Atomic end-to-end apply integration — Ox Alpha**
-26. **Real Ghost/browser test matrix — Luna**
+26. **Real Ghost/browser test matrix — Ox Alpha**
 27. **Final source/API/security review — Nemotron**
-28. **Change reconciliation and release synthesis — Terra**
+28. **Change reconciliation and release synthesis — primary orchestrator**
 29. **Human acceptance gate — unassigned/blocked until user approval**
 
 The final implementation card may request review, but only the independent review and human gate can move the release to done.
@@ -329,7 +318,7 @@ The final implementation card may request review, but only the independent revie
 - Workers emit `kanban_heartbeat` during long browser/build/test operations.
 - A blocked card states what human decision or credential is needed; it must not invent a fallback.
 
-For colliding branches, use a dedicated reconciliation card assigned to Terra or the `merge-reconciler` skill. Do not ask one implementation worker to silently overwrite another worker’s changes.
+For colliding branches, use a dedicated reconciliation step performed by the primary orchestrator or the `merge-reconciler` skill. Do not ask one implementation worker to silently overwrite another worker’s changes.
 
 ## 9. Engineering quality gates
 
@@ -381,7 +370,7 @@ When a future user asks to build this project, the orchestrator must:
 
 1. read `AGENTS.md`, the decision document, and this guide;
 2. inspect current files and Git state;
-3. verify all four profiles/providers/models and never expose credentials;
+3. verify only the profiles/providers/models assigned for this run and never expose credentials;
 4. initialize or reuse the `ghost-cms-template-injector` board;
 5. inspect existing cards/idempotency keys before creating anything;
 6. create the dependency graph beginning with Gate 0;
@@ -401,9 +390,10 @@ Use this from `/root/ghost-research`:
 ```text
 Build the Ghost-CMS Template Injector described in GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md.
 Follow AGENTS.md and GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md exactly.
-Use the durable ghost-cms-template-injector Kanban board and the required ghostterra,
-ghostox, ghostnim, and ghostluna model lanes. Begin with the two mandatory
-feasibility spikes; do not proceed past the architecture gate unless they pass.
+Use the durable ghost-cms-template-injector Kanban board, with the primary chat as
+orchestrator and the owner-requested worker lanes recorded explicitly (for example
+native `ghostluna` plus official-API `dsflash`, or the approved free fallbacks).
+Begin with the two mandatory feasibility spikes; do not proceed past the architecture gate unless they pass.
 Use isolated Git worktrees, TDD, independent review, real Ghost/browser tests,
 and keep the final human acceptance card open for me. Do not silently substitute
 models, weaken the MV3/native-save contract, or claim success without test output.

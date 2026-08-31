@@ -22,29 +22,34 @@
  *      target mounts the toolbar and answers discover under a NEW capability
  *      token (fresh handshake, digest-compared, never printed).
  *
- * The session cookie is read from /tmp/cj.txt (outside the repo); its value is
- * never printed or committed. No chrome stubbing, no manual bridge injection,
- * no headless mode.
+ * The session cookie is read from an explicit safe local path supplied by
+ * GHOST_PROOF_COOKIE_JAR; its value is never printed or committed. Raw output
+ * remains under ignored evidence/local/. No chrome stubbing, no manual bridge
+ * injection, no headless mode.
  */
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { launchHeadedChromium } from './headed-cdp-helper.mjs';
+import { resolveProofPaths, writeProofArtifact } from '../../scripts/proof-path-safety.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(DIR, '..', '..');
-const OUT = path.join(ROOT, 'evidence');
-mkdirSync(OUT, { recursive: true });
-
-const COOKIE_JAR = '/tmp/cj.txt';
+const { evidenceDirectory: OUT, cookieJar: COOKIE_JAR } = resolveProofPaths(
+  ROOT,
+  process.env.GHOST_PROOF_COOKIE_JAR,
+);
+const ARTIFACT_NAME =
+  process.env.GHOST_PROOF_ARTIFACT_NAME ||
+  `eacca232-headed-revoke-proof-${Date.now()}-${process.pid}.md`;
 const jar = readFileSync(COOKIE_JAR, 'utf8');
 const sessionLine = jar.split('\n').find((l) => l.includes('ghost-admin-api-session'));
 const parts = (sessionLine ?? '').trim().split('\t');
 const cookieName = parts.length >= 7 ? parts[5] : 'ghost-admin-api-session';
 const cookieValue = parts.length >= 7 ? parts[6] : '';
 if (!cookieValue) {
-  console.error('Could not read session cookie from /tmp/cj.txt');
+  console.error('Could not read session cookie from GHOST_PROOF_COOKIE_JAR');
   process.exit(1);
 }
 
@@ -429,7 +434,7 @@ try {
   check('re_enable_new_handshake_discover_responds', discoverRe?.ok === true);
 } catch (err) {
   failed = true;
-  console.error('PROOF ERROR:', err?.stack ?? err);
+  console.error('PROOF ERROR: headed revoke proof failed');
 }
 
 const lines = [
@@ -448,7 +453,7 @@ const lines = [
   '',
   'All checks must be true for PROOF PASS. No cookie or token values appear in this file.',
 ].join('\n');
-writeFileSync(path.join(OUT, 'eacca232-headed-revoke-proof.md'), lines);
+writeProofArtifact(ROOT, OUT, ARTIFACT_NAME, lines);
 console.log('PROOF PASS:', !failed);
 browser.close();
 process.exit(failed ? 2 : 0);

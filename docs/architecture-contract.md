@@ -42,7 +42,7 @@ Use cookie-authenticated same-origin requests; never persist an Admin API key or
 
 ## Gate and review sequencing
 
-The two Phase-0 spikes run in separate worktrees and must each request review only after TDD evidence, browser evidence, and artifact paths exist. A dedicated independent spike-review card depends on both completed spikes; it completes or returns changes to the relevant spike. The Terra architecture-gate card depends on the completed review card and is the sole release parent for all downstream work. Therefore no review card races an implementation card, and no downstream card can run before a pass decision. Later implementation cards use the same pattern: implementer requests same-card review; reviewer completes/requeues it; dependent integration/release cards depend on the reviewed implementation's completion. A dedicated downstream review child is never also requested on the parent.
+The two Phase-0 spikes run in separate worktrees and must each request review only after TDD evidence, browser evidence, and artifact paths exist. A dedicated independent spike-review card depends on both completed spikes; it completes or returns changes to the relevant spike. The primary-orchestrator architecture gate depends on the completed review card and is the sole release parent for all downstream work. Therefore no review card races an implementation card, and no downstream card can run before a pass decision. Later implementation cards use the same pattern: implementer requests same-card review; reviewer completes/requeues it; dependent integration/release cards depend on the reviewed implementation's completion. A dedicated downstream review child is never also requested on the parent.
 
 ## Required production-card TDD and evidence
 

@@ -20,5 +20,6 @@ chromium-profile/
 browser-profile/
 playwright-report/
 test-results/
+evidence/local/
 .DS_Store
 .worktrees/

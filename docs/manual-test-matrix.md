@@ -22,6 +22,7 @@ Legend: `PASS` means observed and recorded with browser/version/date evidence; `
 - [ ] `npm run manifest:validate`
 - [ ] `npm run build`
 - [ ] Inspect `dist/` for credentials, remote code, and unexpected host strings.
+- [ ] `npm run safety:check`
 
 ## Browser matrix
 
@@ -61,7 +62,7 @@ For each failed or blocked case, record: matrix ID, Ghost/Chromium versions, san
 
 ## Current verified runs
 
-- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 32 test files / 326 tests, and manifest validation.
-- Genuine headed preset-persistence run: PASS for body, custom excerpt, tag, and post-autosave stability; see `evidence/ef2721b1-headed-rerun.md`.
+- Latest local test run: `npm test` passed with 34 test files / 372 tests. The full release gate must be rerun and recorded against the final remediation commit.
+- Preset-persistence production-bundle proof: headless CDP only; it is **not** genuine headed-browser acceptance. Keep its raw output local under `evidence/local/` and do not link it as headed evidence.
 - Genuine headed C8 lifecycle: PASS for explicit native consent, exact scoped registrations, current/new-document silence after Disable, stale-token rejection, and fresh-capability re-enable; see `evidence/eacca232-headed-revoke-proof.md`.
-- Owner acceptance: pending completion of `TESTING.md` in the owner's environment.
+- Owner acceptance: pending completion of `TESTING.md` in the owner's environment, including any required headed persistence run.

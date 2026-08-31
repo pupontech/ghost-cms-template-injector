@@ -1,55 +1,44 @@
-# Ghost-CMS Template Injector Project Rules
+# Ghost-CMS Template Injector project rules
 
-These instructions apply to work started from `/root/ghost-research`.
+These rules apply only inside this repository. `$HERMES_HOME/SOUL.md` is identity-only and must not carry project rules; do not modify it unless the owner explicitly asks for an identity change.
 
-## Required reading
+## Sources of truth and required reading
 
-Before planning or editing, read:
+1. The GitHub Issue is the authoritative product/work record.
+2. The `ghost-preset-toolbar` Hermes Kanban card executes that issue and must link back to it.
+3. Read the applicable OpenSpec proposal, `GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md`, `GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md`, and relevant Ghost source before implementation.
+4. If documents conflict, stop and record the discrepancy in the issue; do not guess.
 
-1. `GHOST_CMS_TEMPLATE_INJECTOR_DECISION.md` — authoritative technical architecture.
-2. `GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md` — authoritative delivery, Kanban, model-lane, testing, and review workflow.
-3. Relevant source under `ghost/` for every Ghost behavior relied upon.
+No implementation begins before an OpenSpec proposal links the architecture decision, risk assessment, acceptance tests, and owner approval. Emergency security containment may make the minimum necessary secret-removal change first, then must open the retrospective proposal.
 
-If the decision and implementation guide conflict, stop and resolve the conflict explicitly before coding.
+## Git, worktrees, and review
 
-## Mandatory orchestration for a build request
+- Use `npm run worktree:init -- --name <slug>` for a new isolated writer workspace. It never deletes or reuses a worktree.
+- One editing worker owns one worktree and an explicit file set. Never run overlapping writers.
+- Never run `git clean`, `git reset --hard`, `git checkout .`, bulk worktree removal, history rewrite, or file truncation/replacement without first reading the target and receiving explicit owner approval.
+- Agents may open a PR and request review, but must never self-approve, self-merge, or bypass required checks. The owner or an independent reviewer merges only after CI and acceptance evidence are current.
 
-When the user asks to build, implement, scaffold, or finish the Ghost-CMS Template Injector:
+## Required Hermes preflight
 
-- Use the durable Hermes board `ghost-preset-toolbar` (kanban slug — immutable; display name "Ghost-CMS Template Injector"); do not manage the main build only with an ephemeral `delegate_task` swarm or a private TODO list.
-- Inspect existing board cards and idempotency keys before creating cards.
-- Use named profiles and pin the requested provider/model on critical cards:
-  - `ghostterra`: `openai-codex` / `gpt-5.6-terra` — architecture, decomposition, synthesis.
-  - `ghostox`: `openrouter` / `stealth/ox-alpha` — primary implementation.
-  - `ghostnim`: `nvidia` / `nvidia/nemotron-3-ultra-550b-a55b` — independent adversarial review.
-  - `ghostluna`: `openai-codex` / `gpt-5.6-luna` — tests, QA, documentation.
-- Verify every profile, provider credential, and live model ID before dispatch. Never print or copy secrets into the repository or board.
-- Do not silently substitute models. Block and ask the user if a required lane is unavailable.
-- Run the two Phase-0 feasibility spikes and independent review before full implementation.
-- Use isolated Git worktrees for parallel coding cards. Never run two editing workers in one worktree or give parallel cards overlapping file ownership.
-- Require review cards and real test/build/browser evidence. Keep the final human acceptance gate open for the user.
+Before dispatching a build card, confirm named profiles and live model/provider access without exposing credentials:
 
-## Technical invariants
+- `ghostox`: `openrouter` / `stealth/ox-alpha` (preferred free worker lane)
+- `ghostnim`: `nvidia` / `nvidia/nemotron-3-ultra-550b-a55b` (permitted free-worker fallback)
+- `ghostterra` and `ghostluna` are GPT-family profiles reserved for the primary orchestrator only; never assign them as worker lanes.
 
-- `custom_template` includes `.hbs`.
-- Admin API root is derived as `<subdir>/ghost/api/admin/`.
-- Mutations use plural envelopes (`posts[]`, `pages[]`).
-- MV3 isolated content scripts cannot directly access Ghost page-owned JavaScript state.
-- Active-editor writes use a minimal, capability-gated MAIN-world adapter and one Ghost-native save transaction.
-- API-only writes are clean-editor fallbacks and require reconciliation or reload before editing resumes.
-- `presets.json` is read-only seed data; editable presets use `chrome.storage.local`.
-- Body modes are `replace`, `only-if-empty`, or `prompt`; no implicit append/merge.
-- API Lexical/HTML body writes replace the whole body.
-- If stable live editor/native-save access cannot be proven, stop at the architecture gate. Do not conceal the blocker with fragile DOM automation.
+Load the matching Hermes/Kanban, GitHub, testing, security, and browser-control skills before acting. Do not silently substitute a lane: block the card and ask the owner.
 
-## Definition of done
+## Non-negotiable safety contract
 
-Do not report completion until:
+- `custom_template` includes `.hbs`; Admin API URLs derive from `<subdir>/ghost/api/admin/`; writes use plural post/page envelopes.
+- Active-editor writes use the capability-gated MAIN-world bridge and one Ghost-native save. API fallback requires a clean editor plus reconciliation/reload.
+- `presets.json` is read-only seed data; editable values use `chrome.storage.local`; body modes are explicit and never append implicitly.
+- Never store keys, OAuth tokens, cookies, private Ghost content, browser profiles, or raw proof output in Git, Kanban, issues, PRs, CI logs, or screenshots.
+- Do not use `curl | sh` or `curl | bash`; pin and verify executable downloads.
+- Use `npm run safety:check` before opening a PR.
 
-- formatting, linting, type checking, unit/contract tests, and production build pass;
-- real Ghost/browser integration tests cover dirty and unsaved drafts, posts/pages, metadata, body modes, autosave races, recovery, permissions, and persistence;
-- an independent `ghostnim` review is resolved;
-- `ghostterra` reconciles the final architecture and branch results;
-- no credentials or broad accidental permissions are present in source or built artifacts;
-- artifacts and test outputs are recorded on Kanban;
-- the user performs or explicitly approves the final acceptance gate.
+## Evidence and completion
+
+- Raw live-proof output belongs in ignored `evidence/local/`. Only redacted, reviewed summaries may enter tracked `evidence/`.
+- Do not call synthetic/headless/stubbed execution genuine headed browser evidence.
+- A change is incomplete until formatting, lint, typecheck, tests, build, manifest validation, safety scan, independent review, and required owner browser acceptance have been recorded against the GitHub Issue and linked Kanban card.

@@ -346,8 +346,7 @@ Why:
 The executable build workflow is maintained separately in [`GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md`](./GHOST_CMS_TEMPLATE_INJECTOR_IMPLEMENTATION_GUIDE.md). It defines:
 
 - the mandatory Phase-0 API and MAIN-world feasibility spikes;
-- the durable Hermes Kanban task graph and review gates;
-- the `ghostterra`, `ghostox`, `ghostnim`, and `ghostluna` provider/model lanes;
+- the durable Hermes Kanban task graph with non-GPT worker lanes (`ghostox` and `ghostnim`), primary-orchestrator reconciliation, and review gates;
 - profile/provider preflight without storing secrets in the repository;
 - Git worktree isolation, TDD, integration/security checks, and human acceptance criteria.
 
