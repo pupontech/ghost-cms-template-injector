@@ -65,6 +65,13 @@ export type ApplyOutcome =
   | { status: 'unsupported'; reason: string }
   | { status: 'error'; error: string };
 
+/** Read-only preview produced by the same fresh snapshot/planning path as apply. */
+export type PreviewOutcome =
+  | { status: 'preview'; plan: ApplicationPlan; snapshot: GhostSnapshot }
+  | { status: 'blocked'; problems: readonly string[] }
+  | { status: 'unsupported'; reason: string }
+  | { status: 'error'; error: string };
+
 function toEditorSnapshot(s: GhostSnapshot): EditorSnapshot {
   return {
     bodyEmpty: s.bodyEmpty,
@@ -73,6 +80,25 @@ function toEditorSnapshot(s: GhostSnapshot): EditorSnapshot {
     title: s.title ?? null,
     tags: s.tags,
   };
+}
+
+/** Produce a field-aware plan without invoking the adapter mutation surface. */
+export async function previewApplyPipeline(
+  deps: ApplyPipelineDeps,
+  presetId: string,
+): Promise<PreviewOutcome> {
+  try {
+    const disc = await deps.adapter.discover();
+    if (!disc.supported) return { status: 'unsupported', reason: disc.reason };
+    const preset = await deps.loadPreset(presetId);
+    if (!preset) return { status: 'blocked', problems: [`preset "${presetId}" not found`] };
+    const [snapshot, context] = await Promise.all([deps.adapter.snapshot(), deps.resolveContext()]);
+    const plan = planPresetApplication(preset, toEditorSnapshot(snapshot), context);
+    if (plan.status === 'blocked') return { status: 'blocked', problems: plan.problems };
+    return { status: 'preview', plan, snapshot };
+  } catch (err) {
+    return { status: 'error', error: err instanceof Error ? err.message : 'preview failed' };
+  }
 }
 
 /**

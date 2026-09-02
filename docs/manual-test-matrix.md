@@ -43,8 +43,13 @@ Legend: `PASS` means observed and recorded with browser/version/date evidence; `
 | A14 | Import/export                                                 | Import valid JSON; reject malformed/oversized/unvalidated JSON without partial persistence; export is downloadable and round-trips after reload.                                          |                |
 | A15 | Optional permission setup                                     | With no site access initially, confirm setup is explicit and user-granted; deny permission and verify the extension remains usable without broad access. Record the exact origin granted. |                |
 | A16 | Extension reload / browser restart                            | Reload the extension and restart Chromium; options overrides remain, and the toolbar does not appear on non-Ghost pages.                                                                  |                |
-| A17 | Apply feedback                                                | Successful delegation announces that the popup can close; rejected delegation/error is visible in the status region and does not claim success.                                           |                |
+| A17 | Apply feedback                                                | Successful delegation announces that the popup can close; rejected delegation/error is visible in the status region and does not claim persistence.                                       |                |
 | A18 | Privacy/security smoke check                                  | No API token prompt, secret storage, unexpected network request, wildcard host permission, or remote script is observed.                                                                  |                |
+| A19 | Read-only plan preview                                        | Clicking a preset shows field-level apply/skip/prompt actions before any apply message is sent; Cancel leaves the editor unchanged.                                                       |
+| A20 | Prompt-mode decision panel                                    | Body, excerpt, tags, title, and custom-template prompt actions render as sanitized questions; Yes retries with keyed answers, No leaves the editor unchanged.                             |
+| A21 | Undo last successful apply                                    | Undo restores the captured fields through the native save path, verifies the live result, cancels the pending automatic refresh, and disables itself.                                     |
+| A22 | Undo stale-editor guard                                       | After a user edit, navigation, or updated-at change, Undo refuses with a visible stale-state error and performs no restore/save.                                                          |
+| A23 | Advanced preset authoring                                     | Body source, per-field modes, custom-template filename/mode, description, group, and icon save and reload without schema loss.                                                            |
 
 ## Required negative cases
 
@@ -61,7 +66,7 @@ For each failed or blocked case, record: matrix ID, Ghost/Chromium versions, san
 
 ## Current verified runs
 
-- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 32 test files / 326 tests, and manifest validation.
+- Automated release verification: `npm run verify` passed with formatting, ESLint, strict TypeScript, production build, 32 test files / 382 tests, and manifest validation.
 - Genuine headed preset-persistence run: PASS for body, custom excerpt, tag, and post-autosave stability; see `evidence/ef2721b1-headed-rerun.md`.
 - Genuine headed C8 lifecycle: PASS for explicit native consent, exact scoped registrations, current/new-document silence after Disable, stale-token rejection, and fresh-capability re-enable; see `evidence/eacca232-headed-revoke-proof.md`.
 - Owner acceptance: pending completion of `TESTING.md` in the owner's environment.

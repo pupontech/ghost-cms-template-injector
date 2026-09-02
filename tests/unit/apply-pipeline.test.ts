@@ -9,6 +9,7 @@ import type {
 } from '../../src/ghost-state';
 import { createGhostStateAdapter } from '../../src/ghost-state';
 import {
+  previewApplyPipeline,
   runApplyPipeline,
   type ApplyPipelineAdapter,
   type ApplyPipelineDeps,
@@ -103,6 +104,16 @@ function depsWith(opts: {
 }
 
 describe('Phase-5 atomic apply pipeline', () => {
+  it('builds a field-aware preview from a fresh snapshot without applying', async () => {
+    const { adapter, appliedPlans } = fakeAdapter();
+    const deps = depsWith({ adapter, preset: presetSoftwareReview });
+    const out = await previewApplyPipeline(deps, 'software-review');
+    expect(out.status).toBe('preview');
+    if (out.status !== 'preview') throw new Error('wrong');
+    expect(out.plan.actions.map((action) => action.field)).toContain('body');
+    expect(appliedPlans).toHaveLength(0);
+  });
+
   it('forwards the pre-plan snapshot as `expected` to the adapter (stale-editor guard)', async () => {
     const applied: Array<{ plan: ApplicationPlan; expected?: unknown }> = [];
     const { adapter, snapshots } = fakeAdapter({

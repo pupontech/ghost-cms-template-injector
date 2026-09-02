@@ -9,6 +9,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
+const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+const versionFile = existsSync('VERSION') ? readFileSync('VERSION', 'utf8').trim() : '';
 const errors = [];
 
 function check(cond, msg) {
@@ -17,6 +19,8 @@ function check(cond, msg) {
 
 check(manifest.manifest_version === 3, 'manifest_version must be 3');
 check(/^\d+(\.\d+)*$/.test(manifest.version), 'version must be dotted integers');
+check(manifest.version === packageJson.version, 'manifest version must match package.json');
+check(manifest.version === versionFile, 'manifest version must match VERSION');
 check(
   manifest.background?.service_worker === 'dist/background.js' &&
     manifest.background?.type === 'module',

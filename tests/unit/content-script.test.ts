@@ -247,4 +247,107 @@ describe('content-script Phase-5 orchestration', () => {
 
     expect(reply).toMatchObject({ ok: false, error: 'INVALID_PROMPT_ANSWERS' });
   });
+
+  it('rejects a second concurrent apply with APPLY_BUSY', async () => {
+    const hangingEnv: PageBridgeEnv = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      postMessage: () => {
+        /* never responds */
+      },
+      setTimeoutFn: () => 0,
+      clearTimeoutFn: () => {},
+    };
+    const cs = createContentScript(makeDeps({ createBridgeEnv: () => hangingEnv }));
+    const first = cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'p1',
+    }) as Promise<unknown>;
+    const second = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'p1',
+    })) as Record<string, unknown>;
+    expect(second).toMatchObject({ ok: false, error: 'APPLY_BUSY' });
+    await Promise.race([first, new Promise((resolve) => setTimeout(resolve, 10))]);
+  });
+
+  it('resolveContext is cached within the TTL', async () => {
+    const listSnippets = vi.fn().mockResolvedValue([]);
+    const getActiveThemeTemplates = vi.fn().mockResolvedValue([]);
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () => ({ listSnippets, getActiveThemeTemplates }) as never,
+      }),
+    );
+    const ctx1 = await cs.resolveContext();
+    const ctx2 = await cs.resolveContext();
+    expect(ctx1).toBe(ctx2);
+    expect(listSnippets).toHaveBeenCalledTimes(1);
+    expect(getActiveThemeTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  it('resetResolveContextCache forces the next context resolution to refetch', async () => {
+    const listSnippets = vi.fn().mockResolvedValue([]);
+    const getActiveThemeTemplates = vi.fn().mockResolvedValue([]);
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () => ({ listSnippets, getActiveThemeTemplates }) as never,
+      }),
+    );
+    await cs.resolveContext();
+    cs.resetResolveContextCache();
+    await cs.resolveContext();
+    expect(listSnippets).toHaveBeenCalledTimes(2);
+    expect(getActiveThemeTemplates).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a fail-closed context after an API error', async () => {
+    const listSnippets = vi.fn().mockRejectedValue(new Error('network'));
+    const getActiveThemeTemplates = vi.fn().mockResolvedValue([]);
+    const cs = createContentScript(
+      makeDeps({
+        createApiClient: () => ({ listSnippets, getActiveThemeTemplates }) as never,
+      }),
+    );
+    expect(await cs.resolveContext()).toEqual({});
+    expect(await cs.resolveContext()).toEqual({});
+    expect(listSnippets).toHaveBeenCalledTimes(2);
+  });
+
+  it('undo delegates to the MAIN bridge and returns its structured result', async () => {
+    let onMainMessage: ((event: MessageEvent) => void) | null = null;
+    const cs = createContentScript(
+      makeDeps({
+        createBridgeEnv: () => ({
+          addEventListener: (cb) => {
+            onMainMessage = cb;
+          },
+          removeEventListener: () => {},
+          postMessage: (message) => {
+            onMainMessage?.(
+              new MessageEvent('message', {
+                data: {
+                  v: 1,
+                  source: 'ghost-cms-template-injector/page-bridge/v1',
+                  nonce: (message as { nonce: string }).nonce,
+                  ok: true,
+                  result: { saved: true },
+                },
+              }),
+            );
+          },
+          setTimeoutFn: (fn) => setTimeout(fn, 0),
+          clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+        }),
+      }),
+    );
+    const reply = await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'undo',
+    });
+    expect(reply).toMatchObject({ source: 'ghost-cms-template-injector/popup/v1', ok: true });
+    expect((reply as { result?: unknown }).result).toEqual({ saved: true });
+  });
 });

@@ -181,7 +181,11 @@ function planTitle(field: TitleField, _snapshot: EditorSnapshot): PlanAction {
   return { field: 'title', op: 'set', status: 'apply', value: field.value };
 }
 
-function planCustomTemplate(field: CustomTemplateField, context: PlanContext): PlanAction {
+function planCustomTemplate(
+  field: CustomTemplateField,
+  snapshot: EditorSnapshot,
+  context: PlanContext,
+): PlanAction {
   const templates = context.templates;
   // C6 fail-close: without a proven active-theme allowlist we cannot verify
   // the filename, so no mutation is planned.
@@ -194,14 +198,32 @@ function planCustomTemplate(field: CustomTemplateField, context: PlanContext): P
     };
   }
   const valid = templates.includes(field.value);
-  return valid
-    ? { field: 'customTemplate', op: 'set', status: 'apply', value: field.value }
-    : {
-        field: 'customTemplate',
-        op: 'skip',
-        status: 'skip',
-        reason: `"${field.value}" is not in the active theme's templates`,
-      };
+  if (!valid) {
+    return {
+      field: 'customTemplate',
+      op: 'skip',
+      status: 'skip',
+      reason: `"${field.value}" is not in the active theme's templates`,
+    };
+  }
+  if (field.mode === 'prompt') {
+    return {
+      field: 'customTemplate',
+      op: 'skip',
+      status: 'prompt',
+      value: field.value,
+      question: `Set the custom template to “${field.value}”?`,
+    };
+  }
+  if (field.mode === 'only-if-empty' && (snapshot.customTemplate ?? '').length > 0) {
+    return {
+      field: 'customTemplate',
+      op: 'skip',
+      status: 'skip',
+      reason: 'custom template already has a value',
+    };
+  }
+  return { field: 'customTemplate', op: 'set', status: 'apply', value: field.value };
 }
 
 function planTags(field: TagsField, snapshot: EditorSnapshot): PlanAction {
@@ -335,7 +357,7 @@ export function planPresetApplication(
     if (metadata?.title) actions.push(planTitle(metadata.title, snapshot));
     if (metadata?.excerpt) actions.push(planExcerpt(metadata.excerpt, snapshot));
     if (metadata?.customTemplate) {
-      actions.push(planCustomTemplate(metadata.customTemplate, context));
+      actions.push(planCustomTemplate(metadata.customTemplate, snapshot, context));
     }
     if (metadata?.tags) actions.push(planTags(metadata.tags, snapshot));
   } catch (error) {

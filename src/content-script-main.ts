@@ -27,6 +27,8 @@ const deps = {
     // Both bridge ends share this window, so target our own origin rather
     // than '*' — replies never fan out to embedding frames.
     postMessage: (message) => globalThis.postMessage(message, globalThis.location?.origin || '*'),
+    expectedSource: globalThis,
+    expectedOrigin: globalThis.location?.origin || '',
     setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
     clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
   }),
@@ -42,7 +44,17 @@ const deps = {
   createApiClient: (base: string) => new GhostAdminClient(globalThis.fetch.bind(globalThis), base),
 };
 
-createContentScript(deps).init();
+const contentScript = createContentScript(deps);
+contentScript.init();
+
+// Ghost Admin is an SPA: a hash route change can replace the editor and its
+// active theme context without recreating the content script. Drop cached API
+// context before the next preview/apply discovery.
+if (typeof globalThis.addEventListener === 'function') {
+  const resetContext = () => contentScript.resetResolveContextCache();
+  globalThis.addEventListener('hashchange', resetContext);
+  globalThis.addEventListener('popstate', resetContext);
+}
 
 /* ------------------------------------------------------------------ */
 /* C8 capability handshake: activate the MAIN bridge per document     */

@@ -56,18 +56,19 @@ Do not enter `/ghost/` itself in the setup field; enter the installation base UR
 The extension ships with one bundled default, **Starter Post**. Make it yours:
 
 1. Open the extension **Options** page.
-2. Under _Presets_, select **Edit** on Starter Post — or just start a new preset.
-3. Fill in:
-   - **Preset name** — anything; the internal id is derived from it.
-   - **Post title** _(optional)_ — applied when the preset runs.
-   - **Template text** — ordinary multiline text (see semantics below).
-   - **Tags** — comma-separated; merged into the post's existing tags.
-   - **Custom excerpt** _(optional)_ — only applied if the post has no excerpt yet.
-4. Select **Save preset**, then apply it from an open Ghost post/page editor.
+2. Under _Presets_, select **Edit** on Starter Post — or start a new preset.
+3. Configure body source, field modes, tags, excerpt, and (when needed) custom-template filename/mode in **Advanced**.
+4. Save the preset.
+5. Open a supported Ghost editor and click the extension toolbar button.
+6. Review the read-only field plan, confirm it, and apply the preset.
+7. If a prompt-mode field is returned, answer it in the popup panel.
+8. Use **Undo last apply** before the editor’s automatic refresh if you need to restore the previous fields.
 
-Template text semantics: each line becomes one Ghost paragraph, and blank lines separate paragraphs. Text is never parsed as HTML or Markdown, so `<b>` and `##` stay literal text — write plain words where you want headings, then apply heading formatting in the Ghost editor. Empty templates are rejected. Your presets live in `chrome.storage.local`; nothing is synced or uploaded.
+The body options are intentionally literal: `inline-lexical` applies structured Lexical JSON, `inline-text` converts plain text into paragraphs, and `ghost-snippet` resolves a named Ghost snippet. Inline HTML is fail-closed unless the live capability explicitly allows it. Custom-template modes support replace, only-if-empty, and prompt. Plain-text lines become paragraphs and blank lines separate paragraphs; HTML-looking and Markdown-looking characters remain literal text.
 
-You can also move presets between machines with **Export** / **Import** (JSON) at the bottom of the Options page.
+You can move presets between machines with **Export** / **Import** (JSON) at the bottom of the Options page.
+
+The default editor refresh is delayed long enough for an explicit Undo and is canceled after a successful Undo. Navigation or a full page reload ends the in-memory Undo window.
 
 ## Project layout
 

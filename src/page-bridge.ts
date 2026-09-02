@@ -8,7 +8,7 @@
  * MAIN side (createPageBridgeResponder): answers ONLY the fixed operation
  * allowlist through capability-gated handlers. No eval, no generic property
  * access, no fetch, no extension APIs. One apply transaction is serialized
- * per editor tab: concurrent apply/save requests fail closed with `BUSY`.
+ * per editor tab: concurrent apply/save/undo requests fail closed with `BUSY`.
  */
 
 import {
@@ -44,6 +44,9 @@ export interface PageBridgeEnv {
   postMessage: (message: unknown) => void;
   setTimeoutFn: (fn: () => void, ms: number) => unknown;
   clearTimeoutFn: (id: unknown) => void;
+  /** Optional transport identity gates; production supplies window/origin. */
+  expectedSource?: unknown;
+  expectedOrigin?: string;
 }
 
 export interface PageBridge {
@@ -63,6 +66,8 @@ export function createPageBridge(env: PageBridgeEnv): PageBridge {
   function ensureListener(): void {
     if (listener) return;
     listener = (event: MessageEvent) => {
+      if (env.expectedSource !== undefined && event.source !== env.expectedSource) return;
+      if (env.expectedOrigin !== undefined && event.origin !== env.expectedOrigin) return;
       const data: unknown = event.data;
       // The client accepts ONLY response-shaped messages. Its own outbound
       // request is also stamped with our source/nonce, so the loose
@@ -124,6 +129,7 @@ export interface PageBridgeResponderEnv {
   apply?: BridgeHandler;
   save?: BridgeHandler;
   rollback?: BridgeHandler;
+  undo?: BridgeHandler;
 }
 
 export interface PageBridgeResponder {
@@ -136,6 +142,7 @@ const TRANSACTIONAL_OPS: ReadonlySet<BridgeOperation> = new Set([
   'apply',
   'save',
   'rollback',
+  'undo',
 ]);
 
 /**
@@ -147,6 +154,7 @@ const TRANSACTIONAL_OPS: ReadonlySet<BridgeOperation> = new Set([
 function ghostErrorToBridgeCode(e: unknown): BridgeErrorCode {
   const code = (e as { code?: string } | undefined)?.code;
   if (code === 'ROLLBACK_FAILED') return 'ROLLBACK_FAILED';
+  if (code === 'SAVE_FAILED') return 'SAVE_FAILED';
   if (code === 'STALE_EDITOR') return 'STALE_EDITOR';
   if (code === 'BUSY') return 'BUSY';
   return 'APPLY_FAILED';
@@ -155,19 +163,32 @@ function ghostErrorToBridgeCode(e: unknown): BridgeErrorCode {
 export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBridgeResponder {
   let busy = false;
 
+  function success(request: BridgeRequest, result: unknown): BridgeResponse {
+    const response = {
+      v: BRIDGE_PROTOCOL_VERSION,
+      source: BRIDGE_SOURCE_ID,
+      nonce: request.nonce,
+      ok: true as const,
+      result,
+    };
+    return isBridgeResponse(response)
+      ? response
+      : {
+          v: BRIDGE_PROTOCOL_VERSION,
+          source: BRIDGE_SOURCE_ID,
+          nonce: request.nonce,
+          ok: false,
+          error: 'APPLY_FAILED',
+        };
+  }
+
   function respond(
     request: BridgeRequest,
     outcome: () => { ok: true; result: unknown } | { ok: false; error: BridgeErrorCode },
   ): BridgeResponse {
     const reply = outcome();
     return reply.ok
-      ? {
-          v: BRIDGE_PROTOCOL_VERSION,
-          source: BRIDGE_SOURCE_ID,
-          nonce: request.nonce,
-          ok: true,
-          result: reply.result,
-        }
+      ? success(request, reply.result)
       : {
           v: BRIDGE_PROTOCOL_VERSION,
           source: BRIDGE_SOURCE_ID,
@@ -217,13 +238,7 @@ export function createPageBridgeResponder(env: PageBridgeResponderEnv): PageBrid
             return (result as Promise<unknown>).then(
               (value) => {
                 busy = false;
-                return {
-                  v: BRIDGE_PROTOCOL_VERSION,
-                  source: BRIDGE_SOURCE_ID,
-                  nonce: request.nonce,
-                  ok: true,
-                  result: value,
-                } satisfies BridgeResponse;
+                return success(request, value);
               },
               (rejectionReason) => {
                 busy = false;

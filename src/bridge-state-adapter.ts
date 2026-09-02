@@ -16,7 +16,9 @@ import type { ApplicationPlan } from './preset-engine';
 import type { ApplyResult, DiscoverOutcome, GhostSnapshot } from './ghost-state';
 import type { ApplyPipelineAdapter } from './apply-pipeline';
 
-export function createBridgeStateAdapter(bridge: PageBridge): ApplyPipelineAdapter {
+export function createBridgeStateAdapter(
+  bridge: PageBridge,
+): ApplyPipelineAdapter & { undoLastApply(): Promise<ApplyResult> } {
   return {
     discover(): Promise<DiscoverOutcome> {
       return bridge
@@ -34,11 +36,20 @@ export function createBridgeStateAdapter(bridge: PageBridge): ApplyPipelineAdapt
     },
 
     apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult> {
-      return bridge.request('apply', { plan, expected }).then((r) => {
+      const payload: Record<string, unknown> = { plan };
+      if (expected !== undefined) payload['expected'] = expected;
+      return bridge.request('apply', payload).then((r) => {
         if (r.ok) return r.result as ApplyResult;
         // Distinguish ROLLBACK_FAILED / STALE_EDITOR / BUSY — the error
         // message is the bridge code, so a UI layer can warn the user the
         // editor may be left inconsistent or that a retry is required.
+        throw new Error(r.error);
+      });
+    },
+
+    undoLastApply(): Promise<ApplyResult> {
+      return bridge.request('undo', {}).then((r) => {
+        if (r.ok) return r.result as ApplyResult;
         throw new Error(r.error);
       });
     },

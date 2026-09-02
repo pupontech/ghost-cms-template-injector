@@ -1,6 +1,6 @@
 {
   "name": "ghost-cms-template-injector",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Secure MV3 preset toolbar for Ghost Admin posts and pages.",
   "type": "module",

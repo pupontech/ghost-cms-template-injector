@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createGhostMainBridge } from '../../src/main-bridge';
+import { createGhostMainBridge, EDITOR_RELOAD_DELAY_MS } from '../../src/main-bridge';
 import { BRIDGE_SOURCE_ID } from '../../src/bridge-protocol';
 import type { ApplicationPlan } from '../../src/preset-engine';
 
@@ -311,6 +311,72 @@ describe('MAIN bridge live transaction vs real Ghost 6.60 semantics (t_ef2721b1)
       expect(res.error).toBe('ROLLBACK_FAILED');
     } finally {
       cleanup();
+    }
+  });
+
+  it('undoes the last successful apply through the MAIN bridge', async () => {
+    const post = new FakeEmberPost();
+    post.attrs['customExcerpt'] = 'before';
+    const cleanup = makeOwnerHarness(post);
+    try {
+      const { handle } = createGhostMainBridge({ afterApply: vi.fn() });
+      const applied = await handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-00000000000d',
+        op: 'apply',
+        payload: { plan: readyPlan() },
+      });
+      expect(applied.ok).toBe(true);
+      const undone = await handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-00000000000e',
+        op: 'undo',
+        payload: {},
+      });
+      expect(undone).toMatchObject({ ok: true, result: { saved: true } });
+      expect(post.savedCount).toBe(2);
+      expect(post.attrs['customExcerpt']).toBe('before');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('cancels the default reload after a successful Undo', async () => {
+    vi.useFakeTimers();
+    const reload = vi.fn();
+    vi.stubGlobal('location', { hash: '', reload });
+    const post = new FakeEmberPost();
+    const cleanup = makeOwnerHarness(post);
+    try {
+      const { handle } = createGhostMainBridge();
+      const base = {
+        v: 1 as const,
+        source: BRIDGE_SOURCE_ID,
+        op: 'apply' as const,
+        payload: { plan: readyPlan() },
+      };
+      expect((await handle({ ...base, nonce: '00000000-0000-4000-8000-00000000000f' })).ok).toBe(
+        true,
+      );
+      expect(
+        (
+          await handle({
+            v: 1,
+            source: BRIDGE_SOURCE_ID,
+            nonce: '00000000-0000-4000-8000-000000000010',
+            op: 'undo',
+            payload: {},
+          })
+        ).ok,
+      ).toBe(true);
+      vi.advanceTimersByTime(EDITOR_RELOAD_DELAY_MS + 1);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
     }
   });
 });

@@ -248,6 +248,54 @@ describe('metadata modes', () => {
       value: 'custom.hbs',
     });
   });
+
+  it('respects custom template only-if-empty against the live snapshot', () => {
+    const preset = validatePreset({
+      ...basePreset(),
+      metadata: { customTemplate: { mode: 'only-if-empty', value: 'custom.hbs' } },
+    });
+    const filled = planPresetApplication(
+      preset,
+      createEditorSnapshot({ customTemplate: 'existing.hbs' }),
+      createPlanContext({ templates: ['custom.hbs', 'existing.hbs'] }),
+    );
+    expect(filled.actions.find((a) => a.field === 'customTemplate')).toMatchObject({
+      op: 'skip',
+      status: 'skip',
+    });
+    const empty = planPresetApplication(
+      preset,
+      createEditorSnapshot({ customTemplate: null }),
+      createPlanContext({ templates: ['custom.hbs'] }),
+    );
+    expect(empty.actions.find((a) => a.field === 'customTemplate')).toMatchObject({
+      op: 'set',
+      value: 'custom.hbs',
+    });
+  });
+
+  it('plans custom template prompt mode without mutating until explicitly accepted', () => {
+    const preset = validatePreset({
+      ...basePreset(),
+      metadata: { customTemplate: { mode: 'prompt', value: 'custom.hbs' } },
+    });
+    const plan = planPresetApplication(
+      preset,
+      createEditorSnapshot({ customTemplate: 'existing.hbs' }),
+      createPlanContext({ templates: ['custom.hbs', 'existing.hbs'] }),
+    );
+    expect(plan.status).toBe('needs-prompt');
+    expect(plan.actions.find((a) => a.field === 'customTemplate')).toMatchObject({
+      op: 'skip',
+      status: 'prompt',
+      value: 'custom.hbs',
+    });
+    const accepted = resolvePrompts(plan, { customTemplate: true });
+    expect(accepted.actions.find((a) => a.field === 'customTemplate')).toMatchObject({
+      op: 'set',
+      status: 'apply',
+    });
+  });
 });
 
 describe('tags — normalization, order-preserving merge, replacement', () => {

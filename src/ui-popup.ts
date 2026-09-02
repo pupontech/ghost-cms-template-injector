@@ -12,24 +12,24 @@
  *  - probe the content script's capability gate (`discover`) and surface an
  *    accurate post/page/unsaved/dirty/capability report;
  *  - list validated presets (loaded from the storage repository);
- *  - delegate `apply` (and prompt answers) to the content script and return
- *    the delegation acknowledgement immediately — it does NOT await the full
- *    apply transaction.
+ *  - delegate read-only `preview`, long-lived `apply`, and private-state `undo` to
+ *    the content script; prompt answers are validated before an apply retry.
  *
  * Security: every message carries a fixed popup `source` identity, every reply
- * is validated for that identity, and only the fixed `discover`/`apply`
+ * is validated for that identity, and only the fixed `discover`/`preview`/`apply`/`undo`
  * operations are sent. No eval, no arbitrary property access, no secrets.
  */
 
 import type { DetectedRoute } from './route-detection';
 import { detectEditorUrl } from './route-detection';
 import type { Preset } from './preset-schema';
+import type { ApplicationPlan } from './preset-engine';
 
 /** Identity stamped on every popup→content message and accepted on replies. */
 export const POPUP_MESSAGE_SOURCE = 'ghost-cms-template-injector/popup/v1';
 
 /** Operations the popup is permitted to send to the content script. */
-export type PopupOperation = 'discover' | 'apply';
+export type PopupOperation = 'discover' | 'preview' | 'apply' | 'undo';
 
 export interface PopupMessage {
   source: string;
@@ -74,6 +74,12 @@ export interface ApplyResult {
   prompts?: Array<{ field: string; question: string }>;
 }
 
+export interface PreviewResult {
+  ok: boolean;
+  plan?: ApplicationPlan;
+  error?: string | undefined;
+}
+
 /** Runtime seams the controller depends on (chrome.* and store injected). */
 export interface PopupRuntime {
   /** Resolve the active tab id the popup is operating against. */
@@ -93,6 +99,8 @@ export interface PopupController {
     presetId: string,
     promptAnswers?: Partial<Record<string, boolean>>,
   ) => Promise<ApplyResult>;
+  previewPreset: (presetId: string) => Promise<PreviewResult>;
+  undoLastApply: () => Promise<ApplyResult>;
   lastStatus: () => PopupState;
 }
 
@@ -136,6 +144,39 @@ function validateReply(reply: ContentReply | undefined): {
   }
   if (reply.ok) return { ok: true, result: reply.result };
   return { ok: false, error: reply.error ?? 'UNKNOWN_ERROR' };
+}
+
+const PREVIEW_FIELDS = new Set(['body', 'title', 'excerpt', 'customTemplate', 'tags']);
+
+function asApplicationPlan(value: unknown): ApplicationPlan | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (raw['status'] !== 'ready' && raw['status'] !== 'needs-prompt') return null;
+  if (typeof raw['presetId'] !== 'string' || !Array.isArray(raw['actions'])) return null;
+  if (!Array.isArray(raw['problems']) || raw['problems'].some((p) => typeof p !== 'string'))
+    return null;
+  for (const item of raw['actions']) {
+    if (typeof item !== 'object' || item === null) return null;
+    const action = item as Record<string, unknown>;
+    if (!PREVIEW_FIELDS.has(String(action['field']))) return null;
+    if (action['op'] !== 'set' && action['op'] !== 'skip') return null;
+    if (
+      action['status'] !== 'apply' &&
+      action['status'] !== 'skip' &&
+      action['status'] !== 'prompt'
+    ) {
+      return null;
+    }
+    if (action['status'] === 'prompt' && typeof action['question'] !== 'string') return null;
+    if (
+      action['status'] === 'skip' &&
+      action['reason'] !== undefined &&
+      typeof action['reason'] !== 'string'
+    ) {
+      return null;
+    }
+  }
+  return value as ApplicationPlan;
 }
 
 export function createPopupController(runtime: PopupRuntime): PopupController {
@@ -266,9 +307,63 @@ export function createPopupController(runtime: PopupRuntime): PopupController {
     return { ok: checked.ok, delegated: checked.ok, error: checked.error };
   }
 
+  async function previewPreset(presetId: string): Promise<PreviewResult> {
+    const tabId = runtime.getActiveTabId();
+    if (tabId === null) return { ok: false, error: 'No active Ghost Admin tab found.' };
+    let reply: ContentReply | undefined;
+    try {
+      reply = await runtime.sendMessage(tabId, {
+        source: POPUP_MESSAGE_SOURCE,
+        op: 'preview',
+        tabId,
+        presetId,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'preview delegation failed',
+      };
+    }
+    const checked = validateReply(reply);
+    if (!checked.ok) return { ok: false, error: checked.error };
+    const raw = checked.result;
+    if (typeof raw !== 'object' || raw === null) {
+      return { ok: false, error: 'invalid preview response' };
+    }
+    const preview = raw as Record<string, unknown>;
+    const plan = asApplicationPlan(preview['plan']);
+    if (preview['status'] !== 'preview' || !plan || plan.presetId !== presetId) {
+      return { ok: false, error: 'invalid preview plan' };
+    }
+    return { ok: true, plan };
+  }
+
+  async function undoLastApply(): Promise<ApplyResult> {
+    const tabId = runtime.getActiveTabId();
+    if (tabId === null) {
+      return { ok: false, delegated: false, error: 'No active Ghost Admin tab found.' };
+    }
+    let reply: ContentReply | undefined;
+    try {
+      reply = await runtime.sendMessage(tabId, {
+        source: POPUP_MESSAGE_SOURCE,
+        op: 'undo',
+        tabId,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        delegated: false,
+        error: err instanceof Error ? err.message : 'undo delegation failed',
+      };
+    }
+    const checked = validateReply(reply);
+    return { ok: checked.ok, delegated: checked.ok, error: checked.error };
+  }
+
   function lastStatus(): PopupState {
     return last;
   }
 
-  return { refresh, loadPresets, applyPreset, lastStatus };
+  return { refresh, loadPresets, applyPreset, previewPreset, undoLastApply, lastStatus };
 }

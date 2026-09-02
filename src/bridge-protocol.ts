@@ -2,7 +2,7 @@
  * C3 bridge wire protocol — shared by the isolated-world client and the
  * MAIN-world responder.
  *
- * Fixed allowlist only: discover, snapshot, planApply, apply, save, rollback.
+ * Fixed allowlist only: discover, snapshot, planApply, apply, save, rollback, undo.
  * Every message carries protocol version `v`, a UUID nonce/request id, the
  * bridge `source` identity, and a structured-cloneable payload. No eval,
  * arbitrary property paths, function names, fetch, or extension APIs cross
@@ -21,6 +21,7 @@ export const BRIDGE_OPERATIONS = [
   'apply',
   'save',
   'rollback',
+  'undo',
 ] as const;
 
 export type BridgeOperation = (typeof BRIDGE_OPERATIONS)[number];
@@ -34,6 +35,7 @@ export type BridgeErrorCode =
   | 'TIMEOUT'
   | 'BUSY'
   | 'APPLY_FAILED'
+  | 'SAVE_FAILED'
   | 'ROLLBACK_FAILED'
   /** The live editor record changed (navigation/reload) since the plan snapshot. */
   | 'STALE_EDITOR'
@@ -127,7 +129,27 @@ export function isBridgeRequest(value: unknown): value is BridgeRequest {
   if (typeof r['nonce'] !== 'string' || !UUID_RE.test(r['nonce'])) return false;
   if (r['source'] !== BRIDGE_SOURCE_ID) return false;
   if (typeof r['payload'] !== 'object' || r['payload'] === null) return false;
-  return isCloneable(r['payload'], new Set());
+  return (
+    isCloneable(r['payload'], new Set()) &&
+    isOperationPayload(r['op'] as BridgeOperation, r['payload'])
+  );
+}
+
+/** Operation payloads are deliberately closed records. Values are validated
+ * by the operation handler, but unknown keys must never cross the boundary. */
+function isOperationPayload(op: BridgeOperation, payload: unknown): boolean {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload as Record<string, unknown>);
+  const allowed: Record<BridgeOperation, readonly string[]> = {
+    discover: [],
+    snapshot: [],
+    planApply: ['plan'],
+    apply: ['plan', 'expected'],
+    save: [],
+    rollback: ['token'],
+    undo: [],
+  };
+  return keys.every((key) => allowed[op].includes(key));
 }
 
 export function isBridgeResponse(value: unknown): value is BridgeResponse {
@@ -140,7 +162,7 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
     const result = r['result'];
     // Any structured-cloneable value (object, string, number, boolean, null) is
     // a valid result. Reject only unsupported shapes (undefined, function, etc.).
-    return result !== undefined;
+    return result !== undefined && isCloneable(result, new Set());
   }
   if (r['ok'] === false) {
     return (
@@ -154,6 +176,7 @@ export function isBridgeResponse(value: unknown): value is BridgeResponse {
         'TIMEOUT',
         'BUSY',
         'APPLY_FAILED',
+        'SAVE_FAILED',
         'ROLLBACK_FAILED',
         'STALE_EDITOR',
         'CAPABILITY_REQUIRED',

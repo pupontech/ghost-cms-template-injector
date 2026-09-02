@@ -224,7 +224,7 @@ describe('C4 apply → save → verify (single native transaction)', () => {
     expect(surface.setField).toHaveBeenCalledWith('customTemplate', 'tpl.hbs');
     expect(surface.setField).toHaveBeenCalledWith('tags', ['X', 'Y']);
     expect(surface.nativeSave).toHaveBeenCalledTimes(1);
-    expect(surface.captureRollback).toHaveBeenCalledTimes(1);
+    expect(surface.captureRollback).toHaveBeenCalledTimes(2);
     expect(result.saved).toBe(true);
     expect(result.updatedAt).toBe('2026-08-21T01:00:00.000Z');
   });
@@ -276,6 +276,30 @@ describe('C4 rollback on failure', () => {
       adapter.apply(readyPlan([{ field: 'excerpt', op: 'set', status: 'apply', value: 'x' }])),
     ).rejects.toMatchObject({ code: 'ROLLBACK_FAILED' });
   });
+
+  it('escalates to ROLLBACK_FAILED when restore returns but readback verification fails', async () => {
+    const surface = capableSurface({
+      nativeSave: vi.fn(async () => {
+        throw new Error('save conflict');
+      }),
+      verifyRollback: vi.fn(() => false),
+    });
+    const adapter = createGhostStateAdapter(surface);
+    await expect(
+      adapter.apply(readyPlan([{ field: 'excerpt', op: 'set', status: 'apply', value: 'x' }])),
+    ).rejects.toMatchObject({ code: 'ROLLBACK_FAILED' });
+    expect(surface.verifyRollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('escalates SAVE_FAILED when native save is clean but applied fields fail readback', async () => {
+    const surface = capableSurface({ verifyApplied: vi.fn(() => false) });
+    const adapter = createGhostStateAdapter(surface);
+    await expect(
+      adapter.apply(readyPlan([{ field: 'excerpt', op: 'set', status: 'apply', value: 'x' }])),
+    ).rejects.toMatchObject({ code: 'SAVE_FAILED' });
+    expect(surface.nativeSave).toHaveBeenCalledTimes(1);
+    expect(surface.restoreRollback).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('C4 unsupported abort', () => {
@@ -298,5 +322,104 @@ describe('adapter exposes a cohesive interface type', () => {
     expect(typeof adapter.planApply).toBe('function');
     expect(typeof adapter.apply).toBe('function');
     expect(typeof adapter.rollback).toBe('function');
+    expect(typeof adapter.undoLastApply).toBe('function');
+  });
+});
+
+describe('last successful apply undo', () => {
+  function statefulSurface() {
+    const state = {
+      excerpt: 'old excerpt',
+      title: 'old title',
+      customTemplate: null as string | null,
+      tags: [] as string[],
+      lexical: '{"root":{}}',
+      updatedAt: 'before',
+    };
+    let saves = 0;
+    const snapshot = () => ({
+      lexical: state.lexical,
+      updated_at: state.updatedAt,
+      customExcerpt: state.excerpt,
+      customTemplate: state.customTemplate,
+      title: state.title,
+      tags: state.tags.map((name) => ({ name })),
+    });
+    const surface = capableSurface({
+      getRecordIdentity: () => 'record-a',
+      getUpdatedAt: () => state.updatedAt,
+      getLexical: () => state.lexical,
+      getExcerpt: () => state.excerpt,
+      getTitle: () => state.title,
+      getCustomTemplate: () => state.customTemplate,
+      getTags: () => [...state.tags],
+      setField: vi.fn((field, value) => {
+        if (field === 'excerpt') state.excerpt = String(value);
+        if (field === 'title') state.title = String(value);
+        if (field === 'customTemplate') state.customTemplate = String(value);
+        if (field === 'tags') state.tags = [...(value as string[])];
+      }),
+      setLexical: vi.fn((value) => {
+        state.lexical = value;
+      }),
+      nativeSave: vi.fn(async () => {
+        saves += 1;
+        state.updatedAt = `after-${saves}`;
+        return { updatedAt: state.updatedAt };
+      }),
+      captureRollback: vi.fn(snapshot),
+      restoreRollback: vi.fn((raw: unknown) => {
+        const value = raw as ReturnType<typeof snapshot>;
+        state.lexical = value.lexical;
+        state.updatedAt = value.updated_at;
+        state.excerpt = value.customExcerpt;
+        state.customTemplate = value.customTemplate;
+        state.title = value.title;
+        state.tags = value.tags.map((tag) => tag.name);
+      }),
+      verifyRollback: vi.fn((raw: unknown) => {
+        const value = raw as ReturnType<typeof snapshot>;
+        return (
+          state.lexical === value.lexical &&
+          state.updatedAt === value.updated_at &&
+          state.excerpt === value.customExcerpt &&
+          state.title === value.title &&
+          state.customTemplate === value.customTemplate &&
+          state.tags.join('\\u0000') === value.tags.map((tag) => tag.name).join('\\u0000')
+        );
+      }),
+    });
+    return { state, surface };
+  }
+
+  it('undoes the last successful apply through one explicit second native save', async () => {
+    const { state, surface } = statefulSurface();
+    const adapter = createGhostStateAdapter(surface);
+    await adapter.apply(
+      readyPlan([{ field: 'excerpt', op: 'set', status: 'apply', value: 'new excerpt' }]),
+    );
+    expect(state.excerpt).toBe('new excerpt');
+    const result = await adapter.undoLastApply();
+    expect(result).toMatchObject({ saved: true, resourceId: 'post-1', updatedAt: 'after-2' });
+    expect(state.excerpt).toBe('old excerpt');
+    expect(surface.nativeSave).toHaveBeenCalledTimes(2);
+    expect(surface.restoreRollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses undo after the editor changed since the successful apply', async () => {
+    const { state, surface } = statefulSurface();
+    const adapter = createGhostStateAdapter(surface);
+    await adapter.apply(
+      readyPlan([{ field: 'excerpt', op: 'set', status: 'apply', value: 'new excerpt' }]),
+    );
+    state.excerpt = 'user edit';
+    await expect(adapter.undoLastApply()).rejects.toMatchObject({ code: 'STALE_EDITOR' });
+    expect(surface.restoreRollback).not.toHaveBeenCalled();
+    expect(surface.nativeSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports ROLLBACK_UNPROVEN when there is no successful apply to undo', async () => {
+    const adapter = createGhostStateAdapter(capableSurface());
+    await expect(adapter.undoLastApply()).rejects.toMatchObject({ code: 'ROLLBACK_UNPROVEN' });
   });
 });

@@ -6,6 +6,7 @@ import {
   type BridgeResponse,
 } from '../../src/bridge-protocol';
 import { createPageBridge, createPageBridgeResponder } from '../../src/page-bridge';
+import { createBridgeStateAdapter } from '../../src/bridge-state-adapter';
 
 type Listener = (event: MessageEvent) => void;
 
@@ -28,6 +29,44 @@ function harness() {
 }
 
 describe('page-bridge isolated-side client (C3)', () => {
+  it('rejects replies from a different window or origin when configured', async () => {
+    const target = new EventTarget();
+    const ownWindow = null;
+    const bridge = createPageBridge({
+      addEventListener: (cb: Listener) => target.addEventListener('message', cb as EventListener),
+      removeEventListener: () => {},
+      postMessage: (message: unknown) => {
+        const req = message as { nonce: string };
+        queueMicrotask(() =>
+          target.dispatchEvent(
+            new MessageEvent('message', {
+              data: { v: 1, source: BRIDGE_SOURCE_ID, nonce: req.nonce, ok: true, result: {} },
+              source: null,
+              origin: 'https://evil.example',
+            }),
+          ),
+        );
+      },
+      expectedSource: ownWindow,
+      expectedOrigin: 'https://ghost.example',
+      setTimeoutFn: (fn) => setTimeout(fn, 0),
+      clearTimeoutFn: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    });
+    await expect(bridge.request('discover', {})).resolves.toMatchObject({
+      ok: false,
+      error: 'TIMEOUT',
+    });
+  });
+
+  it('omits undefined optional apply fields from the structured-clone payload', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, result: { saved: true } });
+    const adapter = createBridgeStateAdapter({ request } as never);
+    await adapter.apply({ presetId: 'p1', status: 'ready', actions: [], problems: [] } as never);
+    expect(request).toHaveBeenCalledWith('apply', {
+      plan: { presetId: 'p1', status: 'ready', actions: [], problems: [] },
+    });
+  });
+
   it('sends a validated request and resolves with the matching response', async () => {
     const h = harness();
     const bridge = createPageBridge({
@@ -196,6 +235,22 @@ describe('MAIN-world page-bridge responder (C3)', () => {
     expect(malformed).toMatchObject({ ok: false, error: 'INVALID_REQUEST' });
   });
 
+  it('rejects unknown operation payload fields before invoking the handler', async () => {
+    const handler = vi.fn(() => ({ capabilities: [] }));
+    const responder = createPageBridgeResponder({ discover: handler });
+    const response = await responder.handle({
+      ...createBridgeRequest('discover', { unexpected: true }),
+    });
+    expect(response).toMatchObject({ ok: false, error: 'INVALID_REQUEST' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('returns a structured failure when a handler produces a non-cloneable result', async () => {
+    const responder = createPageBridgeResponder({ discover: () => undefined });
+    const response = await responder.handle(createBridgeRequest('discover', {}));
+    expect(response).toMatchObject({ ok: false, error: 'APPLY_FAILED' });
+  });
+
   it('serializes one apply transaction per tab', async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((r) => {
@@ -213,5 +268,13 @@ describe('MAIN-world page-bridge responder (C3)', () => {
     expect(secondResult).toMatchObject({ ok: false, error: 'BUSY' });
     release?.();
     expect(await firstP).toMatchObject({ ok: true });
+  });
+
+  it('allowlists an explicit undo operation and serializes it', async () => {
+    const undo = vi.fn(() => ({ saved: true }));
+    const responder = createPageBridgeResponder({ undo });
+    const response = await responder.handle(createBridgeRequest('undo', {}));
+    expect(response).toMatchObject({ ok: true, result: { saved: true } });
+    expect(undo).toHaveBeenCalledTimes(1);
   });
 });

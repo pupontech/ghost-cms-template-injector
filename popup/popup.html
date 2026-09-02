@@ -100,6 +100,64 @@
         opacity: 0.4;
         cursor: default;
       }
+      #gcti-prompt-panel,
+      #gcti-plan-panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        margin: 10px 0 4px;
+      }
+      #gcti-prompt-panel p,
+      #gcti-plan-panel p {
+        margin: 0 0 6px;
+        font-weight: 600;
+      }
+      #gcti-prompt-list,
+      #gcti-plan-list {
+        margin: 0 0 8px;
+        padding-left: 18px;
+        color: var(--text-2);
+      }
+      .gcti-prompt-actions,
+      .gcti-plan-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .gcti-prompt-actions button,
+      .gcti-plan-actions button {
+        flex: 1;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+      .gcti-prompt-actions button:first-child,
+      .gcti-plan-actions button:first-child {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .gcti-prompt-actions button:last-child,
+      .gcti-plan-actions button:last-child {
+        background: transparent;
+        color: inherit;
+      }
+      #gcti-undo {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 7px;
+        margin: 8px 0 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      #gcti-undo:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
       .gcti-setup-link {
         display: inline-block;
         margin-top: 12px;
@@ -118,6 +176,23 @@
     <p class="subtitle">Apply a preset to the open editor.</p>
     <p id="gcti-status" role="status" aria-live="polite">Detecting editor…</p>
     <ul id="gcti-preset-list"></ul>
+    <section id="gcti-plan-panel" hidden aria-live="polite">
+      <p>Review preset plan</p>
+      <ul id="gcti-plan-list"></ul>
+      <div class="gcti-plan-actions">
+        <button id="gcti-plan-apply" type="button">Apply preset</button>
+        <button id="gcti-plan-cancel" type="button">Cancel</button>
+      </div>
+    </section>
+    <section id="gcti-prompt-panel" hidden aria-live="polite">
+      <p>Confirm preset changes</p>
+      <ul id="gcti-prompt-list"></ul>
+      <div class="gcti-prompt-actions">
+        <button id="gcti-prompt-yes" type="button">Apply changes</button>
+        <button id="gcti-prompt-no" type="button">Cancel</button>
+      </div>
+    </section>
+    <button id="gcti-undo" type="button" disabled>Undo last apply</button>
     <a class="gcti-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
     <script type="module" src="../dist/popup.js"></script>
   </body>

@@ -25,6 +25,9 @@ function makeEl(): TestEl {
     setAttribute(name: string, value: string) {
       this.attrs[name] = value;
     },
+    removeAttribute(name: string) {
+      delete this.attrs[name];
+    },
     appendChild(child: ToolbarDomElement) {
       this.children.push(child as TestEl);
     },

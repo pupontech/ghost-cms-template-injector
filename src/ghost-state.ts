@@ -160,6 +160,10 @@ export interface GhostLiveSurface {
   captureRollback(): unknown;
   /** Restore a previously captured rollback snapshot. */
   restoreRollback(snapshot: unknown): void;
+  /** Read back the live surface after restore; false means recovery is unproven. */
+  verifyRollback?(snapshot: unknown): boolean;
+  /** Read back applied fields after native save; false means persistence is unproven. */
+  verifyApplied?(plan: ApplicationPlan): boolean;
 }
 
 export interface ApplyResult {
@@ -189,6 +193,8 @@ export interface GhostStateAdapter {
   apply(plan: ApplicationPlan, expected?: GhostSnapshot): Promise<ApplyResult>;
   /** Pure rollback attempt; throws if recovery cannot be proven. */
   rollback(token: RollbackToken): void;
+  /** Restore the last successful apply when the current editor is unchanged. */
+  undoLastApply(): Promise<ApplyResult>;
 }
 
 /** Opaque token tying a rollback to a specific pre-apply snapshot. */
@@ -213,6 +219,40 @@ export function createGhostStateAdapter(surface: GhostLiveSurface): GhostStateAd
 
 const FIELDS_REQUIRING_RELATION: ReadonlySet<string> = new Set(['customTemplate', 'tags']);
 
+interface LastSuccessfulApply {
+  resourceId: string | null;
+  recordIdentity: string | null;
+  before: GhostSnapshot;
+  beforeRollback: unknown;
+  after: GhostSnapshot;
+  afterRollback: unknown;
+}
+
+function sameEditableState(
+  a: GhostSnapshot,
+  b: GhostSnapshot,
+  allowNewRecordId: boolean = false,
+): boolean {
+  return (
+    a.resourceType === b.resourceType &&
+    (allowNewRecordId && b.resourceId === null ? true : a.resourceId === b.resourceId) &&
+    a.recordIdentity === b.recordIdentity &&
+    a.title === b.title &&
+    a.excerpt === b.excerpt &&
+    a.customTemplate === b.customTemplate &&
+    a.lexical === b.lexical &&
+    a.bodyEmpty === b.bodyEmpty &&
+    a.tags.join('\\u0000') === b.tags.join('\\u0000')
+  );
+}
+
+function staleUndo(field: string): never {
+  throw new GhostStateException(
+    'STALE_EDITOR',
+    `editor "${field}" changed since the successful apply; refusing to undo`,
+  );
+}
+
 function validateActionValue(action: PlanAction): string | null {
   switch (action.field) {
     case 'body':
@@ -232,10 +272,35 @@ function validateActionValue(action: PlanAction): string | null {
   }
 }
 
+function appliedFieldsMatch(plan: ApplicationPlan, snapshot: GhostSnapshot): boolean {
+  return plan.actions
+    .filter((action) => action.status === 'apply')
+    .every((action) => {
+      switch (action.field) {
+        case 'body':
+          return snapshot.lexical === action.value;
+        case 'title':
+          return snapshot.title === action.value;
+        case 'excerpt':
+          return snapshot.excerpt === action.value;
+        case 'customTemplate':
+          return snapshot.customTemplate === action.value;
+        case 'tags':
+          return (
+            Array.isArray(action.value) &&
+            snapshot.tags.join('\\u0000') === action.value.join('\\u0000')
+          );
+        default:
+          return false;
+      }
+    });
+}
+
 class GhostStateAdapterImpl implements GhostStateAdapter {
   readonly #surface: GhostLiveSurface;
   #busy = false;
   #rollback: RollbackToken | null = null;
+  #lastSuccessful: LastSuccessfulApply | null = null;
 
   constructor(surface: GhostLiveSurface) {
     this.#surface = surface;
@@ -343,9 +408,13 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       // pre-plan snapshot BEFORE any mutation or rollback capture. A navigation
       // or a concurrent user edit since the snapshot means the plan is stale —
       // refuse with zero mutation (nothing to roll back, nothing saved).
+      const before = expected ?? this.snapshot();
       if (expected) {
         this.#verifyExpected(expected);
       }
+      // A new transaction supersedes the previous undo target. If this
+      // transaction fails, leaving an older target exposed would be misleading.
+      this.#lastSuccessful = null;
 
       // Capture rollback BEFORE any mutation.
       const snapshot = this.#surface.captureRollback();
@@ -366,10 +435,83 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
 
       // Exactly one native save transaction.
       const result = await this.#surface.nativeSave();
+      const appliedSnapshot = this.snapshot();
+      if (
+        this.#surface.verifyApplied &&
+        (!this.#surface.verifyApplied(plan) || !appliedFieldsMatch(plan, appliedSnapshot))
+      ) {
+        throw new GhostStateException(
+          'SAVE_FAILED',
+          'native save readback did not match the apply plan',
+        );
+      }
+      const after = appliedSnapshot;
+      const afterRollback = this.#surface.captureRollback();
+      this.#lastSuccessful = {
+        resourceId: after.resourceId,
+        recordIdentity: after.recordIdentity,
+        before,
+        beforeRollback: snapshot,
+        after,
+        afterRollback,
+      };
       this.#rollback = null; // success — recovery no longer needed
       return {
-        resourceId: this.#surface.getResourceId(),
-        updatedAt: result.updatedAt ?? this.#surface.getUpdatedAt(),
+        resourceId: after.resourceId,
+        updatedAt: result.updatedAt ?? after.updatedAt,
+        saved: true,
+      };
+    } catch (err) {
+      await this.#attemptRollback();
+      if (err instanceof GhostStateException) throw err;
+      throw new GhostStateException('APPLY_FAILED', (err as Error).message);
+    } finally {
+      this.#busy = false;
+    }
+  }
+
+  async undoLastApply(): Promise<ApplyResult> {
+    if (this.#busy) {
+      throw new GhostStateException('BUSY', 'transaction already in flight');
+    }
+    const last = this.#lastSuccessful;
+    if (!last) {
+      throw new GhostStateException(
+        'ROLLBACK_UNPROVEN',
+        'no successful apply is available to undo',
+      );
+    }
+    this.#busy = true;
+    try {
+      if (this.#surface.isSaving?.() === true) {
+        throw new GhostStateException(
+          'BUSY',
+          'native save/autosave in flight; retry after it completes',
+        );
+      }
+      const current = this.snapshot();
+      if (current.recordIdentity !== last.recordIdentity) staleUndo('record identity');
+      if (current.resourceId !== last.after.resourceId) staleUndo('resourceId');
+      if (current.updatedAt !== last.after.updatedAt) staleUndo('updatedAt');
+      if (!sameEditableState(current, last.after)) staleUndo('editor fields');
+
+      // Keep the successful post-state as the recovery point in case the undo
+      // save fails after the pre-state has been restored.
+      this.#rollback = { resourceId: last.resourceId, snapshot: last.afterRollback };
+      this.#surface.restoreRollback(last.beforeRollback);
+      if (this.#surface.verifyRollback && !this.#surface.verifyRollback(last.beforeRollback)) {
+        throw new GhostStateException('ROLLBACK_FAILED', 'undo pre-state readback mismatch');
+      }
+      const result = await this.#surface.nativeSave();
+      const restored = this.snapshot();
+      if (!sameEditableState(restored, last.before, true) || restored.dirty) {
+        throw new GhostStateException('ROLLBACK_FAILED', 'undo save readback mismatch');
+      }
+      this.#lastSuccessful = null;
+      this.#rollback = null;
+      return {
+        resourceId: restored.resourceId,
+        updatedAt: result.updatedAt ?? restored.updatedAt,
         saved: true,
       };
     } catch (err) {
@@ -413,6 +555,9 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     if (!this.#rollback) return;
     try {
       this.#surface.restoreRollback(this.#rollback.snapshot);
+      if (this.#surface.verifyRollback && !this.#surface.verifyRollback(this.#rollback.snapshot)) {
+        throw new Error('rollback readback mismatch');
+      }
       this.#rollback = null;
     } catch {
       // Rollback could not be proven — retain recoverable failure record.
@@ -461,6 +606,9 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     }
     try {
       this.#surface.restoreRollback(token.snapshot);
+      if (this.#surface.verifyRollback && !this.#surface.verifyRollback(token.snapshot)) {
+        throw new GhostStateException('ROLLBACK_FAILED', 'rollback readback mismatch');
+      }
     } catch {
       throw new GhostStateException('ROLLBACK_FAILED', 'rollback restore failed');
     }

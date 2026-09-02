@@ -268,6 +268,19 @@
         color: var(--text-2);
         font-size: 12.5px;
       }
+      .advanced-fields {
+        display: grid;
+        gap: 16px;
+        padding: 16px 20px 20px;
+        border-top: 1px solid var(--line);
+      }
+      .advanced-fields h3 {
+        margin: 0;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-2);
+      }
       textarea#opt-import-area,
       textarea#opt-export-area {
         min-height: 96px;
@@ -360,45 +373,87 @@
       </div>
     </div>
 
-    <!-- Hidden advanced inputs keep legacy/round-trip fields alive without
-         cluttering the UI. They are filled on edit and submitted on save so an
-         older preset's snippet/template/mode settings are preserved
-         verbatim unless the owner re-creates them through import. -->
-    <div hidden aria-hidden="true">
-      <input id="opt-id" type="text" />
-      <input id="opt-description" type="text" />
-      <select id="opt-source">
-        <option value="inline-text">Plain text template</option>
-        <option value="inline-html">inline-html</option>
-        <option value="ghost-snippet">ghost-snippet</option>
-        <option value="inline-lexical">inline-lexical</option>
-      </select>
-      <select id="opt-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-      <input id="opt-snippet" type="text" />
-      <input id="opt-group" type="text" />
-      <input id="opt-icon" type="text" />
-      <select id="opt-tag-mode">
-        <option value="merge">merge</option>
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-      <select id="opt-excerpt-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-      <input id="opt-custom-template" type="text" />
-      <select id="opt-custom-template-mode">
-        <option value="replace">replace</option>
-        <option value="only-if-empty">only-if-empty</option>
-        <option value="prompt">prompt</option>
-      </select>
-      <label id="opt-body-label" for="opt-body">Template text</label>
+    <div class="advanced-fields" aria-label="Advanced preset authoring">
+      <h3>Advanced authoring</h3>
+      <input id="opt-id" type="hidden" />
+      <div class="field">
+        <label for="opt-description"
+          >Description <span class="optional-label">· optional</span></label
+        >
+        <input
+          id="opt-description"
+          type="text"
+          autocomplete="off"
+          placeholder="When to use this preset"
+        />
+      </div>
+      <div class="field">
+        <label for="opt-source">Body source</label>
+        <select id="opt-source">
+          <option value="inline-text">Plain text template</option>
+          <option value="inline-html">Inline HTML (fail-closed)</option>
+          <option value="ghost-snippet">Ghost snippet</option>
+          <option value="inline-lexical">Serialized Lexical JSON</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="opt-mode">Body mode</label>
+        <select id="opt-mode">
+          <option value="replace">Replace</option>
+          <option value="only-if-empty">Only if empty</option>
+          <option value="prompt">Ask before replacing</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="opt-snippet"
+          >Ghost snippet name <span class="optional-label">· for snippet source</span></label
+        >
+        <input id="opt-snippet" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="opt-tag-mode">Tag mode</label>
+        <select id="opt-tag-mode">
+          <option value="merge">Merge with existing</option>
+          <option value="replace">Replace all</option>
+          <option value="only-if-empty">Only if empty</option>
+          <option value="prompt">Ask before replacing</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="opt-excerpt-mode">Excerpt mode</label>
+        <select id="opt-excerpt-mode">
+          <option value="replace">Replace</option>
+          <option value="only-if-empty">Only if empty</option>
+          <option value="prompt">Ask before replacing</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="opt-custom-template"
+          >Custom template <span class="optional-label">· full .hbs filename</span></label
+        >
+        <input
+          id="opt-custom-template"
+          type="text"
+          autocomplete="off"
+          placeholder="custom-review.hbs"
+        />
+      </div>
+      <div class="field">
+        <label for="opt-custom-template-mode">Custom template mode</label>
+        <select id="opt-custom-template-mode">
+          <option value="replace">Replace</option>
+          <option value="only-if-empty">Only if empty</option>
+          <option value="prompt">Ask before replacing</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="opt-group">Group <span class="optional-label">· optional</span></label>
+        <input id="opt-group" type="text" autocomplete="off" placeholder="Reviews" />
+      </div>
+      <div class="field">
+        <label for="opt-icon">Icon <span class="optional-label">· optional</span></label>
+        <input id="opt-icon" type="text" autocomplete="off" placeholder="📝" />
+      </div>
     </div>
 
     <script type="module" src="../dist/options.js"></script>

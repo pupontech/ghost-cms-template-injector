@@ -253,3 +253,27 @@ describe('popup controller — status snapshot', () => {
     expect(initial.reason).toMatch(/not yet/i);
   });
 });
+
+describe('popup controller — preview and undo delegation', () => {
+  it('delegates read-only preview and returns its plan', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(
+      reply(true, {
+        status: 'preview',
+        plan: { presetId: 'p1', status: 'ready', actions: [], problems: [] },
+        snapshot: { resourceId: 'abc123', tags: [], lexical: null },
+      }),
+    );
+    const ctrl = createPopupController(makeRuntime({ sendMessage }));
+    const result = await ctrl.previewPreset('p1');
+    expect(result).toMatchObject({ ok: true, plan: { presetId: 'p1', status: 'ready' } });
+    expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({ op: 'preview', presetId: 'p1' });
+  });
+
+  it('delegates undo without exposing a rollback token', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(reply(true, { saved: true }));
+    const ctrl = createPopupController(makeRuntime({ sendMessage }));
+    await expect(ctrl.undoLastApply()).resolves.toMatchObject({ ok: true });
+    expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({ op: 'undo' });
+    expect(sendMessage.mock.calls[0]?.[1]).not.toHaveProperty('token');
+  });
+});

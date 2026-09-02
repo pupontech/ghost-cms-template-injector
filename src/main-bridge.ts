@@ -2,7 +2,7 @@
  * Phase-5 MAIN-world bridge (owns this module).
  *
  * Runs INSIDE the Ghost Admin page MAIN world and answers the fixed C3 bridge
- * allowlist (discover / snapshot / planApply / apply / save / rollback) for the
+ * allowlist (discover / snapshot / planApply / apply / save / rollback / undo) for the
  * isolated content script. It implements the versioned `GhostLiveSurface`
  * against the REAL, proven Ghost Ember internals (verified live in the Phase-0
  * spike t_4f22448d against Ghost v6.60 at :2368):
@@ -30,6 +30,7 @@
 
 import { createGhostStateAdapter, GhostStateException, type GhostLiveSurface } from './ghost-state';
 import type { GhostSnapshot } from './ghost-state';
+import type { ApplicationPlan } from './preset-engine';
 import { createPageBridgeResponder, type PageBridgeResponderEnv } from './page-bridge';
 import type { BridgeResponse } from './bridge-protocol';
 
@@ -142,7 +143,7 @@ function recordIdentityToken(rec: GhostModelLike): string {
  * before the reply is posted would make the popup report a timeout even though
  * the apply succeeded. A short delay is a small UX cost for correct feedback.
  */
-export const EDITOR_RELOAD_DELAY_MS = 1_500;
+export const EDITOR_RELOAD_DELAY_MS = 5_000;
 
 /**
  * Default post-apply reload: after the transaction persisted, force the Ghost
@@ -156,13 +157,16 @@ export const EDITOR_RELOAD_DELAY_MS = 1_500;
  * privileges in the extension); best-effort with try/catch so a hostile or
  * unusual environment can never break the apply reply path.
  */
-function defaultAfterApply(resourceType: 'post' | 'page', resourceId: string): void {
+function defaultAfterApply(resourceType: 'post' | 'page', resourceId: string): () => void {
   const win = globalThis as typeof globalThis & {
     location?: Location;
     setTimeout?: typeof setTimeout;
+    clearTimeout?: typeof clearTimeout;
   };
-  if (typeof win.setTimeout !== 'function') return;
-  win.setTimeout(() => {
+  if (typeof win.setTimeout !== 'function') return () => {};
+  let cancelled = false;
+  const timer = win.setTimeout(() => {
+    if (cancelled) return;
     try {
       const loc = win.location;
       if (!loc) return;
@@ -173,6 +177,10 @@ function defaultAfterApply(resourceType: 'post' | 'page', resourceId: string): v
       /* reload is best-effort — never break the apply reply */
     }
   }, EDITOR_RELOAD_DELAY_MS);
+  return () => {
+    cancelled = true;
+    if (typeof win.clearTimeout === 'function') win.clearTimeout(timer);
+  };
 }
 
 /**
@@ -453,9 +461,57 @@ export function createGhostMainBridge(
       if ('customTemplate' in snap) rec.set?.('customTemplate', snap['customTemplate']);
       if ('tags' in snap) rec.set?.('tags', snap['tags']);
     },
+    verifyRollback(snapshot: unknown): boolean {
+      if (!snapshot || typeof snapshot !== 'object') return false;
+      const snap = snapshot as Record<string, unknown>;
+      const ctrl = getEditorController(findEmberOwner());
+      const rec = getRecord(ctrl);
+      if (!rec) return false;
+      const lexical = rec.get?.('lexical') ?? null;
+      const scratch = (rec as unknown as { lexicalScratch?: unknown }).lexicalScratch ?? null;
+      const tags = (rec.get?.('tags') as Array<{ name?: string }> | undefined) ?? [];
+      const expectedTags = Array.isArray(snap['tags']) ? snap['tags'] : [];
+      return (
+        lexical === (snap['lexical'] ?? null) &&
+        scratch === (snap['lexical'] ?? null) &&
+        (rec.get?.('customExcerpt') ?? null) === (snap['customExcerpt'] ?? null) &&
+        (rec.get?.('customTemplate') ?? null) === (snap['customTemplate'] ?? null) &&
+        (rec.get?.('title') ?? null) === (snap['title'] ?? null) &&
+        tags.map((tag) => tag?.name ?? '').join('\u0000') ===
+          expectedTags.map((tag) => (tag as { name?: string })?.name ?? '').join('\u0000')
+      );
+    },
+    verifyApplied(plan: ApplicationPlan): boolean {
+      const lexical = this.getLexical();
+      const title = this.getTitle();
+      const excerpt = this.getExcerpt();
+      const customTemplate = this.getCustomTemplate();
+      const tags = this.getTags();
+      return plan.actions
+        .filter((action) => action.status === 'apply')
+        .every((action) => {
+          switch (action.field) {
+            case 'body':
+              return lexical === action.value;
+            case 'title':
+              return title === action.value;
+            case 'excerpt':
+              return excerpt === action.value;
+            case 'customTemplate':
+              return customTemplate === action.value;
+            case 'tags':
+              return (
+                Array.isArray(action.value) && tags.join('\\u0000') === action.value.join('\\u0000')
+              );
+            default:
+              return false;
+          }
+        });
+    },
   };
 
   const adapter = createGhostStateAdapter(surface);
+  let cancelScheduledReload: (() => void) | null = null;
 
   const env: PageBridgeResponderEnv = {
     discover: () => adapter.discover(),
@@ -472,14 +528,26 @@ export function createGhostMainBridge(
       // genuine save of a record that now has a server id (a failed or rolled
       // back apply throws before we get here and never triggers a reload).
       if (result.saved && result.resourceId) {
-        const afterApply = opts.afterApply ?? defaultAfterApply;
-        afterApply(surface.getResourceType(), result.resourceId);
+        if (opts.afterApply) {
+          opts.afterApply(surface.getResourceType(), result.resourceId);
+        } else {
+          cancelScheduledReload?.();
+          cancelScheduledReload = defaultAfterApply(surface.getResourceType(), result.resourceId);
+        }
       }
       return result;
     },
     save: () => surface.nativeSave().then((r) => r),
     rollback: (payload) =>
       adapter.rollback(payload['token'] as Parameters<typeof adapter.rollback>[0]),
+    undo: async () => {
+      const result = await adapter.undoLastApply();
+      if (result.saved) {
+        cancelScheduledReload?.();
+        cancelScheduledReload = null;
+      }
+      return result;
+    },
   };
 
   const responder = createPageBridgeResponder(env);

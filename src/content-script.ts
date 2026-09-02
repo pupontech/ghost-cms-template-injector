@@ -2,10 +2,11 @@
  * Phase-5 content-script orchestration (owns this module + content-script-main).
  *
  * The content script is the long-lived, isolated-world owner of the apply
- * operation. The popup and the injected toolbar ONLY delegate `apply` here (via
+ * The popup and toolbar delegate `preview`, `apply`, and `undo` here (via
  * `chrome.runtime.sendMessage` with the fixed popup `source`), so closing either
- * surface mid-apply never aborts the transaction (the apply runs through the
- * MAIN-world bridge + one native save, per the decision document).
+ * surface mid-apply never aborts the transaction (the content script owns the
+ * apply lifecycle through the MAIN-world bridge + one native save, per the
+ * decision document).
  *
  * Responsibilities:
  *  - install exactly one isolated-world `chrome.runtime.onMessage` listener;
@@ -26,7 +27,12 @@
 import { BRIDGE_SOURCE_ID, BRIDGE_PROTOCOL_VERSION } from './bridge-protocol';
 import { createPageBridge, type PageBridge, type PageBridgeEnv } from './page-bridge';
 import { createBridgeStateAdapter } from './bridge-state-adapter';
-import { runApplyPipeline, type ApplyOutcome } from './apply-pipeline';
+import {
+  runApplyPipeline,
+  previewApplyPipeline,
+  type ApplyOutcome,
+  type PreviewOutcome,
+} from './apply-pipeline';
 import { loadPreset } from './preset-store';
 import { GhostAdminClient } from './ghost-api';
 import type { PlanContext } from './preset-engine';
@@ -48,6 +54,8 @@ export interface ContentScriptDeps {
 export interface ContentScriptHandle {
   init: () => void;
   handleMessage: (message: unknown) => Promise<unknown>;
+  resolveContext: () => Promise<PlanContext>;
+  resetResolveContextCache: () => void;
 }
 
 /** Reply shape handed back to the popup / toolbar. */
@@ -77,6 +85,8 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   let initialized = false;
   let bridge: PageBridge | null = null;
   let inFlight = false;
+  const CONTEXT_CACHE_TTL_MS = 60_000;
+  let cachedContext: { base: string; context: PlanContext; at: number } | null = null;
 
   function getBridge(): PageBridge {
     if (!bridge) bridge = createPageBridge(deps.createBridgeEnv());
@@ -91,6 +101,14 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
   async function resolveContext(): Promise<PlanContext> {
     const derived = deps.getAdminApiBase();
     if (!derived) return {};
+    const now = Date.now();
+    if (
+      cachedContext &&
+      cachedContext.base === derived.base &&
+      now - cachedContext.at < CONTEXT_CACHE_TTL_MS
+    ) {
+      return cachedContext.context;
+    }
     try {
       const client = deps.createApiClient(derived.base);
       const [snippets, templates] = await Promise.all([
@@ -108,10 +126,20 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
         client.getActiveThemeTemplates().catch(() => []),
       ]);
       if (!snippets) return {};
-      return { snippets: snippets.names, snippetLexical: snippets.lexical, templates };
+      const context: PlanContext = {
+        snippets: snippets.names,
+        snippetLexical: snippets.lexical,
+        templates,
+      };
+      cachedContext = { base: derived.base, context, at: Date.now() };
+      return context;
     } catch {
       return {};
     }
+  }
+
+  function resetResolveContextCache(): void {
+    cachedContext = null;
   }
 
   async function discover(): Promise<ApplyReply> {
@@ -178,6 +206,61 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     }
   }
 
+  async function preview(presetId: string): Promise<ApplyReply> {
+    if (inFlight) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+    }
+    inFlight = true;
+    try {
+      const adapter = createBridgeStateAdapter(getBridge());
+      const outcome: PreviewOutcome = await previewApplyPipeline(
+        { adapter, loadPreset, resolveContext },
+        presetId,
+      );
+      switch (outcome.status) {
+        case 'preview':
+          return { source: POPUP_MESSAGE_SOURCE, ok: true, result: outcome };
+        case 'blocked':
+          return {
+            source: POPUP_MESSAGE_SOURCE,
+            ok: false,
+            error: `BLOCKED: ${outcome.problems.join('; ')}`,
+          };
+        case 'unsupported':
+          return {
+            source: POPUP_MESSAGE_SOURCE,
+            ok: false,
+            error: `UNSUPPORTED: ${outcome.reason}`,
+          };
+        case 'error':
+          return { source: POPUP_MESSAGE_SOURCE, ok: false, error: outcome.error };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'preview pipeline crashed';
+      console.error('ghost-cms-template-injector: preview pipeline crashed', err);
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: `PREVIEW_CRASH: ${message}` };
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  async function undo(): Promise<ApplyReply> {
+    if (inFlight) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+    }
+    inFlight = true;
+    try {
+      const adapter = createBridgeStateAdapter(getBridge());
+      const result = await adapter.undoLastApply();
+      return { source: POPUP_MESSAGE_SOURCE, ok: true, result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'undo failed';
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: message };
+    } finally {
+      inFlight = false;
+    }
+  }
+
   async function handleMessage(message: unknown): Promise<unknown> {
     if (typeof message !== 'object' || message === null) {
       return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'INVALID_MESSAGE' };
@@ -191,7 +274,22 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     if (op === 'discover') {
       return discover();
     }
+    if (op === 'preview') {
+      if (inFlight) return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+      const presetId = msg['presetId'];
+      if (typeof presetId !== 'string') {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_PRESET_ID' };
+      }
+      return preview(presetId);
+    }
+    if (op === 'undo') {
+      if (inFlight) return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+      return undo();
+    }
     if (op === 'apply') {
+      if (inFlight) {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };
+      }
       const presetId = msg['presetId'];
       if (typeof presetId !== 'string') {
         return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_PRESET_ID' };
@@ -213,6 +311,8 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       deps.addRuntimeMessageListener((message) => handleMessage(message));
     },
     handleMessage,
+    resolveContext,
+    resetResolveContextCache,
   };
 }
 
