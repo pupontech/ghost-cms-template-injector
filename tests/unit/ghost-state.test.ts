@@ -21,6 +21,7 @@ function capableSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSur
     getExcerpt: () => null,
     getTitle: () => null,
     getCustomTemplate: () => null,
+    getFeatureImage: () => null,
     getTags: () => [],
     setField: vi.fn(),
     setLexical: vi.fn(),
@@ -332,6 +333,7 @@ describe('last successful apply undo', () => {
       excerpt: 'old excerpt',
       title: 'old title',
       customTemplate: null as string | null,
+      featureImage: null as string | null,
       tags: [] as string[],
       lexical: '{"root":{}}',
       updatedAt: 'before',
@@ -342,6 +344,7 @@ describe('last successful apply undo', () => {
       updated_at: state.updatedAt,
       customExcerpt: state.excerpt,
       customTemplate: state.customTemplate,
+      featureImage: state.featureImage,
       title: state.title,
       tags: state.tags.map((name) => ({ name })),
     });
@@ -352,11 +355,13 @@ describe('last successful apply undo', () => {
       getExcerpt: () => state.excerpt,
       getTitle: () => state.title,
       getCustomTemplate: () => state.customTemplate,
+      getFeatureImage: () => state.featureImage,
       getTags: () => [...state.tags],
       setField: vi.fn((field, value) => {
         if (field === 'excerpt') state.excerpt = String(value);
         if (field === 'title') state.title = String(value);
         if (field === 'customTemplate') state.customTemplate = String(value);
+        if (field === 'featureImage') state.featureImage = String(value);
         if (field === 'tags') state.tags = [...(value as string[])];
       }),
       setLexical: vi.fn((value) => {
@@ -374,6 +379,7 @@ describe('last successful apply undo', () => {
         state.updatedAt = value.updated_at;
         state.excerpt = value.customExcerpt;
         state.customTemplate = value.customTemplate;
+        state.featureImage = value.featureImage;
         state.title = value.title;
         state.tags = value.tags.map((tag) => tag.name);
       }),
@@ -385,6 +391,7 @@ describe('last successful apply undo', () => {
           state.excerpt === value.customExcerpt &&
           state.title === value.title &&
           state.customTemplate === value.customTemplate &&
+          state.featureImage === value.featureImage &&
           state.tags.join('\\u0000') === value.tags.map((tag) => tag.name).join('\\u0000')
         );
       }),
@@ -421,5 +428,105 @@ describe('last successful apply undo', () => {
   it('reports ROLLBACK_UNPROVEN when there is no successful apply to undo', async () => {
     const adapter = createGhostStateAdapter(capableSurface());
     await expect(adapter.undoLastApply()).rejects.toMatchObject({ code: 'ROLLBACK_UNPROVEN' });
+  });
+  describe('feature image through the live transaction', () => {
+    const PHOTO = 'http://localhost:2368/content/images/2026/09/hero.png';
+
+    it('includes the live feature image in the snapshot', () => {
+      const adapter = createGhostStateAdapter(capableSurface({ getFeatureImage: () => PHOTO }));
+      expect(adapter.snapshot().featureImage).toBe(PHOTO);
+      expect(createGhostStateAdapter(capableSurface()).snapshot().featureImage).toBeNull();
+    });
+
+    it('rejects a feature-image value that is not a usable image URL (fail closed)', () => {
+      const adapter = createGhostStateAdapter(capableSurface());
+      for (const value of [
+        'data:image/png;base64,AAAA',
+        'javascript:alert(1)',
+        '/ghost/api/admin/posts',
+        '',
+      ]) {
+        const result = adapter.planApply(
+          readyPlan([{ field: 'featureImage', op: 'set', status: 'apply', value }]),
+        );
+        expect(result.ok).toBe(false);
+      }
+      expect(
+        adapter.planApply(
+          readyPlan([
+            {
+              field: 'featureImage',
+              op: 'set',
+              status: 'apply',
+              value: '/content/images/2026/09/a.png',
+            },
+          ]),
+        ).ok,
+      ).toBe(true);
+    });
+
+    it('writes the feature image through the live surface, then saves once', async () => {
+      const { state, surface } = statefulSurface();
+      const adapter = createGhostStateAdapter(surface);
+
+      const result = await adapter.apply(
+        readyPlan([{ field: 'featureImage', op: 'set', status: 'apply', value: PHOTO }]),
+      );
+
+      expect(result.saved).toBe(true);
+      expect(surface.setField).toHaveBeenCalledWith('featureImage', PHOTO);
+      expect(state.featureImage).toBe(PHOTO);
+      expect(surface.nativeSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls the feature image back when the native save fails', async () => {
+      const { state, surface } = statefulSurface();
+      state.featureImage = 'http://localhost:2368/content/images/existing.png';
+      (surface as { nativeSave: unknown }).nativeSave = vi.fn(async () => {
+        throw new Error('save exploded');
+      });
+      const adapter = createGhostStateAdapter(surface);
+
+      await expect(
+        adapter.apply(
+          readyPlan([{ field: 'featureImage', op: 'set', status: 'apply', value: PHOTO }]),
+        ),
+      ).rejects.toMatchObject({ code: 'APPLY_FAILED' });
+
+      expect(state.featureImage).toBe('http://localhost:2368/content/images/existing.png');
+      expect(surface.restoreRollback).toHaveBeenCalledTimes(1);
+    });
+
+    it('undoes a feature-image apply back to the previous image', async () => {
+      const { state, surface } = statefulSurface();
+      state.featureImage = 'http://localhost:2368/content/images/previous.png';
+      const adapter = createGhostStateAdapter(surface);
+
+      await adapter.apply(
+        readyPlan([{ field: 'featureImage', op: 'set', status: 'apply', value: PHOTO }]),
+      );
+      expect(state.featureImage).toBe(PHOTO);
+
+      const undone = await adapter.undoLastApply();
+      expect(undone.saved).toBe(true);
+      expect(state.featureImage).toBe('http://localhost:2368/content/images/previous.png');
+    });
+
+    it('refuses to apply when the feature image changed after the snapshot (STALE_EDITOR)', async () => {
+      const { state, surface } = statefulSurface();
+      const adapter = createGhostStateAdapter(surface);
+      const expected = adapter.snapshot();
+
+      // The owner picks a top image in Ghost while the plan is being prepared.
+      state.featureImage = 'http://localhost:2368/content/images/user-picked.png';
+
+      await expect(
+        adapter.apply(
+          readyPlan([{ field: 'featureImage', op: 'set', status: 'apply', value: PHOTO }]),
+          expected,
+        ),
+      ).rejects.toMatchObject({ code: 'STALE_EDITOR' });
+      expect(state.featureImage).toBe('http://localhost:2368/content/images/user-picked.png');
+    });
   });
 });

@@ -303,13 +303,25 @@ export function createGhostMainBridge(
         null;
       return typeof v === 'string' ? v : null;
     },
+    getFeatureImage(): string | null {
+      const rec = getRecord(getEditorController(findEmberOwner()));
+      // `feature_image` is a plain Ember attribute (models/post.js) — unlike
+      // title/body it has NO scratch buffer; Ghost Admin's own
+      // `setFeatureImage` action (controllers/lexical-editor.js:458) writes
+      // straight to `post.featureImage`.
+      const v =
+        rec?.get?.('featureImage') ??
+        (rec as Record<string, unknown> | null)?.['featureImage'] ??
+        null;
+      return typeof v === 'string' && v.length > 0 ? v : null;
+    },
     getTags(): string[] {
       const rec = getRecord(getEditorController(findEmberOwner()));
       const tags = (rec?.get?.('tags') as Array<{ name?: string }> | undefined) ?? [];
       return tags.map((t) => t?.name ?? '').filter((n) => n.length > 0);
     },
     setField(
-      field: 'excerpt' | 'customTemplate' | 'tags' | 'title',
+      field: 'excerpt' | 'customTemplate' | 'tags' | 'title' | 'featureImage',
       value: string | string[],
     ): void {
       const owner = findEmberOwner();
@@ -354,6 +366,26 @@ export function createGhostMainBridge(
           }
         }
         rec.set?.('title', v);
+      } else if (field === 'featureImage') {
+        // Feature image writes mirror Ghost Admin's own `setFeatureImage`
+        // action (controllers/lexical-editor.js:458): `post.set('featureImage',
+        // url)`. It has no scratch buffer, so the attribute write IS the write;
+        // the action is preferred when reachable so we ride the same code path
+        // Ghost's own uploader uses, with a direct attribute write as fallback.
+        const url = value as string;
+        const ctrlAny = ctrl as unknown as {
+          actions?: Record<string, (...args: unknown[]) => unknown>;
+          send?: (action: string, ...args: unknown[]) => unknown;
+        };
+        if (
+          ctrlAny.actions &&
+          typeof ctrlAny.actions['setFeatureImage'] === 'function' &&
+          ctrlAny.send
+        ) {
+          ctrlAny.send('setFeatureImage', url);
+        } else {
+          rec.set?.('featureImage', url);
+        }
       } else {
         rec.set?.('customTemplate', value as string);
       }
@@ -430,6 +462,7 @@ export function createGhostMainBridge(
         title: rec.get?.('titleScratch') ?? rec.get?.('title') ?? null,
         customExcerpt: rec.get?.('customExcerpt') ?? null,
         customTemplate: rec.get?.('customTemplate') ?? null,
+        featureImage: rec.get?.('featureImage') ?? null,
         tags: (rec.get?.('tags') as Array<{ name?: string }> | undefined) ?? [],
         id: rec.get?.('id') ?? rec.id ?? null,
         updated_at: rec.get?.('updated_at') ?? rec.get?.('updatedAt') ?? null,
@@ -459,6 +492,7 @@ export function createGhostMainBridge(
         rec.set?.('title', snap['title']);
       }
       if ('customTemplate' in snap) rec.set?.('customTemplate', snap['customTemplate']);
+      if ('featureImage' in snap) rec.set?.('featureImage', snap['featureImage']);
       if ('tags' in snap) rec.set?.('tags', snap['tags']);
     },
     verifyRollback(snapshot: unknown): boolean {
@@ -476,6 +510,7 @@ export function createGhostMainBridge(
         scratch === (snap['lexical'] ?? null) &&
         (rec.get?.('customExcerpt') ?? null) === (snap['customExcerpt'] ?? null) &&
         (rec.get?.('customTemplate') ?? null) === (snap['customTemplate'] ?? null) &&
+        (rec.get?.('featureImage') ?? null) === (snap['featureImage'] ?? null) &&
         (rec.get?.('title') ?? null) === (snap['title'] ?? null) &&
         tags.map((tag) => tag?.name ?? '').join('\u0000') ===
           expectedTags.map((tag) => (tag as { name?: string })?.name ?? '').join('\u0000')
@@ -486,6 +521,7 @@ export function createGhostMainBridge(
       const title = this.getTitle();
       const excerpt = this.getExcerpt();
       const customTemplate = this.getCustomTemplate();
+      const featureImage = this.getFeatureImage();
       const tags = this.getTags();
       return plan.actions
         .filter((action) => action.status === 'apply')
@@ -499,6 +535,8 @@ export function createGhostMainBridge(
               return excerpt === action.value;
             case 'customTemplate':
               return customTemplate === action.value;
+            case 'featureImage':
+              return featureImage === action.value;
             case 'tags':
               return (
                 Array.isArray(action.value) && tags.join('\\u0000') === action.value.join('\\u0000')

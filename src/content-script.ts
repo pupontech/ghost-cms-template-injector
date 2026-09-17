@@ -31,10 +31,20 @@ import {
   runApplyPipeline,
   previewApplyPipeline,
   type ApplyOutcome,
+  type ApplyPipelineAdapter,
+  type ApplyPipelineDeps,
   type PreviewOutcome,
 } from './apply-pipeline';
 import { loadPreset } from './preset-store';
 import { GhostAdminClient } from './ghost-api';
+import {
+  resolveFeatureImage,
+  type CachedImageBytes,
+  type FeatureImageRuntime,
+  type FeatureImageUploadCache,
+  type ResolveFeatureImageResult,
+} from './feature-image';
+import type { FeatureImageField } from './preset-schema';
 import type { PlanContext } from './preset-engine';
 import { POPUP_MESSAGE_SOURCE, type PopupMessage } from './ui-popup';
 
@@ -49,6 +59,16 @@ export interface ContentScriptDeps {
   getAdminApiBase: () => { base: string } | null;
   /** Build a cookie-authenticated Admin API client over fetch. */
   createApiClient: (base: string) => GhostAdminClient;
+  /**
+   * Read a cached feature-image photo from the extension asset store. Absent
+   * when this context has no asset channel; a preset carrying a cached photo
+   * then fails closed instead of saving a post without its image.
+   */
+  getImageAsset?: (assetId: string) => Promise<CachedImageBytes | null>;
+  /** Per-installation memo of uploaded feature-image URLs. */
+  featureImageUploadCache?: FeatureImageUploadCache;
+  /** Existence check for a memoized image URL (same-origin only). */
+  verifyImageUrl?: (url: string) => Promise<boolean>;
 }
 
 export interface ContentScriptHandle {
@@ -66,7 +86,20 @@ export interface ApplyReply {
   error?: string;
 }
 
-const PROMPT_FIELDS = new Set(['body', 'excerpt', 'customTemplate', 'tags', 'title']);
+const PROMPT_FIELDS = new Set([
+  'body',
+  'excerpt',
+  'customTemplate',
+  'tags',
+  'title',
+  'featureImage',
+]);
+
+/** Cache that never hits: used when no memo store is wired into this context. */
+const NULL_UPLOAD_CACHE: FeatureImageUploadCache = {
+  get: () => Promise.resolve(null),
+  set: () => Promise.resolve(),
+};
 
 function parsePromptAnswers(value: unknown): Partial<Record<string, boolean>> | undefined | null {
   if (value === undefined) return undefined;
@@ -142,6 +175,44 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     cachedContext = null;
   }
 
+  /**
+   * Feature-image resolver for this tab: cached photo → upload to the Ghost
+   * install being edited → Ghost-served absolute URL (memoized per install, so
+   * repeat applies reuse the same media instead of re-uploading). Returns
+   * undefined when this context has no asset channel, which makes a preset
+   * that carries a cached photo block instead of applying without its image.
+   */
+  function createFeatureImageResolver():
+    ((field: FeatureImageField) => Promise<ResolveFeatureImageResult>) | undefined {
+    const getAsset = deps.getImageAsset?.bind(deps);
+    if (!getAsset) return undefined;
+    return async (field: FeatureImageField): Promise<ResolveFeatureImageResult> => {
+      const derived = deps.getAdminApiBase();
+      if (!derived) {
+        return { ok: false, reason: 'the Ghost Admin API base could not be derived for this tab' };
+      }
+      const client = deps.createApiClient(derived.base);
+      const runtime: FeatureImageRuntime = {
+        getAsset: (assetId) => getAsset(assetId),
+        uploadImage: (input) => client.uploadImage(input),
+        cache: deps.featureImageUploadCache ?? NULL_UPLOAD_CACHE,
+      };
+      if (deps.verifyImageUrl) runtime.verifyUrl = deps.verifyImageUrl;
+      return resolveFeatureImage(field, derived.base, runtime);
+    };
+  }
+
+  /** Pipeline dependencies for one apply/preview, including feature images. */
+  function buildPipelineDeps(adapter: ApplyPipelineAdapter): ApplyPipelineDeps {
+    const resolveFeatureImageFn = createFeatureImageResolver();
+    return {
+      adapter,
+      loadPreset,
+      resolveContext,
+      ...(resolveFeatureImageFn ? { resolveFeatureImage: resolveFeatureImageFn } : {}),
+    };
+  }
+
   async function discover(): Promise<ApplyReply> {
     const reply = await getBridge().request('discover', {});
     if (!reply.ok) {
@@ -162,11 +233,7 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     try {
       const adapter = createBridgeStateAdapter(getBridge());
       const outcome: ApplyOutcome = await runApplyPipeline(
-        {
-          adapter,
-          loadPreset,
-          resolveContext,
-        },
+        buildPipelineDeps(adapter),
         presetId,
         promptAnswers,
       );
@@ -214,7 +281,7 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
     try {
       const adapter = createBridgeStateAdapter(getBridge());
       const outcome: PreviewOutcome = await previewApplyPipeline(
-        { adapter, loadPreset, resolveContext },
+        buildPipelineDeps(adapter),
         presetId,
       );
       switch (outcome.status) {

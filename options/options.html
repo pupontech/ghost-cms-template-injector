@@ -203,6 +203,29 @@
       textarea.optional:not(:focus) {
         border-style: solid;
       }
+      .feature-image-picker {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .feature-image-picker img {
+        width: 96px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+      }
+      .feature-image-picker input[type='file'] {
+        width: auto;
+      }
+      .feature-image-picker-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
       .optional-label {
         color: var(--text-3);
         font-weight: 400;
@@ -344,6 +367,37 @@
           <small>Up to 300 characters. Only applied when the post has no excerpt yet.</small>
         </div>
 
+        <div class="field">
+          <label for="opt-feature-image-file"
+            >Feature image (top image) <span class="optional-label">· optional</span></label
+          >
+          <div class="feature-image-picker">
+            <img id="opt-feature-image-preview" alt="Selected feature image" hidden />
+            <div class="feature-image-picker-actions">
+              <input
+                id="opt-feature-image-file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+              />
+              <button id="opt-feature-image-clear" type="button">Remove photo</button>
+            </div>
+          </div>
+          <small id="opt-feature-image-status" role="status">No photo selected.</small>
+          <small
+            >The photo stays in this browser and is uploaded to your Ghost site the first time the
+            preset is applied. Preset exports do not carry photos.</small
+          >
+        </div>
+
+        <div class="field">
+          <label for="opt-feature-image-mode">Feature image mode</label>
+          <select id="opt-feature-image-mode">
+            <option value="only-if-empty">Only set it when the post has no feature image</option>
+            <option value="replace">Always replace the post's feature image</option>
+            <option value="prompt">Ask before changing it</option>
+          </select>
+        </div>
+
         <div class="actions">
           <button id="opt-cancel" type="button">Clear</button>
           <button id="opt-save" type="button">Save preset</button>
@@ -454,6 +508,19 @@
         <label for="opt-icon">Icon <span class="optional-label">· optional</span></label>
         <input id="opt-icon" type="text" autocomplete="off" placeholder="📝" />
       </div>
+      <div class="field">
+        <label for="opt-feature-image-url"
+          >Feature image URL
+          <span class="optional-label">· alternative to a cached photo</span></label
+        >
+        <input
+          id="opt-feature-image-url"
+          type="text"
+          autocomplete="off"
+          placeholder="/content/images/2026/09/photo.jpg"
+        />
+      </div>
+      <input id="opt-feature-image-asset" type="hidden" />
     </div>
 
     <script type="module" src="../dist/options.js"></script>

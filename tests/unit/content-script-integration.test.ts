@@ -28,6 +28,7 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
     getExcerpt: () => null,
     getTitle: () => null,
     getCustomTemplate: () => null,
+    getFeatureImage: () => null,
     getTags: () => [],
     setField: vi.fn(),
     setLexical: vi.fn(),
@@ -39,7 +40,10 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
 }
 
 /** Build a content script whose bridge talks to an in-process responder. */
-function makeIntegratedScript(surface: GhostLiveSurface) {
+function makeIntegratedScript(
+  surface: GhostLiveSurface,
+  overrides: Partial<ContentScriptDeps> = {},
+) {
   const adapter = createGhostStateAdapter(surface);
   const responderEnv: PageBridgeResponderEnv = {
     discover: () => adapter.discover(),
@@ -76,6 +80,7 @@ function makeIntegratedScript(surface: GhostLiveSurface) {
     createBridgeEnv: () => isolatedEnv,
     getAdminApiBase: () => ({ base: 'https://ghost.test/ghost/api/admin/' }),
     createApiClient: () => ({}) as never,
+    ...overrides,
   };
   const cs = createContentScript(deps);
   return { cs, surface };
@@ -177,5 +182,122 @@ describe('content-script → bridge → ghost-state integration', () => {
     }
     await r1;
     expect(secondErr).toBe('BUSY');
+  });
+});
+
+describe('content-script feature image path (cached photo → upload → apply)', () => {
+  const PHOTO_ASSET = 'img_0123456789abcdef';
+  const UPLOADED = 'https://ghost.test/content/images/2026/09/hero.png';
+
+  const withPhoto = {
+    schemaVersion: 1 as const,
+    id: 'with-photo',
+    name: 'With photo',
+    content: {
+      source: 'inline-lexical' as const,
+      mode: 'replace' as const,
+      lexical: '{"root":{"children":[],"type":"root","version":1}}',
+    },
+    metadata: { featureImage: { mode: 'replace' as const, assetId: PHOTO_ASSET } },
+  };
+
+  beforeEach(async () => {
+    const storage = installChromeStorageStub();
+    await storage.api.set({
+      [STORAGE_KEY]: { schemaVersion: 1, version: 1, presets: [withPhoto] },
+    });
+  });
+
+  it('uploads the cached photo through the Admin API and applies the returned URL', async () => {
+    const getImageAsset = vi.fn(async () => ({
+      data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      name: 'hero.png',
+      mimeType: 'image/png',
+    }));
+    const uploadImage = vi.fn(async () => UPLOADED);
+    const cache = new Map<string, string>();
+    const { cs, surface } = makeIntegratedScript(makeSurface(), {
+      getImageAsset,
+      createApiClient: () => ({ uploadImage }) as never,
+      featureImageUploadCache: {
+        get: async (base, assetId) => cache.get(`${base}|${assetId}`) ?? null,
+        set: async (base, assetId, url) => {
+          cache.set(`${base}|${assetId}`, url);
+        },
+      },
+    });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'with-photo',
+    })) as Record<string, unknown>;
+
+    expect(reply.ok).toBe(true);
+    expect(getImageAsset).toHaveBeenCalledWith(PHOTO_ASSET);
+    expect(uploadImage).toHaveBeenCalledTimes(1);
+    expect(surface.setField).toHaveBeenCalledWith('featureImage', UPLOADED);
+    expect(surface.nativeSave).toHaveBeenCalledTimes(1);
+    // Memoized for this installation so the next apply reuses the upload.
+    expect([...cache.values()]).toEqual([UPLOADED]);
+  });
+
+  it('blocks with a clear error (no mutation) when the photo is not cached here', async () => {
+    const uploadImage = vi.fn(async () => UPLOADED);
+    const { cs, surface } = makeIntegratedScript(makeSurface(), {
+      getImageAsset: async () => null,
+      createApiClient: () => ({ uploadImage }) as never,
+    });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'with-photo',
+    })) as Record<string, unknown>;
+
+    expect(reply.ok).toBe(false);
+    expect(String(reply.error)).toMatch(/BLOCKED/);
+    expect(String(reply.error)).toMatch(/not present in this browser/);
+    expect(uploadImage).not.toHaveBeenCalled();
+    expect(surface.nativeSave).not.toHaveBeenCalled();
+  });
+
+  it('blocks when this context has no asset channel at all', async () => {
+    const { cs, surface } = makeIntegratedScript(makeSurface());
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'with-photo',
+    })) as Record<string, unknown>;
+
+    expect(reply.ok).toBe(false);
+    expect(String(reply.error)).toMatch(/resolution is unavailable/);
+    expect(surface.nativeSave).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an upload rejection as a blocked apply', async () => {
+    const { cs, surface } = makeIntegratedScript(makeSurface(), {
+      getImageAsset: async () => ({
+        data: new Uint8Array([1, 2, 3]),
+        name: 'hero.png',
+        mimeType: 'image/png',
+      }),
+      createApiClient: () =>
+        ({
+          uploadImage: async () => {
+            throw new Error('ghost-api: IMAGE_UPLOAD_FAILED (422): not supported');
+          },
+        }) as never,
+    });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'apply',
+      presetId: 'with-photo',
+    })) as Record<string, unknown>;
+
+    expect(reply.ok).toBe(false);
+    expect(String(reply.error)).toMatch(/IMAGE_UPLOAD_FAILED/);
+    expect(surface.nativeSave).not.toHaveBeenCalled();
   });
 });

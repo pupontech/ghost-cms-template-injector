@@ -18,7 +18,9 @@ import {
   type OptionsPresetView,
   type OptionsRuntime,
 } from './options-crud';
-import { PRESET_SCHEMA_VERSION, type Preset } from './preset-schema';
+import { PRESET_SCHEMA_VERSION, type FeatureImageField, type Preset } from './preset-schema';
+import type { ImageAssetMeta } from './image-asset-store';
+import { createImageAssetStore, createIndexedDbAssetBackend } from './image-asset-store';
 import {
   exportPresets,
   importPresetsIntoStore,
@@ -66,7 +68,14 @@ export interface OptionsView {
     excerptMode: RenderInput;
     customTemplate: RenderInput;
     customTemplateMode: RenderInput;
+    /** Visible feature-image controls (mode + optional URL + cached asset id). */
+    featureImageMode: RenderInput;
+    featureImageUrl: RenderInput;
+    featureImageAsset: RenderInput;
   };
+  /** Optional feature-image preview + status elements (absent in fake views). */
+  featureImagePreview?: RenderEl;
+  featureImageStatus?: RenderEl;
   bodyLabel?: RenderEl;
   bodyHelp?: RenderEl;
   importArea: RenderInput;
@@ -177,6 +186,144 @@ export function nextAvailablePresetId(base: string, existing: ReadonlySet<string
 export interface OptionsControllerDeps {
   rt: OptionsRuntime;
   view: OptionsView;
+  /**
+   * Extension-origin image asset store. The options page is the only place a
+   * photo is picked; its bytes are cached here and the preset keeps just the
+   * asset id. Absent in tests that do not exercise the photo picker.
+   */
+  imageAssets?: OptionsImageAssets;
+}
+
+/** Narrow view of the image asset store the options page needs. */
+export interface OptionsImageAssets {
+  putImage(input: { data: Uint8Array; name: string; mimeType: string }): Promise<ImageAssetMeta>;
+  getRecord(id: string): Promise<{ data: ArrayBuffer; name: string; mimeType: string } | null>;
+}
+
+/** Minimal file shape the picker needs (a real File satisfies this). */
+export interface PickedImageFile {
+  name: string;
+  type: string;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+const FEATURE_IMAGE_STATUS_DEFAULT = 'No photo selected.';
+
+/** Human-readable photo size (157 bytes must not read as "0 KB"). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  return `${Math.round(bytes / 1024)} KB`;
+}
+
+function setFeatureImageStatus(view: OptionsView, message: string): void {
+  if (view.featureImageStatus) view.featureImageStatus.textContent = message;
+}
+
+/** Clear every feature-image control back to "no photo". */
+export function clearFeatureImage(view: OptionsView): void {
+  view.form.featureImageAsset.value = '';
+  view.form.featureImageUrl.value = '';
+  view.featureImagePreview?.removeAttribute('src');
+  view.featureImagePreview?.setAttribute('hidden', 'true');
+  setFeatureImageStatus(view, FEATURE_IMAGE_STATUS_DEFAULT);
+}
+
+/**
+ * Cache a picked photo in the extension asset store and point the preset at
+ * it. The bytes never enter the preset document (which is size-bounded and
+ * JSON-only); the apply path uploads them to the Ghost site and memoizes the
+ * resulting URL.
+ */
+export async function handleFeatureImageFile(
+  deps: OptionsControllerDeps,
+  file: PickedImageFile | null | undefined,
+): Promise<void> {
+  const { view, imageAssets } = deps;
+  if (!file) return;
+  if (!imageAssets) {
+    setFeatureImageStatus(view, 'Photo storage is unavailable in this browser.');
+    return;
+  }
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const meta = await imageAssets.putImage({
+      data,
+      name: file.name,
+      mimeType: file.type,
+    });
+    view.form.featureImageAsset.value = meta.id;
+    view.form.featureImageUrl.value = '';
+    setFeatureImagePreview(view, meta);
+    setFeatureImageStatus(
+      view,
+      `Photo “${meta.name}” cached in this browser (${formatBytes(meta.bytes)}).`,
+    );
+  } catch (error) {
+    setFeatureImageStatus(
+      view,
+      `Photo could not be stored: ${error instanceof Error ? error.message : 'unsupported image'}`,
+    );
+  }
+}
+
+function setFeatureImagePreview(view: OptionsView, meta: { id: string; name: string }): void {
+  const preview = view.featureImagePreview;
+  if (!preview) return;
+  // Text-only preview marker: the browser bootstrap swaps in an object URL.
+  preview.setAttribute('data-asset-id', meta.id);
+  preview.setAttribute('alt', meta.name);
+  preview.removeAttribute('hidden');
+}
+
+/**
+ * Paint the stored state of a preset's feature image after loading it for
+ * edit: a cached photo is shown with its size, a missing one is called out so
+ * the owner knows to re-pick it (assets are local to this browser).
+ */
+export async function refreshFeatureImagePreview(
+  deps: OptionsControllerDeps,
+  field: FeatureImageField | undefined,
+): Promise<void> {
+  const { view, imageAssets } = deps;
+  if (!field) {
+    clearFeatureImage(view);
+    return;
+  }
+  if (typeof field.url === 'string') {
+    view.featureImagePreview?.removeAttribute('src');
+    view.featureImagePreview?.setAttribute('hidden', 'true');
+    setFeatureImageStatus(view, `Uses the image URL ${field.url}.`);
+    return;
+  }
+  const assetId = field.assetId ?? '';
+  if (!assetId) {
+    clearFeatureImage(view);
+    return;
+  }
+  if (!imageAssets) {
+    setFeatureImageStatus(view, `Cached photo ${assetId} (storage unavailable here).`);
+    return;
+  }
+  try {
+    const record = await imageAssets.getRecord(assetId);
+    if (!record) {
+      setFeatureImageStatus(
+        view,
+        `Photo ${assetId} is not cached in this browser — pick the image again before applying.`,
+      );
+      return;
+    }
+    setFeatureImagePreview(view, { id: assetId, name: record.name });
+    setFeatureImageStatus(
+      view,
+      `Photo “${record.name}” cached in this browser (${formatBytes(record.data.byteLength)}).`,
+    );
+  } catch (error) {
+    setFeatureImageStatus(
+      view,
+      `Photo ${assetId} could not be read: ${error instanceof Error ? error.message : 'storage error'}`,
+    );
+  }
 }
 
 export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
@@ -193,6 +340,7 @@ export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
     const { row, editBtn, deleteBtn } = renderPresetRow(preset, view.document.createElement);
     editBtn.addEventListener('click', () => {
       fillFormForEdit(view, preset);
+      void refreshFeatureImagePreview(deps, preset.preset.metadata?.featureImage);
       setStatus(view, `Editing "${preset.name}".`);
     });
     deleteBtn.addEventListener('click', () => {
@@ -228,6 +376,11 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'only-if-empty';
   view.form.customTemplate.value = preset.metadata?.customTemplate?.value ?? '';
   view.form.customTemplateMode.value = preset.metadata?.customTemplate?.mode ?? 'replace';
+  // Feature image: exactly one of a cached photo or an explicit URL.
+  const featureImage = preset.metadata?.featureImage;
+  view.form.featureImageMode.value = featureImage?.mode ?? 'only-if-empty';
+  view.form.featureImageUrl.value = featureImage?.url ?? '';
+  view.form.featureImageAsset.value = featureImage?.assetId ?? '';
   updateBodyEditor(view);
 }
 
@@ -298,6 +451,16 @@ export function readFormPreset(view: OptionsView): unknown {
     .filter(Boolean);
   if (tagValues.length > 0) {
     metadata['tags'] = { mode: view.form.tagMode.value.trim(), values: tagValues };
+  }
+  // Feature image: a cached photo wins over a typed URL (picking a photo
+  // clears the URL field, so they cannot drift apart silently).
+  const featureImageMode = view.form.featureImageMode.value.trim() || 'only-if-empty';
+  const featureImageAsset = view.form.featureImageAsset.value.trim();
+  const featureImageUrl = view.form.featureImageUrl.value.trim();
+  if (featureImageAsset.length > 0) {
+    metadata['featureImage'] = { mode: featureImageMode, assetId: featureImageAsset };
+  } else if (featureImageUrl.length > 0) {
+    metadata['featureImage'] = { mode: featureImageMode, url: featureImageUrl };
   }
   if (Object.keys(metadata).length > 0) preset['metadata'] = metadata;
   return preset;
@@ -402,6 +565,11 @@ export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
     view.resetForm();
     setStatus(view, 'Form cleared.');
   });
+  const featureImageClear = view.document.getElementById('opt-feature-image-clear');
+  featureImageClear?.addEventListener('click', () => {
+    clearFeatureImage(view);
+    setStatus(view, 'Feature image cleared.');
+  });
   await refreshList(deps);
 }
 
@@ -436,42 +604,94 @@ if (isBrowserContext()) {
       excerptMode: input('opt-excerpt-mode') as RenderInput,
       customTemplate: input('opt-custom-template') as RenderInput,
       customTemplateMode: input('opt-custom-template-mode') as RenderInput,
+      featureImageMode: input('opt-feature-image-mode') as RenderInput,
+      featureImageUrl: input('opt-feature-image-url') as RenderInput,
+      featureImageAsset: input('opt-feature-image-asset') as RenderInput,
     };
-    void initOptions({
-      rt: createOptionsRuntime(),
-      view: {
-        listEl,
-        statusEl,
-        form,
-        bodyLabel: el('opt-body-label') as RenderEl,
-        bodyHelp: el('opt-body-help') as RenderEl,
-        importArea,
-        exportArea,
-        document: {
-          createElement: (tag: string) => doc.createElement(tag) as unknown as RenderEl,
-          getElementById: (id: string) => el(id),
-        },
-        download: (filename: string, contents: string) => {
-          const blob = new Blob([contents], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = doc.createElement('a');
-          a.href = url;
-          a.download = filename;
-          a.click();
-          URL.revokeObjectURL(url);
-        },
-        resetForm: () => {
-          for (const field of Object.values(form)) {
-            field.value = '';
-            field.removeAttribute('disabled');
-          }
-          form.source.value = 'inline-text';
-          form.mode.value = 'replace';
-          form.tagMode.value = 'merge';
-          form.excerptMode.value = 'only-if-empty';
-          form.customTemplateMode.value = 'replace';
-        },
+    const previewEl = doc.getElementById('opt-feature-image-preview') as HTMLImageElement | null;
+    let previewObjectUrl: string | null = null;
+    const view: OptionsView = {
+      listEl,
+      statusEl,
+      form,
+      bodyLabel: el('opt-body-label') as RenderEl,
+      bodyHelp: el('opt-body-help') as RenderEl,
+      featureImagePreview: el('opt-feature-image-preview') as RenderEl,
+      featureImageStatus: el('opt-feature-image-status') as RenderEl,
+      importArea,
+      exportArea,
+      document: {
+        createElement: (tag: string) => doc.createElement(tag) as unknown as RenderEl,
+        getElementById: (id: string) => el(id),
       },
+      download: (filename: string, contents: string) => {
+        const blob = new Blob([contents], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = doc.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      resetForm: () => {
+        for (const field of Object.values(form)) {
+          field.value = '';
+          field.removeAttribute('disabled');
+        }
+        form.source.value = 'inline-text';
+        form.mode.value = 'replace';
+        form.tagMode.value = 'merge';
+        form.excerptMode.value = 'only-if-empty';
+        form.customTemplateMode.value = 'replace';
+        form.featureImageMode.value = 'only-if-empty';
+        clearFeatureImage(view);
+        if (previewObjectUrl) {
+          URL.revokeObjectURL(previewObjectUrl);
+          previewObjectUrl = null;
+        }
+      },
+    };
+
+    const imageAssets = buildOptionsImageAssets();
+    const deps: OptionsControllerDeps = {
+      rt: createOptionsRuntime(),
+      view,
+      ...(imageAssets ? { imageAssets } : {}),
+    };
+
+    const fileInput = doc.getElementById('opt-feature-image-file') as HTMLInputElement | null;
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0] ?? null;
+      void handleFeatureImageFile(deps, file).then(() => {
+        const assetId = form.featureImageAsset.value.trim();
+        if (!assetId || !previewEl || !file) return;
+        // Preview the picked photo from local bytes; the asset store keeps the
+        // real copy, so this object URL is display-only.
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = URL.createObjectURL(file);
+        previewEl.src = previewObjectUrl;
+        previewEl.removeAttribute('hidden');
+      });
     });
+
+    void initOptions(deps);
+  }
+}
+
+/**
+ * Build the options-page image asset store (extension origin). When IndexedDB
+ * is unavailable the picker reports the failure and the preset can still be
+ * saved with a URL instead — the apply path fails closed rather than writing a
+ * post without its image.
+ */
+function buildOptionsImageAssets(): OptionsImageAssets | undefined {
+  try {
+    const store = createImageAssetStore(createIndexedDbAssetBackend());
+    return {
+      putImage: (input) => store.putImage(input),
+      getRecord: (id) => store.getRecord(id),
+    };
+  } catch {
+    return undefined;
   }
 }

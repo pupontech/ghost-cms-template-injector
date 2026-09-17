@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRelay } from '../../src/background';
+import { createRelay, createRuntimeMessageDispatcher } from '../../src/background';
+import {
+  ASSET_MESSAGE_SOURCE,
+  base64ToBytes,
+  createImageAssetStore,
+} from '../../src/image-asset-store';
 import { POPUP_MESSAGE_SOURCE } from '../../src/ui-popup';
 
 /** Minimal structural sender the relay inspects (only `tab.id` matters). */
@@ -132,5 +137,97 @@ describe('background SW runtime.onMessage relay', () => {
     relay.init();
     relay.init();
     expect(count).toBe(1);
+  });
+});
+
+/** One runtime.onMessage listener serves both message families. */
+function makeDispatcher(
+  assetStore: Parameters<typeof createRuntimeMessageDispatcher>[0]['assetStore'],
+) {
+  const relayHandler = vi.fn((_m: unknown, _s: unknown, sendResponse: (r: unknown) => void) => {
+    sendResponse({ relayed: 'popup' });
+    return true;
+  });
+  const dispatch = createRuntimeMessageDispatcher({
+    assetStore,
+    relay: { handleMessage: relayHandler },
+  });
+  return { dispatch, relayHandler };
+}
+
+function assetStoreWith(
+  record: { name: string; mimeType: string; data: ArrayBuffer } | null,
+  failure?: Error,
+) {
+  return createImageAssetStore({
+    get: async () => {
+      if (failure) throw failure;
+      if (!record) return null;
+      return {
+        id: 'img_0123456789abcdef',
+        name: record.name,
+        mimeType: record.mimeType,
+        bytes: record.data.byteLength,
+        sha256: 'a'.repeat(64),
+        createdAt: '2026-09-17T10:00:00.000Z',
+        data: record.data,
+      };
+    },
+    put: async () => {},
+    remove: async () => {},
+    keys: async () => [],
+  });
+}
+
+describe('service worker dispatcher — asset channel vs popup relay', () => {
+  it('answers an asset request with base64 bytes and does not touch the relay', async () => {
+    const { dispatch, relayHandler } = makeDispatcher(
+      assetStoreWith({
+        name: 'hero.png',
+        mimeType: 'image/png',
+        data: new Uint8Array([1, 2, 3]).buffer,
+      }),
+    );
+
+    const reply = (await invoke(
+      dispatch as RelayHandler,
+      { source: ASSET_MESSAGE_SOURCE, op: 'getImageAsset', assetId: 'img_0123456789abcdef' },
+      { tab: { id: 7 } },
+    )) as Record<string, unknown>;
+
+    expect(reply).toMatchObject({ ok: true, name: 'hero.png', mimeType: 'image/png' });
+    expect(base64ToBytes(String(reply['base64']))).toEqual(new Uint8Array([1, 2, 3]));
+    expect(relayHandler).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing photo and a store failure instead of an empty reply', async () => {
+    const missing = makeDispatcher(assetStoreWith(null));
+    const missReply = (await invoke(
+      missing.dispatch as RelayHandler,
+      { source: ASSET_MESSAGE_SOURCE, op: 'getImageAsset', assetId: 'img_0123456789abcdef' },
+      {},
+    )) as Record<string, unknown>;
+    expect(missReply['ok']).toBe(false);
+    expect(String(missReply['error'])).toMatch(/not cached/i);
+
+    const broken = makeDispatcher(assetStoreWith(null, new Error('indexedDB unavailable')));
+    const brokenReply = (await invoke(
+      broken.dispatch as RelayHandler,
+      { source: ASSET_MESSAGE_SOURCE, op: 'getImageAsset', assetId: 'img_0123456789abcdef' },
+      {},
+    )) as Record<string, unknown>;
+    expect(brokenReply['ok']).toBe(false);
+    expect(String(brokenReply['error'])).toMatch(/indexedDB unavailable/);
+  });
+
+  it('still relays the popup/toolbar protocol', async () => {
+    const { dispatch, relayHandler } = makeDispatcher(assetStoreWith(null));
+    const reply = await invoke(
+      dispatch as RelayHandler,
+      { source: POPUP_MESSAGE_SOURCE, op: 'discover' },
+      { tab: { id: 3 } },
+    );
+    expect(reply).toEqual({ relayed: 'popup' });
+    expect(relayHandler).toHaveBeenCalledTimes(1);
   });
 });

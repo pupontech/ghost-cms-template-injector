@@ -146,7 +146,14 @@ function validateReply(reply: ContentReply | undefined): {
   return { ok: false, error: reply.error ?? 'UNKNOWN_ERROR' };
 }
 
-const PREVIEW_FIELDS = new Set(['body', 'title', 'excerpt', 'customTemplate', 'tags']);
+const PREVIEW_FIELDS = new Set([
+  'body',
+  'title',
+  'excerpt',
+  'customTemplate',
+  'tags',
+  'featureImage',
+]);
 
 function asApplicationPlan(value: unknown): ApplicationPlan | null {
   if (typeof value !== 'object' || value === null) return null;

@@ -355,6 +355,46 @@ Project-level future-agent instructions live in [`AGENTS.md`](./AGENTS.md). A re
 
 ---
 
+## 12. Feature image (post top image) — data model and photo cache
+
+**Ghost contract (verified against `main` source and live Ghost 6.59).**
+
+- `feature_image` is a plain post attribute (`ghost/core/core/server/models/post.js`); it has **no
+  scratch buffer**, unlike `title`/`lexical`. Ghost Admin's own write path is the controller action
+  `setFeatureImage(url)` → `this.post.set('featureImage', url)`
+  (`apps/ember-admin/app/controllers/lexical-editor.js`). Alt text and caption live on
+  `posts_meta` (not in scope here).
+- Uploads go through `POST <subdir>/ghost/api/admin/images/upload/` (`mw.authAdminApi`,
+  `upload.single('file')`, validation type `images`). The admin client's own uploader
+  (`gh-uploader.js`) posts `apiRoot + 'images/upload/'` with the file under `file` and
+  `purpose=image`, and reads the response as `{ images: [{ url, ref }] }`. With local file storage the
+  returned `url` is absolute; the database stores it transform-ready (`__GHOST_URL__/content/images/...`).
+
+**Why the photo cannot live in the preset document.** The stored preset document is capped at
+`MAX_IMPORT_BYTES` (256 KB) and is rewritten as JSON in `chrome.storage.local` (10 MB area quota
+without `unlimitedStorage`). One real photo would blow the document bound; base64 would add ~33 %.
+
+**Decision.** Photos are cached in an extension-origin IndexedDB asset store, addressed by content
+(`img_<sha256[0:16]>`, so re-picking the same photo is idempotent and dedupes). A preset stores only
+`metadata.featureImage = { mode, assetId }` (or `{ mode, url }` for a URL the owner already has). At
+apply time the content script resolves the field: a per-installation memo of previously uploaded URLs
+(`chrome.storage.local` key `featureImageUploads`, bounded to 200 entries, oldest pruned) is reused
+when the media still exists, otherwise the bytes are fetched from the service worker over the asset
+message channel (`chrome.runtime` messaging is JSON, so bytes travel base64), uploaded through the
+session-cookie multipart request above, and the returned absolute URL is memoized. The resolved URL
+is what the plan carries, and the MAIN-world bridge writes it through the controller action.
+
+**Fail-closed rules.** A missing, unreadable, oversized, or unsupported photo — or a rejected upload —
+blocks the entire plan (no field is mutated) with an explicit reason the owner can act on. The field
+participates in rollback capture/restore, undo, stale-editor comparison, and post-save readback
+verification like every other planned field. Exports carry the reference only: importing on another
+machine blocks until the photo is re-picked, which the UI and the error text state directly.
+
+**Limits.** 8 MB per cached photo; PNG/JPEG/WebP/GIF only; one photo per preset; alt text and caption
+are not part of this field (possible follow-on using the same six-layer path).
+
+---
+
 ## Appendix A — Evidence pointers (from the inspected `main` branch)
 
 - `apps/ember-admin/app/models/snippet.js` — snippet fields: `name, mobiledoc, lexical, createdAtUTC, updatedAtUTC` (content only).

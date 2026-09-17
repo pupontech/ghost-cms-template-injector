@@ -1,4 +1,9 @@
 import { POPUP_MESSAGE_SOURCE, type PopupMessage } from './ui-popup';
+import {
+  createImageAssetResponder,
+  type ImageAssetReply,
+  type ImageAssetStore,
+} from './image-asset-store';
 
 export interface BackgroundDeps {
   addOnInstalledListener: (cb: (details: { reason: string }) => void) => void;
@@ -68,6 +73,54 @@ function isRelayMessage(message: unknown): message is RelayMessage {
   if (m['source'] !== POPUP_MESSAGE_SOURCE) return false;
   if (m['op'] !== 'discover' && m['op'] !== 'apply') return false;
   return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Single runtime.onMessage dispatcher                                 */
+/* ------------------------------------------------------------------ */
+
+export interface RuntimeMessageDispatcherDeps {
+  /** Extension-origin image asset store (service worker owns it). */
+  assetStore: ImageAssetStore;
+  /** Popup/toolbar relay for the fixed popup protocol. */
+  relay: {
+    handleMessage: (
+      message: unknown,
+      sender: { tab?: { id?: number } },
+      sendResponse: (response: unknown) => void,
+    ) => boolean;
+  };
+}
+
+/**
+ * One `chrome.runtime.onMessage` listener for the whole service worker.
+ *
+ * Two message families arrive here and they must not race for the same
+ * response channel (registering two listeners would let the relay answer an
+ * asset request with a schema rejection). Asset requests are answered first
+ * and only then does everything else fall through to the popup/toolbar relay.
+ *
+ * Asset messages are only deliverable by this extension's own contexts: no
+ * `externally_connectable` is declared, so a web page cannot send them.
+ */
+export function createRuntimeMessageDispatcher(
+  deps: RuntimeMessageDispatcherDeps,
+): (
+  message: unknown,
+  sender: { tab?: { id?: number } },
+  sendResponse: (response: unknown) => void,
+) => boolean {
+  const respondToAsset = createImageAssetResponder(deps.assetStore);
+  return (message, sender, sendResponse) => {
+    const pending = respondToAsset(message);
+    if (pending) {
+      void pending.then(sendResponse, () =>
+        sendResponse({ ok: false, error: 'asset request failed' } satisfies ImageAssetReply),
+      );
+      return true;
+    }
+    return deps.relay.handleMessage(message, sender, sendResponse);
+  };
 }
 
 /**

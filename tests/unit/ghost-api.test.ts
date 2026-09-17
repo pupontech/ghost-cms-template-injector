@@ -262,3 +262,95 @@ describe('C7 — clean-editor-only API fallback', () => {
     expect(fake.calls).toHaveLength(0);
   });
 });
+
+describe('feature image — Ghost admin image upload', () => {
+  const BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+  it('POSTs multipart to images/upload/ and returns the served URL', async () => {
+    const fake = makeFetch([
+      jsonResponse(201, {
+        images: [{ url: 'https://example.com/content/images/2026/09/a.png', ref: null }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const url = await client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' });
+
+    expect(url).toBe('https://example.com/content/images/2026/09/a.png');
+    expect(fake.calls).toHaveLength(1);
+    const call = fake.calls[0]!;
+    expect(call.input).toBe('https://example.com/ghost/api/admin/images/upload/');
+    expect(call.init?.method).toBe('POST');
+    // Same-origin cookie auth, exactly like the reads/writes above.
+    expect(call.init?.credentials).toBe('same-origin');
+    expect(call.init?.headers).toEqual({ accept: 'application/json' });
+    const body = call.init?.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    const file = body.get('file') as File;
+    expect(file.name).toBe('a.png');
+    expect(file.type).toBe('image/png');
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(BYTES);
+    expect(body.get('purpose')).toBe('image');
+  });
+
+  it('surfaces a rejected upload as IMAGE_UPLOAD_FAILED with the Ghost error text', async () => {
+    const fake = makeFetch([
+      jsonResponse(422, {
+        errors: [{ type: 'ValidationError', message: 'The file type is not supported' }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/IMAGE_UPLOAD_FAILED.*file type is not supported/s);
+  });
+
+  it('rejects a response without an images[] url', async () => {
+    const fake = makeFetch([jsonResponse(201, { images: [] })]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/INVALID_IMAGE_UPLOAD_RESPONSE/);
+  });
+
+  it('surfaces transport failures as NETWORK_ERROR and never sends an empty upload', async () => {
+    const failing = makeFetch([new Error('offline')]);
+    const client = new GhostAdminClient(failing.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/NETWORK_ERROR/);
+
+    const idle = makeFetch([]);
+    const emptyClient = new GhostAdminClient(idle.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      emptyClient.uploadImage({ data: new Uint8Array(0), name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/non-empty bytes/);
+    await expect(
+      emptyClient.uploadImage({ data: BYTES, name: '  ', mimeType: 'image/png' }),
+    ).rejects.toThrow(/file name/);
+    expect(idle.calls).toHaveLength(0);
+  });
+
+  it('writes feature_image in a plural envelope on the clean-editor fallback', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        posts: [{ ...postFixture, feature_image: 'https://example.com/content/images/a.png' }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    await applyCleanEditorFallback({
+      client,
+      resource: 'posts',
+      record: { id: 'p1', updated_at: 'x', feature_image: '/content/images/a.png' },
+      liveState: { dirty: false, savedResourceId: 'p1' },
+      reconcile: () => {},
+    });
+
+    const body = JSON.parse(String(fake.calls[0]!.init?.body)) as {
+      posts: Array<Record<string, unknown>>;
+    };
+    expect(body.posts[0]?.['feature_image']).toBe('/content/images/a.png');
+  });
+});

@@ -18,6 +18,7 @@ A private Manifest V3 Chromium extension for applying validated presets to Ghost
 - Runtime content scripts are scoped to that installation's `/ghost/*` Admin path.
 - Disabling access unregisters both scripts and makes an already-loaded MAIN-world bridge dormant.
 - Presets stay in `chrome.storage.local`; no API tokens are requested or stored.
+- A picked feature-image photo is kept in the extension's own IndexedDB (never in the preset document). It is uploaded to your Ghost site only when a preset that uses it is applied, with your existing admin session cookie.
 - No remote scripts or remotely hosted executable code.
 
 ## Requirements
@@ -67,6 +68,23 @@ The extension ships with one bundled default, **Starter Post**. Make it yours:
 The body options are intentionally literal: `inline-lexical` applies structured Lexical JSON, `inline-text` converts plain text into paragraphs, and `ghost-snippet` resolves a named Ghost snippet. Inline HTML is fail-closed unless the live capability explicitly allows it. Custom-template modes support replace, only-if-empty, and prompt. Plain-text lines become paragraphs and blank lines separate paragraphs; HTML-looking and Markdown-looking characters remain literal text.
 
 You can move presets between machines with **Export** / **Import** (JSON) at the bottom of the Options page.
+
+## Feature image (the editor's top image)
+
+A preset can also carry the post's **feature image**:
+
+1. In the Options page, pick a photo under **Feature image (top image)**. It is cached in this
+   browser, not in the preset: the preset only stores the photo's id, so preset documents stay tiny
+   and exports never carry image bytes.
+2. Choose the mode: `only-if-empty` (default), `replace`, or `prompt`.
+   You can type an existing image URL instead of picking a photo.
+3. Apply the preset on a post. The first apply uploads the photo to _that_ Ghost installation through
+   Ghost's own admin image endpoint and remembers the returned URL, so repeat applies reuse the same
+   media instead of duplicating files.
+
+If the photo is not cached in the current browser (for example after importing a preset exported
+elsewhere), the apply is **blocked with an explicit reason** — no post is ever half-applied without its
+image. Re-pick the image to fix it.
 
 The default editor refresh is delayed long enough for an explicit Undo and is canceled after a successful Undo. Navigation or a full page reload ends the in-memory Undo window.
 

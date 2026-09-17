@@ -128,6 +128,7 @@ function makeSurface(): GhostLiveSurface {
     getExcerpt: () => null,
     getTitle: () => null,
     getCustomTemplate: () => null,
+    getFeatureImage: () => null,
     getTags: () => [],
     setField: () => {},
     setLexical: () => {},

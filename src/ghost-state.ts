@@ -21,7 +21,7 @@
  */
 
 import type { ApplicationPlan, PlanAction } from './preset-engine';
-import { isSerializedLexical } from './preset-schema';
+import { isAcceptableImageUrl, isSerializedLexical } from './preset-schema';
 export type { ApplicationPlan, PlanAction };
 
 /* ------------------------------------------------------------------ */
@@ -83,6 +83,8 @@ export interface GhostSnapshot {
   title: string | null;
   excerpt: string | null;
   customTemplate: string | null;
+  /** Live feature image URL (the editor's top image), or null when unset. */
+  featureImage: string | null;
   /** Tags in live relation display order. */
   tags: string[];
   /** Lexical state serialized for emptiness checks and body writes. */
@@ -138,9 +140,14 @@ export interface GhostLiveSurface {
   getTitle(): string | null;
   getExcerpt(): string | null;
   getCustomTemplate(): string | null;
+  /** Feature image URL (the editor's top image), or null when unset. */
+  getFeatureImage(): string | null;
   getTags(): string[];
   /** Mutate a single field on the live record. Rejects unsupported fields. */
-  setField(field: 'excerpt' | 'customTemplate' | 'tags' | 'title', value: string | string[]): void;
+  setField(
+    field: 'excerpt' | 'customTemplate' | 'tags' | 'title' | 'featureImage',
+    value: string | string[],
+  ): void;
   /** Replace live Lexical state (body). Rejects when unsupported. */
   setLexical(lexical: string): void;
   /** Invoke exactly one Ghost-native save transaction. Resolves on clean. */
@@ -240,6 +247,7 @@ function sameEditableState(
     a.title === b.title &&
     a.excerpt === b.excerpt &&
     a.customTemplate === b.customTemplate &&
+    a.featureImage === b.featureImage &&
     a.lexical === b.lexical &&
     a.bodyEmpty === b.bodyEmpty &&
     a.tags.join('\\u0000') === b.tags.join('\\u0000')
@@ -263,6 +271,11 @@ function validateActionValue(action: PlanAction): string | null {
     case 'excerpt':
     case 'customTemplate':
       return typeof action.value === 'string' ? null : `${action.field} value must be a string`;
+    case 'featureImage':
+      if (typeof action.value !== 'string') return 'featureImage value must be a string';
+      return isAcceptableImageUrl(action.value)
+        ? null
+        : 'featureImage value must be an absolute image URL or a /content/ path';
     case 'tags':
       return Array.isArray(action.value) && action.value.every((tag) => typeof tag === 'string')
         ? null
@@ -285,6 +298,8 @@ function appliedFieldsMatch(plan: ApplicationPlan, snapshot: GhostSnapshot): boo
           return snapshot.excerpt === action.value;
         case 'customTemplate':
           return snapshot.customTemplate === action.value;
+        case 'featureImage':
+          return snapshot.featureImage === action.value;
         case 'tags':
           return (
             Array.isArray(action.value) &&
@@ -363,6 +378,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       title: this.#surface.getTitle(),
       excerpt: this.#surface.getExcerpt(),
       customTemplate: this.#surface.getCustomTemplate(),
+      featureImage: this.#surface.getFeatureImage(),
       tags: this.#surface.getTags(),
       lexical,
       bodyEmpty: this.#surface.isBodyEmpty(),
@@ -534,6 +550,15 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
       case 'customTemplate':
         this.#surface.setField('customTemplate', String(action.value ?? ''));
         break;
+      case 'featureImage':
+        if (!isAcceptableImageUrl(action.value)) {
+          throw new GhostStateException(
+            'APPLY_FAILED',
+            'featureImage value must be an absolute image URL or a /content/ path',
+          );
+        }
+        this.#surface.setField('featureImage', action.value);
+        break;
       case 'tags':
         this.#surface.setField('tags', Array.isArray(action.value) ? action.value : []);
         break;
@@ -593,6 +618,7 @@ class GhostStateAdapterImpl implements GhostStateAdapter {
     if (this.#surface.getTitle() !== expected.title) stale('title');
     if (this.#surface.getExcerpt() !== expected.excerpt) stale('excerpt');
     if (this.#surface.getCustomTemplate() !== expected.customTemplate) stale('customTemplate');
+    if (this.#surface.getFeatureImage() !== expected.featureImage) stale('featureImage');
     if (this.#surface.getLexical() !== expected.lexical) stale('lexical');
     if (this.#surface.isBodyEmpty() !== expected.bodyEmpty) stale('bodyEmpty');
     const tagsNow = this.#surface.getTags().join('\u0000');
