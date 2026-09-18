@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.5.0 — unreleased
+
+### Added
+
+- **Import an existing Ghost post as a preset.** The popup gains an **Import a post as a preset**
+  panel: pick the post open in the editor or any post/page from this site (the picker is filled from
+  your own Admin API, newest first), name the preset, optionally capture the title, and import. The
+  generated editor toolbar offers the same thing as a one-click **Save this post as a preset** button.
+- Captured fields and their default modes: body (`replace`, the post's serialized Lexical), excerpt
+  (`only-if-empty`), tags (`merge`), custom template (`only-if-empty`, only `.hbs` values), feature
+  image (`only-if-empty`, stored as a portable same-origin `/content/…` path). The **title is not
+  captured by default** — a preset carrying a title would rename every post it is applied to.
+- Imported presets land in an **Imported** group, record their provenance in the description, pass
+  the same schema validation as hand-written presets, and can be edited in the Options page
+  afterwards.
+- Import is fail-closed and honest about what it could not capture: a blank or unreadable body aborts
+  the import with a reason, an over-limit excerpt is trimmed and reported, a non-`.hbs` custom
+  template or unacceptable image URL is skipped with a warning, and importing while the editor has
+  unsaved changes says so (the stored record is read through the Admin API whenever the editor is
+  clean).
+
+### Fixed
+
+- **Feature image written as a `/content/…` path no longer reports a false failure.** Ghost normalizes
+  the value to an absolute URL on the record, so the post-save readback compared the literal text and
+  rejected a save that had in fact succeeded (`SAVE_FAILED`, escalating to `ROLLBACK_FAILED` when the
+  transaction also had to roll back). The comparison now resolves both sides (`featureImageMatches`)
+  and is used by both the state adapter and the MAIN-world bridge. Found by the post-import live
+  proof, which applies a preset captured from a real post.
+
+### Verification
+
+- `npm run verify` green: formatting, ESLint, strict TypeScript, production build, manifest/built-artifact
+  validation, and the Vitest suite (35 files, 529 tests).
+- Real-Ghost + real-Chromium post-import proof (`npm run proof:post-import`, Ghost 6.59 behind a local
+  TLS proxy, production bundles compiled from this tree with esbuild): a real post was created through
+  the Admin API and read back with the extension's own query, captured into a schema-valid preset
+  (body byte-identical, excerpt, tags, custom template, portable feature image, title deliberately
+  absent), a blank draft aborted the import as a negative control, the captured document was accepted
+  by the real options page's store, and the production planner + MAIN-world bridge then applied it to a
+  **different** draft with one native save — excerpt, tags, custom template, body and top image all
+  confirmed by authenticated Admin API readback and by the database row. See
+  `evidence/post-import-live-proof.md`.
+- The v0.4.0 feature-image proof was re-run after the readback fix: still PASS
+  (`evidence/feature-image-live-proof.md`).
+
 ## 0.4.0 — unreleased
 
 ### Added

@@ -169,6 +169,42 @@
       .gcti-setup-link:hover {
         text-decoration: underline;
       }
+      #gcti-import-panel {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--gcti-line, #e5e5ea);
+        display: grid;
+        gap: 6px;
+      }
+      #gcti-import-panel h2 {
+        font-size: 12.5px;
+        margin: 0;
+      }
+      #gcti-import-panel label {
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+      #gcti-import-panel select,
+      #gcti-import-panel input[type='text'] {
+        width: 100%;
+        font: inherit;
+        padding: 5px 6px;
+      }
+      .gcti-import-hint,
+      #gcti-import-status {
+        font-size: 11px;
+        margin: 0;
+        opacity: 0.85;
+      }
+      .gcti-import-check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 400;
+      }
+      .gcti-import-check input {
+        width: auto;
+      }
     </style>
   </head>
   <body>
@@ -193,6 +229,25 @@
       </div>
     </section>
     <button id="gcti-undo" type="button" disabled>Undo last apply</button>
+
+    <section id="gcti-import-panel" aria-labelledby="gcti-import-heading">
+      <h2 id="gcti-import-heading">Import a post as a preset</h2>
+      <p class="gcti-import-hint">
+        Captures the body plus excerpt, tags, custom template, and feature image. The title is left
+        out unless you ask for it, so re-applying a preset never renames a post.
+      </p>
+      <label for="gcti-import-source">Source</label>
+      <select id="gcti-import-source"></select>
+      <label for="gcti-import-name">Preset name</label>
+      <input id="gcti-import-name" type="text" autocomplete="off" placeholder="Imported preset" />
+      <label class="gcti-import-check">
+        <input id="gcti-import-title" type="checkbox" />
+        Include this post's title
+      </label>
+      <button id="gcti-import-save" type="button">Import as preset</button>
+      <p id="gcti-import-status" role="status" aria-live="polite"></p>
+    </section>
+
     <a class="gcti-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
     <script type="module" src="../dist/popup.js"></script>
   </body>

@@ -12,9 +12,10 @@
  */
 
 import { createPopupController, type PopupRuntime } from './ui-popup';
-import type { PopupMessage, ContentReply } from './ui-popup';
+import type { CaptureOutcome, ContentReply, PopupMessage } from './ui-popup';
 import { detectEditorUrl, type DetectedRoute } from './route-detection';
-import { listPresets } from './preset-store';
+import { listPresets, savePreset } from './preset-store';
+import { describeCapture, defaultImportName, type CaptureOptions } from './preset-capture';
 import type { Preset } from './preset-schema';
 import type { ApplicationPlan } from './preset-engine';
 
@@ -67,6 +68,7 @@ export function buildPopupRuntime(
       return api.tabs.sendMessage(Number(resolved.tabId), message);
     },
     loadPresets: () => listPresets(),
+    savePreset: (input) => savePreset(input),
   };
 }
 
@@ -77,6 +79,10 @@ export function buildPopupRuntime(
 /** Element subset the renderer touches, so it can be faked in tests. */
 export interface RenderEl {
   textContent: string | null;
+  /** Present on form controls (select/input/checkbox). */
+  value?: string;
+  disabled?: boolean;
+  checked?: boolean;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
   appendChild(child: RenderEl): void;
@@ -204,7 +210,48 @@ export interface PopupView {
   planApply?: RenderEl;
   planCancel?: RenderEl;
   undoButton?: RenderEl;
+  /** Import-an-existing-post controls (absent in reduced views). */
+  importSourceSelect?: RenderEl;
+  importNameInput?: RenderEl;
+  importTitleToggle?: RenderEl;
+  importSaveButton?: RenderEl;
+  importStatusEl?: RenderEl;
   document: { createElement: CreateEl };
+}
+
+/** Value used for the "the post open in the editor" picker entry. */
+export const IMPORT_CURRENT_VALUE = 'current';
+
+export { defaultImportName } from './preset-capture';
+/**
+ * Fill the import picker: the open editor (when the route has one) followed by
+ * the installation's posts and pages, newest first.
+ */
+export function renderImportOptions(
+  select: RenderEl,
+  entries: readonly {
+    id: string;
+    title: string;
+    status: string;
+    resourceType: 'post' | 'page';
+  }[],
+  includeCurrent: boolean,
+  createEl: CreateEl,
+): void {
+  select.textContent = '';
+  if (includeCurrent) {
+    const option = createEl('option');
+    option.value = IMPORT_CURRENT_VALUE;
+    option.textContent = 'The post open in the editor';
+    select.appendChild(option);
+  }
+  for (const entry of entries) {
+    const option = createEl('option');
+    option.value = `${entry.resourceType}:${entry.id}`;
+    option.textContent = `${entry.title} (${entry.resourceType}, ${entry.status})`;
+    select.appendChild(option);
+  }
+  if (includeCurrent) select.value = IMPORT_CURRENT_VALUE;
 }
 
 /**
@@ -342,14 +389,119 @@ export async function initPopup(api: PopupChromeApi, view: PopupView): Promise<v
     view.statusEl.textContent = 'Apply failed: too many prompt rounds.';
   }
 
-  renderPresetList(
-    view.listEl,
-    presets,
-    (presetId) => {
-      void runApply(presetId);
-    },
-    view.document.createElement,
-  );
+  function renderList(): void {
+    renderPresetList(
+      view.listEl,
+      presets,
+      (presetId) => {
+        void runApply(presetId);
+      },
+      view.document.createElement,
+    );
+  }
+
+  /* ---------------- import an existing post as a preset ---------------- */
+
+  const importSource = view.importSourceSelect;
+  const importName = view.importNameInput;
+  const importTitle = view.importTitleToggle;
+  const importSave = view.importSaveButton;
+
+  function setImportStatus(message: string): void {
+    if (view.importStatusEl) view.importStatusEl.textContent = message;
+  }
+
+  let captured: CaptureOutcome | null = null;
+
+  function importSelection(): { resourceType: 'post' | 'page'; id: string } | null {
+    const value = importSource?.value ?? '';
+    if (value.length === 0 || value === IMPORT_CURRENT_VALUE) return null;
+    const [resourceType, id] = value.split(':');
+    if (resourceType !== 'post' && resourceType !== 'page') return null;
+    if (!id) return null;
+    return { resourceType, id };
+  }
+
+  /** Read the selected source into capture fields and prefill the name. */
+  async function loadImportSource(): Promise<void> {
+    if (!importSource) return;
+    const selection = importSelection();
+    setImportStatus('Reading the post…');
+    const read = selection
+      ? await controller.capturePost(selection.resourceType, selection.id)
+      : await controller.captureCurrent();
+    if (!read.ok || !read.outcome) {
+      captured = null;
+      setImportStatus(`Import failed: ${read.error ?? 'unknown error'}`);
+      return;
+    }
+    captured = read.outcome;
+    const summary = describeCapture(read.outcome.source, {
+      name: '',
+      includeTitle: importTitle?.checked === true,
+    });
+    if (importName) importName.value = defaultImportName(read.outcome.source);
+    const cautions =
+      read.outcome.warnings.length > 0 ? ` — ${read.outcome.warnings.join('; ')}` : '';
+    setImportStatus(`Ready to import: ${summary.join(', ')}.${cautions}`);
+  }
+
+  /** Build + store a preset from the captured post/page. */
+  async function runImport(): Promise<void> {
+    if (!captured) {
+      setImportStatus('Pick a post to import first.');
+      return;
+    }
+    const name = (importName?.value ?? '').trim() || defaultImportName(captured.source);
+    const options: CaptureOptions = {
+      name,
+      includeTitle: importTitle?.checked === true,
+    };
+    const saved = await controller.saveCapture(captured, options);
+    if (!saved.ok || !saved.preset) {
+      setImportStatus(`Import failed: ${saved.error ?? 'unknown error'}`);
+      return;
+    }
+    try {
+      presets = await controller.loadPresets();
+    } catch {
+      /* keep the previous list; the save already succeeded */
+    }
+    renderList();
+    const warnings = saved.warnings.length > 0 ? ` (${saved.warnings.join('; ')})` : '';
+    setImportStatus(`Saved preset “${saved.preset.name}”.${warnings}`);
+    view.statusEl.textContent = `Imported “${saved.preset.name}” as a preset.`;
+  }
+
+  renderList();
+
+  if (importSource) {
+    const listed = await controller.listCapturable();
+    renderImportOptions(
+      importSource,
+      listed.ok ? (listed.entries ?? []) : [],
+      status.state === 'capable',
+      view.document.createElement,
+    );
+    if (!listed.ok && listed.error) setImportStatus(`Post list unavailable: ${listed.error}`);
+    else void loadImportSource();
+
+    importSource.addEventListener('change', () => {
+      void loadImportSource();
+    });
+  }
+
+  if (importSave) {
+    importSave.addEventListener('click', () => {
+      void runImport();
+    });
+  }
+
+  if (importTitle) {
+    importTitle.addEventListener('change', () => {
+      if (captured) void loadImportSource();
+    });
+  }
 }
 
 /* Browser bootstrap: only runs when a real `chrome` global is present. */
@@ -374,6 +526,11 @@ if (isBrowserContext()) {
       const planApply = doc.getElementById('gcti-plan-apply');
       const planCancel = doc.getElementById('gcti-plan-cancel');
       const undoButton = doc.getElementById('gcti-undo');
+      const importSourceSelect = doc.getElementById('gcti-import-source');
+      const importNameInput = doc.getElementById('gcti-import-name');
+      const importTitleToggle = doc.getElementById('gcti-import-title');
+      const importSaveButton = doc.getElementById('gcti-import-save');
+      const importStatusEl = doc.getElementById('gcti-import-status');
       if (statusEl && listEl) {
         const popupView: PopupView = {
           statusEl: statusEl as unknown as RenderEl,
@@ -395,6 +552,14 @@ if (isBrowserContext()) {
           popupView.planCancel = planCancel as unknown as RenderEl;
         }
         if (undoButton) popupView.undoButton = undoButton as unknown as RenderEl;
+        if (importSourceSelect && importNameInput && importSaveButton) {
+          popupView.importSourceSelect = importSourceSelect as unknown as RenderEl;
+          popupView.importNameInput = importNameInput as unknown as RenderEl;
+          popupView.importSaveButton = importSaveButton as unknown as RenderEl;
+          if (importTitleToggle)
+            popupView.importTitleToggle = importTitleToggle as unknown as RenderEl;
+          if (importStatusEl) popupView.importStatusEl = importStatusEl as unknown as RenderEl;
+        }
         void initPopup(chrome, popupView);
       }
     });

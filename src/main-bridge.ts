@@ -28,7 +28,12 @@
  * go through the live model property and persist via the one native save.
  */
 
-import { createGhostStateAdapter, GhostStateException, type GhostLiveSurface } from './ghost-state';
+import {
+  createGhostStateAdapter,
+  featureImageMatches,
+  GhostStateException,
+  type GhostLiveSurface,
+} from './ghost-state';
 import type { GhostSnapshot } from './ghost-state';
 import type { ApplicationPlan } from './preset-engine';
 import { createPageBridgeResponder, type PageBridgeResponderEnv } from './page-bridge';
@@ -536,7 +541,9 @@ export function createGhostMainBridge(
             case 'customTemplate':
               return customTemplate === action.value;
             case 'featureImage':
-              return featureImage === action.value;
+              // Ghost normalizes a written `/content/…` path into an absolute
+              // URL on the record; compare the resolved form, not the text.
+              return featureImageMatches(featureImage, action.value as string);
             case 'tags':
               return (
                 Array.isArray(action.value) && tags.join('\\u0000') === action.value.join('\\u0000')

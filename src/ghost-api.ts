@@ -250,6 +250,56 @@ export class GhostAdminClient {
   }
 
   /**
+   * Lightweight index of posts/pages for the "import an existing post" picker:
+   * ids, titles and timestamps only. Never used for writes.
+   */
+  async listCapturableIndex(
+    resource: 'posts' | 'pages',
+  ): Promise<Array<{ id: string; title: string; status: string; updatedAt: string | null }>> {
+    const body = await this.#request(
+      resource,
+      '?limit=all&fields=id,title,slug,status,updated_at&order=updated_at%20desc',
+    );
+    return extractPlural<GhostPostRecord>(resource, body)
+      .filter((record): record is GhostPostRecord & { id: string } => typeof record.id === 'string')
+      .map((record) => ({
+        id: record.id,
+        title:
+          typeof record.title === 'string' && record.title.trim().length > 0
+            ? record.title
+            : '(Untitled)',
+        status: typeof record.status === 'string' ? record.status : 'unknown',
+        updatedAt: typeof record.updated_at === 'string' ? record.updated_at : null,
+      }));
+  }
+
+  /**
+   * Full record for one post/page, with the formats an import needs: serialized
+   * Lexical body and the tag relation. Returns null when the id does not exist
+   * (Ghost answers 404), so callers can report "not found" without guessing.
+   */
+  async getCapturableRecord(
+    resource: 'posts' | 'pages',
+    id: string,
+  ): Promise<GhostPostRecord | null> {
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new TypeError('ghost-api: a resource id is required');
+    }
+    let body: unknown;
+    try {
+      body = await this.#request(
+        resource,
+        `${encodeURIComponent(id)}/?formats=lexical&include=tags`,
+      );
+    } catch (err) {
+      if (err instanceof GhostApiError && err.status === 404) return null;
+      throw err;
+    }
+    const records = extractPlural<GhostPostRecord>(resource, body);
+    return records[0] ?? null;
+  }
+
+  /**
    * Upload one image through Ghost's own admin image endpoint
    * (`POST <admin>/images/upload/`, multipart, cookie-authenticated) and
    * return the URL Ghost now serves it from.

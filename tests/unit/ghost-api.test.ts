@@ -354,3 +354,75 @@ describe('feature image — Ghost admin image upload', () => {
     expect(body.posts[0]?.['feature_image']).toBe('/content/images/a.png');
   });
 });
+
+describe('post import — reading existing posts through the Admin API', () => {
+  it('lists posts for the import picker with a narrow field set, newest first', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        posts: [
+          { id: 'p1', title: 'First', status: 'published', updated_at: '2026-09-01T00:00:00.000Z' },
+          { id: 'p2', title: '   ', status: 'draft', updated_at: '2026-09-02T00:00:00.000Z' },
+          { title: 'no id' },
+        ],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const entries = await client.listCapturableIndex('posts');
+
+    expect(fake.calls[0]!.input).toContain('fields=id,title,slug,status,updated_at');
+    expect(fake.calls[0]!.input).toContain('limit=all');
+    expect(entries).toEqual([
+      { id: 'p1', title: 'First', status: 'published', updatedAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'p2', title: '(Untitled)', status: 'draft', updatedAt: '2026-09-02T00:00:00.000Z' },
+    ]);
+  });
+
+  it('reads one record with the lexical format and the tag relation', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        pages: [
+          {
+            ...pageFixture,
+            custom_excerpt: 'Summary',
+            custom_template: 'custom-x.hbs',
+            feature_image: '/content/images/x.png',
+            tags: [{ name: 'Alpha' }],
+          },
+        ],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const record = await client.getCapturableRecord('pages', 'page-1');
+
+    expect(fake.calls[0]!.input).toBe(
+      'https://example.com/ghost/api/admin/pages/page-1/?formats=lexical&include=tags',
+    );
+    expect(record?.custom_excerpt).toBe('Summary');
+  });
+
+  it('encodes the id and reports a missing record as null', async () => {
+    const missing = makeFetch([
+      jsonResponse(404, { errors: [{ type: 'NotFoundError', message: 'Resource not found' }] }),
+    ]);
+    const client = new GhostAdminClient(missing.fetch, 'https://example.com/ghost/api/admin/');
+
+    expect(await client.getCapturableRecord('posts', 'a/b')).toBeNull();
+    expect(missing.calls[0]!.input).toContain('posts/a%2Fb/');
+  });
+
+  it('rejects an empty id before any request and surfaces other API errors', async () => {
+    const fake = makeFetch([]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(client.getCapturableRecord('posts', '  ')).rejects.toThrow(/resource id/);
+    expect(fake.calls).toHaveLength(0);
+
+    const failing = makeFetch([jsonResponse(500, { errors: [{ message: 'boom' }] })]);
+    const failingClient = new GhostAdminClient(
+      failing.fetch,
+      'https://example.com/ghost/api/admin/',
+    );
+    await expect(failingClient.getCapturableRecord('posts', 'p1')).rejects.toThrow(/boom/);
+  });
+});

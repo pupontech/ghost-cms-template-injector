@@ -37,6 +37,8 @@ import {
 } from './apply-pipeline';
 import { loadPreset } from './preset-store';
 import { GhostAdminClient } from './ghost-api';
+import { sourceFromGhostRecord, type CapturedSource } from './preset-capture';
+import type { GhostSnapshot } from './ghost-state';
 import {
   resolveFeatureImage,
   type CachedImageBytes,
@@ -76,6 +78,26 @@ export interface ContentScriptHandle {
   handleMessage: (message: unknown) => Promise<unknown>;
   resolveContext: () => Promise<PlanContext>;
   resetResolveContextCache: () => void;
+}
+
+/** One entry in the import picker (id + title only; no body is fetched yet). */
+export interface CapturableIndexEntry {
+  id: string;
+  title: string;
+  status: string;
+  updatedAt: string | null;
+  resourceType: 'post' | 'page';
+}
+
+/** Result of reading one post/page into a capture source. */
+export interface CaptureOutcome {
+  source: CapturedSource;
+  /** Extra cautions for the owner (e.g. the draft has unsaved changes). */
+  warnings: string[];
+  /** Where the fields came from — live editor record or the Admin API. */
+  readFrom: 'live-editor' | 'admin-api';
+  /** Site origin, so absolute media URLs become portable `/content/…` paths. */
+  siteOrigin: string | null;
 }
 
 /** Reply shape handed back to the popup / toolbar. */
@@ -210,6 +232,163 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       loadPreset,
       resolveContext,
       ...(resolveFeatureImageFn ? { resolveFeatureImage: resolveFeatureImageFn } : {}),
+    };
+  }
+
+  /** Cookie-authenticated Admin API client for this tab, or null. */
+  function apiClient(): GhostAdminClient | null {
+    const derived = deps.getAdminApiBase();
+    if (!derived) return null;
+    return deps.createApiClient(derived.base);
+  }
+
+  /** Site origin (for turning absolute media URLs into portable paths). */
+  function siteOrigin(): string | null {
+    const derived = deps.getAdminApiBase();
+    if (!derived) return null;
+    try {
+      return new URL(derived.base).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Import picker data: ids and titles of this installation's posts and pages,
+   * newest first. Read-only; no body is fetched until one is chosen.
+   */
+  async function listCapturable(): Promise<ApplyReply> {
+    const client = apiClient();
+    if (!client) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'NO_ADMIN_API_BASE' };
+    }
+    try {
+      const [posts, pages] = await Promise.all([
+        client.listCapturableIndex('posts'),
+        client.listCapturableIndex('pages'),
+      ]);
+      const entries: CapturableIndexEntry[] = [
+        ...posts.map((post) => ({ ...post, resourceType: 'post' as const })),
+        ...pages.map((page) => ({ ...page, resourceType: 'page' as const })),
+      ].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+      return { source: POPUP_MESSAGE_SOURCE, ok: true, result: { entries } };
+    } catch (err) {
+      return {
+        source: POPUP_MESSAGE_SOURCE,
+        ok: false,
+        error: `LIST_FAILED: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+    }
+  }
+
+  /** Read one saved post/page through the Admin API into a capture source. */
+  async function captureFromApi(
+    resourceType: 'post' | 'page',
+    resourceId: string,
+  ): Promise<ApplyReply> {
+    const client = apiClient();
+    if (!client) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'NO_ADMIN_API_BASE' };
+    }
+    try {
+      const record = await client.getCapturableRecord(
+        resourceType === 'page' ? 'pages' : 'posts',
+        resourceId,
+      );
+      if (!record) {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'CAPTURE_NOT_FOUND' };
+      }
+      const outcome: CaptureOutcome = {
+        source: sourceFromGhostRecord(resourceType, record),
+        warnings: [],
+        readFrom: 'admin-api',
+        siteOrigin: siteOrigin(),
+      };
+      return { source: POPUP_MESSAGE_SOURCE, ok: true, result: outcome };
+    } catch (err) {
+      return {
+        source: POPUP_MESSAGE_SOURCE,
+        ok: false,
+        error: `CAPTURE_FAILED: ${err instanceof Error ? err.message : 'unknown error'}`,
+      };
+    }
+  }
+
+  /**
+   * Capture the post/page open in the editor.
+   *
+   * A saved, clean record is re-read through the Admin API (`formats=lexical`
+   * + the tag relation) because that is the authoritative stored value. While
+   * the editor is dirty or the draft is unsaved, the LIVE editor body is used
+   * and the caller is warned — capturing a stale autosave silently would be
+   * worse than an explicit caution.
+   */
+  async function captureLive(): Promise<ApplyReply> {
+    const reply = await getBridge().request('snapshot', {});
+    if (!reply.ok) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: false, error: reply.error };
+    }
+    const snapshot = reply.result as GhostSnapshot;
+    const liveSource: CapturedSource = {
+      resourceType: snapshot.resourceType,
+      title: snapshot.title,
+      excerpt: snapshot.excerpt,
+      tags: snapshot.tags,
+      customTemplate: snapshot.customTemplate,
+      featureImage: snapshot.featureImage,
+      lexical: snapshot.lexical,
+    };
+    const warnings: string[] = [];
+    if (snapshot.dirty) {
+      warnings.push(
+        'the editor has unsaved changes — the captured body comes from the editor, so save the post to be certain',
+      );
+    }
+    if (snapshot.resourceId === null) {
+      warnings.push('this draft has no server id yet, so only the live editor state could be read');
+      return {
+        source: POPUP_MESSAGE_SOURCE,
+        ok: true,
+        result: {
+          source: liveSource,
+          warnings,
+          readFrom: 'live-editor',
+          siteOrigin: siteOrigin(),
+        } satisfies CaptureOutcome,
+      };
+    }
+
+    const apiReply = await captureFromApi(snapshot.resourceType, snapshot.resourceId);
+    if (!apiReply.ok) {
+      warnings.push(
+        'the saved record could not be re-read from the Ghost API; using the live editor state',
+      );
+      return {
+        source: POPUP_MESSAGE_SOURCE,
+        ok: true,
+        result: {
+          source: liveSource,
+          warnings,
+          readFrom: 'live-editor',
+          siteOrigin: siteOrigin(),
+        } satisfies CaptureOutcome,
+      };
+    }
+    const apiOutcome = apiReply.result as CaptureOutcome;
+    if (!snapshot.dirty) {
+      return { source: POPUP_MESSAGE_SOURCE, ok: true, result: { ...apiOutcome, warnings } };
+    }
+    // Dirty editor: keep the stored metadata (tags/template come back resolved
+    // from the API) but take the body from the live record.
+    return {
+      source: POPUP_MESSAGE_SOURCE,
+      ok: true,
+      result: {
+        source: { ...apiOutcome.source, lexical: liveSource.lexical },
+        warnings,
+        readFrom: 'live-editor',
+        siteOrigin: apiOutcome.siteOrigin,
+      } satisfies CaptureOutcome,
     };
   }
 
@@ -348,6 +527,23 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
         return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_PRESET_ID' };
       }
       return preview(presetId);
+    }
+    if (op === 'listPosts') {
+      return listCapturable();
+    }
+    if (op === 'capture') {
+      return captureLive();
+    }
+    if (op === 'capturePost') {
+      const resourceType = msg['resourceType'];
+      const resourceId = msg['resourceId'];
+      if (resourceType !== 'post' && resourceType !== 'page') {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'INVALID_RESOURCE_TYPE' };
+      }
+      if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+        return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'MISSING_RESOURCE_ID' };
+      }
+      return captureFromApi(resourceType, resourceId.trim());
     }
     if (op === 'undo') {
       if (inFlight) return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'APPLY_BUSY' };

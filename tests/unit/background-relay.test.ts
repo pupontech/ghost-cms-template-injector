@@ -119,6 +119,22 @@ describe('background SW runtime.onMessage relay', () => {
     expect(response).toMatchObject({ relay: 'rejected', reason: 'NO_SENDER_TAB' });
   });
 
+  it('forwards the read-only import operations', async () => {
+    for (const message of [
+      { source: POPUP_MESSAGE_SOURCE, op: 'listPosts' },
+      { source: POPUP_MESSAGE_SOURCE, op: 'capture' },
+      { source: POPUP_MESSAGE_SOURCE, op: 'capturePost', resourceType: 'page', resourceId: 'x1' },
+      { source: POPUP_MESSAGE_SOURCE, op: 'preview', presetId: 'p1' },
+      { source: POPUP_MESSAGE_SOURCE, op: 'undo' },
+    ]) {
+      const sendTabMessage = vi.fn().mockResolvedValue({ source: POPUP_MESSAGE_SOURCE, ok: true });
+      const { handler } = makeRelay(sendTabMessage);
+      const response = await invoke(handler(), message, { tab: { id: 11 } });
+      expect(sendTabMessage).toHaveBeenCalledWith(11, message);
+      expect(response).toEqual({ source: POPUP_MESSAGE_SOURCE, ok: true });
+    }
+  });
+
   it('threads a tab-send failure into sendResponse as a relay error', async () => {
     const sendTabMessage = vi.fn().mockRejectedValue(new Error('tab gone'));
     const { handler } = makeRelay(sendTabMessage);

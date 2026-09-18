@@ -36,8 +36,11 @@ import {
   type ToolbarControllerDeps,
   type ToolbarPreset,
 } from './toolbar-controller';
-import type { PopupMessage } from './ui-popup';
+import { POPUP_MESSAGE_SOURCE, type PopupMessage } from './ui-popup';
 import type { CreateEl, RenderEl } from './ui-popup-main';
+import { buildPresetFromCapture, defaultImportName, type CapturedSource } from './preset-capture';
+import { deriveIdFromName, nextAvailablePresetId } from './preset-naming';
+import type { Preset } from './preset-schema';
 
 /** DOM element surface the toolbar touches (reuses the popup's minimal subset). */
 export type ToolbarDomElement = RenderEl;
@@ -64,6 +67,10 @@ export interface ToolbarEnv {
   appendToBody: (el: ToolbarDomElement) => void;
   /** Detach the toolbar root from the document. */
   removeElement: (el: ToolbarDomElement) => void;
+  /** Ask for an import preset name (defaults to the browser prompt). */
+  promptText?: (message: string, defaultValue: string) => string | null;
+  /** Persist an imported preset (defaults to the shared preset store). */
+  savePreset?: (input: unknown) => Promise<Preset>;
 }
 
 /** Handle to the three regions of a built toolbar. */
@@ -71,9 +78,11 @@ export interface ToolbarElementHandle {
   root: ToolbarDomElement;
   listEl: ToolbarDomElement;
   statusEl: ToolbarDomElement;
+  /** "Save this post as a preset" button (imports the open editor). */
+  importButton: ToolbarDomElement;
 }
 
-/** Build the accessible toolbar DOM fragment (root + status + list). */
+/** Build the accessible toolbar DOM fragment (root + status + list + import). */
 export function createToolbarElement(createEl: CreateEl): ToolbarElementHandle {
   const root = createEl('div');
   root.setAttribute('role', 'toolbar');
@@ -88,9 +97,96 @@ export function createToolbarElement(createEl: CreateEl): ToolbarElementHandle {
   const listEl = createEl('ul');
   listEl.setAttribute('aria-label', 'Presets');
 
+  const importButton = createEl('button');
+  importButton.setAttribute('type', 'button');
+  importButton.setAttribute('data-gcti-save-preset', '1');
+  importButton.setAttribute('aria-label', TOOLBAR_IMPORT_LABEL);
+  importButton.textContent = TOOLBAR_IMPORT_LABEL;
+
   root.appendChild(statusEl);
   root.appendChild(listEl);
-  return { root, listEl, statusEl };
+  root.appendChild(importButton);
+  return { root, listEl, statusEl, importButton };
+}
+
+/** Label of the import action (also its accessible name). */
+export const TOOLBAR_IMPORT_LABEL = 'Save this post as a preset';
+
+export interface ImportFromEditorResult {
+  ok: boolean;
+  name?: string;
+  error?: string;
+  warnings?: string[];
+}
+
+/**
+ * Import the post/page open in the editor as a new preset, from the toolbar.
+ *
+ * The toolbar is a content script co-resident with the main content script, so
+ * it asks for the capture over the same fixed popup protocol the popup uses
+ * (`op: 'capture'`) and stores the result through the shared preset store. The
+ * title is never captured here (the popup exposes that as an explicit choice).
+ */
+export async function importPresetFromEditor(env: {
+  sendMessage: (message: PopupMessage) => Promise<unknown>;
+  promptText: (message: string, defaultValue: string) => string | null;
+  savePreset: (input: unknown) => Promise<Preset>;
+  listPresets: () => Promise<ToolbarPreset[]>;
+}): Promise<ImportFromEditorResult> {
+  let reply: unknown;
+  try {
+    reply = await env.sendMessage({
+      source: POPUP_MESSAGE_SOURCE,
+      op: 'capture',
+      tabId: '',
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'capture request failed' };
+  }
+  const outer = reply as { ok?: boolean; error?: string; result?: unknown } | undefined;
+  if (!outer || outer.ok !== true) {
+    return { ok: false, error: outer?.error ?? 'no reply from the content script' };
+  }
+  const result = outer.result as
+    { source?: CapturedSource; siteOrigin?: string | null; warnings?: string[] } | undefined;
+  if (!result?.source) return { ok: false, error: 'unrecognized capture payload' };
+
+  const suggested = defaultImportName(result.source);
+  const answer = env.promptText('Name for the imported preset', suggested);
+  if (answer === null) return { ok: false, error: 'cancelled' };
+  const name = answer.trim();
+  if (name.length === 0) return { ok: false, error: 'a preset name is required' };
+
+  let built;
+  try {
+    built = buildPresetFromCapture(result.source, { name }, result.siteOrigin ?? null);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'the post could not be captured',
+    };
+  }
+
+  let existing: Set<string>;
+  try {
+    existing = new Set((await env.listPresets()).map((preset) => preset.id));
+  } catch {
+    existing = new Set<string>();
+  }
+  const id = nextAvailablePresetId(deriveIdFromName(built.preset.name), existing);
+  try {
+    await env.savePreset({ ...built.preset, id });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'the preset could not be saved',
+    };
+  }
+  return {
+    ok: true,
+    name: built.preset.name,
+    warnings: [...(result.warnings ?? []), ...built.warnings],
+  };
 }
 
 /** Render one `li > button` per preset; each button delegates apply by id. */
@@ -142,6 +238,27 @@ export async function initToolbar(env: ToolbarEnv): Promise<void> {
     if (statusElRef) statusElRef.textContent = message;
   });
 
+  /** Import the open editor's post as a preset, then refresh the toolbar list. */
+  async function runImport(): Promise<void> {
+    const result = await importPresetFromEditor({
+      sendMessage: (message) => env.sendMessage(message),
+      promptText:
+        env.promptText ??
+        ((message, defaultValue) => {
+          const prompt = (globalThis as { prompt?: typeof window.prompt }).prompt;
+          return typeof prompt === 'function' ? prompt(message, defaultValue) : defaultValue;
+        }),
+      savePreset: env.savePreset ?? ((input) => Promise.resolve(input as Preset)),
+      listPresets: () => env.listPresets(),
+    });
+    if (statusElRef) {
+      statusElRef.textContent = result.ok
+        ? `Saved preset “${result.name}”${result.warnings && result.warnings.length > 0 ? ` (${result.warnings.join('; ')})` : ''}.`
+        : `Import failed: ${result.error ?? 'unknown error'}`;
+    }
+    if (result.ok) await syncAndRender();
+  }
+
   async function syncAndRender(): Promise<void> {
     await controller.sync();
 
@@ -150,6 +267,9 @@ export async function initToolbar(env: ToolbarEnv): Promise<void> {
       mountedRoot = handle.root;
       listElRef = handle.listEl;
       statusElRef = handle.statusEl;
+      handle.importButton.addEventListener('click', () => {
+        void runImport();
+      });
       env.appendToBody(handle.root);
     } else if (!controller.isMounted() && mountedRoot) {
       env.removeElement(mountedRoot);
@@ -203,6 +323,8 @@ if (isBrowserContext()) {
         return chrome.runtime.sendMessage(message);
       },
       confirmPrompt: (question) => globalThis.confirm(question),
+      promptText: (message, defaultValue) => globalThis.prompt(message, defaultValue),
+      savePreset: (input) => import('./preset-store').then((m) => m.savePreset(input)),
       listPresets: () =>
         import('./preset-store').then((m) =>
           m.listPresets().then((presets) =>

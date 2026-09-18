@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildPopupRuntime,
   buildPromptAnswers,
+  defaultImportName,
+  IMPORT_CURRENT_VALUE,
+  renderImportOptions,
   initPopup,
   renderPromptPanel,
   renderPlanPanel,
@@ -41,6 +44,15 @@ function makeEl(): TestEl {
       this.listeners[type] = cb;
     },
   };
+  // Model the real DOM: assigning textContent replaces the element's children.
+  let text: string | null = null;
+  Object.defineProperty(el, 'textContent', {
+    get: () => text,
+    set: (value: string | null) => {
+      text = value;
+      el.children.length = 0;
+    },
+  });
   return el;
 }
 
@@ -78,6 +90,7 @@ describe('ui-popup-main — status summary', () => {
               error: 'UNSUPPORTED_CAPABILITY',
             } as never),
       loadPresets: async () => [],
+      savePreset: async (input: unknown) => input as never,
     };
     return createPopupController(runtime);
   }
@@ -443,5 +456,46 @@ describe('ui-popup-main — read-only plan preview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendMessage.mock.calls[3]?.[1]).toMatchObject({ op: 'undo' });
     expect(undoButton.attrs['disabled']).toBe('');
+  });
+});
+
+describe('renderImportOptions', () => {
+  const entries = [
+    { id: 'p1', title: 'First post', status: 'published', resourceType: 'post' as const },
+    { id: 'x1', title: 'About page', status: 'draft', resourceType: 'page' as const },
+  ];
+
+  it('offers the open editor first when the route has one', () => {
+    const select = makeEl();
+    renderImportOptions(select, entries, true, () => makeEl());
+
+    expect(select.children.map((child) => child.value)).toEqual([
+      IMPORT_CURRENT_VALUE,
+      'post:p1',
+      'page:x1',
+    ]);
+    expect(select.children[0]?.textContent).toBe('The post open in the editor');
+    expect(select.children[1]?.textContent).toBe('First post (post, published)');
+    // The editor entry is the default selection.
+    expect(select.value).toBe(IMPORT_CURRENT_VALUE);
+  });
+
+  it('lists only stored posts when there is no editor route', () => {
+    const select = makeEl();
+    renderImportOptions(select, entries, false, () => makeEl());
+    expect(select.children).toHaveLength(2);
+    expect(select.children[0]?.value).toBe('post:p1');
+  });
+
+  it('clears a previously rendered list instead of appending to it', () => {
+    const select = makeEl();
+    renderImportOptions(select, entries, true, () => makeEl());
+    renderImportOptions(select, [], true, () => makeEl());
+    expect(select.children).toHaveLength(1);
+  });
+
+  it('shares the default preset name with the capture module', () => {
+    expect(defaultImportName({ title: 'Hello', resourceType: 'post' })).toBe('Hello');
+    expect(defaultImportName({ title: '(Untitled)', resourceType: 'page' })).toBe('Page template');
   });
 });

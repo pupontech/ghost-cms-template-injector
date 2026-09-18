@@ -61,17 +61,30 @@ export interface RelayDeps {
 /** Shape the relay accepts and re-emits to the same-tab content script. */
 type RelayMessage = {
   source: string;
-  op: 'discover' | 'apply';
+  op: 'discover' | 'apply' | 'preview' | 'undo' | 'listPosts' | 'capture' | 'capturePost';
   tabId?: unknown;
   presetId?: unknown;
   promptAnswers?: unknown;
+  resourceType?: unknown;
+  resourceId?: unknown;
 };
+
+/** Operations the relay forwards to the content script (fixed allowlist). */
+const RELAY_OPERATIONS: ReadonlySet<string> = new Set([
+  'discover',
+  'preview',
+  'apply',
+  'undo',
+  'listPosts',
+  'capture',
+  'capturePost',
+]);
 
 function isRelayMessage(message: unknown): message is RelayMessage {
   if (typeof message !== 'object' || message === null) return false;
   const m = message as Record<string, unknown>;
   if (m['source'] !== POPUP_MESSAGE_SOURCE) return false;
-  if (m['op'] !== 'discover' && m['op'] !== 'apply') return false;
+  if (typeof m['op'] !== 'string' || !RELAY_OPERATIONS.has(m['op'])) return false;
   return true;
 }
 
@@ -138,9 +151,10 @@ export function createRuntimeMessageDispatcher(
  * permission is required: `chrome.tabs.sendMessage` only needs the message
  * host permission that is already granted.
  *
- * Security (C3/C8): only the fixed identity + `discover`/`apply` operations are
- * forwarded; every other message is rejected without forwarding. Unknown
- * senders (no tab) cannot be relayed.
+ * Security (C3/C8): only the fixed identity plus the fixed operation allowlist
+ * (`discover`/`preview`/`apply`/`undo` and the read-only import operations
+ * `listPosts`/`capture`/`capturePost`) are forwarded; every other message is
+ * rejected without forwarding. Unknown senders (no tab) cannot be relayed.
  */
 export function createRelay(deps: RelayDeps): {
   init: () => void;

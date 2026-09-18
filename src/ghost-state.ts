@@ -285,6 +285,36 @@ function validateActionValue(action: PlanAction): string | null {
   }
 }
 
+/**
+ * Compare feature-image values the way Ghost itself normalizes them.
+ *
+ * A preset may legitimately carry a portable `/content/…` path (that is what
+ * importing a post captures), but Ghost stores the value on the record as an
+ * absolute URL, so a strict `===` readback would report SAVE_FAILED for a write
+ * that in fact succeeded. Compare path (and origin, when both sides carry one)
+ * instead of the literal text.
+ */
+export function featureImageMatches(
+  actual: string | null | undefined,
+  expected: string | null | undefined,
+): boolean {
+  if (actual === expected) return true;
+  if (typeof actual !== 'string' || typeof expected !== 'string') return false;
+  const parts = (value: string): { origin: string | null; path: string } => {
+    if (value.startsWith('/')) return { origin: null, path: value };
+    try {
+      const url = new URL(value);
+      return { origin: url.origin, path: `${url.pathname}${url.search}` };
+    } catch {
+      return { origin: null, path: value };
+    }
+  };
+  const a = parts(actual);
+  const e = parts(expected);
+  if (a.path !== e.path) return false;
+  return a.origin === null || e.origin === null || a.origin === e.origin;
+}
+
 function appliedFieldsMatch(plan: ApplicationPlan, snapshot: GhostSnapshot): boolean {
   return plan.actions
     .filter((action) => action.status === 'apply')
@@ -299,7 +329,7 @@ function appliedFieldsMatch(plan: ApplicationPlan, snapshot: GhostSnapshot): boo
         case 'customTemplate':
           return snapshot.customTemplate === action.value;
         case 'featureImage':
-          return snapshot.featureImage === action.value;
+          return featureImageMatches(snapshot.featureImage, action.value as string);
         case 'tags':
           return (
             Array.isArray(action.value) &&

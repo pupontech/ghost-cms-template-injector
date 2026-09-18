@@ -301,3 +301,187 @@ describe('content-script feature image path (cached photo → upload → apply)'
     expect(surface.nativeSave).not.toHaveBeenCalled();
   });
 });
+
+describe('content-script import operations (existing posts → preset fields)', () => {
+  const BODY =
+    '{"root":{"children":[{"children":[{"text":"Hello","type":"extended-text","version":1}],"type":"paragraph","version":1}],"type":"root","version":1}}';
+
+  function fakeApi(overrides: Record<string, unknown> = {}) {
+    return {
+      listCapturableIndex: vi.fn(async (resource: string) => [
+        {
+          id: `${resource}-1`,
+          title: `${resource} one`,
+          status: 'published',
+          updatedAt: '2026-09-02T00:00:00.000Z',
+        },
+      ]),
+      getCapturableRecord: vi.fn(async () => ({
+        id: 'post-1',
+        title: 'Stored title',
+        custom_excerpt: 'Stored excerpt',
+        custom_template: 'custom-x.hbs',
+        feature_image: 'https://ghost.test/content/images/x.png',
+        lexical: BODY,
+        tags: [{ name: 'Alpha' }, { name: 'Beta' }],
+      })),
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    installChromeStorageStub();
+  });
+
+  it('lists posts and pages for the import picker', async () => {
+    const { cs } = makeIntegratedScript(makeSurface(), {
+      createApiClient: () => fakeApi() as never,
+    });
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'listPosts',
+    })) as { ok: boolean; result: { entries: Array<{ resourceType: string }> } };
+
+    expect(reply.ok).toBe(true);
+    expect(reply.result.entries.map((entry) => entry.resourceType).sort()).toEqual([
+      'page',
+      'post',
+    ]);
+  });
+
+  it('reads one saved post into capture fields through the Admin API', async () => {
+    const api = fakeApi();
+    const { cs } = makeIntegratedScript(makeSurface(), { createApiClient: () => api as never });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capturePost',
+      resourceType: 'post',
+      resourceId: 'post-1',
+    })) as {
+      ok: boolean;
+      result: { source: Record<string, unknown>; readFrom: string; siteOrigin: string };
+    };
+
+    expect(reply.ok).toBe(true);
+    expect(api.getCapturableRecord).toHaveBeenCalledWith('posts', 'post-1');
+    expect(reply.result.readFrom).toBe('admin-api');
+    expect(reply.result.source.title).toBe('Stored title');
+    expect(reply.result.source.tags).toEqual(['Alpha', 'Beta']);
+    expect(reply.result.siteOrigin).toBe('https://ghost.test');
+  });
+
+  it('prefers the stored record for a clean saved editor', async () => {
+    const api = fakeApi();
+    const { cs } = makeIntegratedScript(makeSurface(), { createApiClient: () => api as never });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capture',
+    })) as {
+      ok: boolean;
+      result: { source: Record<string, unknown>; readFrom: string; warnings: string[] };
+    };
+
+    expect(reply.ok).toBe(true);
+    expect(reply.result.readFrom).toBe('admin-api');
+    expect(reply.result.source.lexical).toBe(BODY);
+    expect(reply.result.warnings).toEqual([]);
+  });
+
+  it('uses the live body and warns while the editor has unsaved changes', async () => {
+    const api = fakeApi();
+    const surface = makeSurface({
+      isDirty: () => true,
+      getLexical: () => '{"root":{"children":[{"text":"live"}],"type":"root","version":1}}',
+    });
+    const { cs } = makeIntegratedScript(surface, { createApiClient: () => api as never });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capture',
+    })) as {
+      ok: boolean;
+      result: { source: { lexical: string; tags: string[] }; readFrom: string; warnings: string[] };
+    };
+
+    expect(reply.ok).toBe(true);
+    expect(reply.result.readFrom).toBe('live-editor');
+    expect(reply.result.source.lexical).toContain('live');
+    // Metadata still comes from the stored record (tags resolve there).
+    expect(reply.result.source.tags).toEqual(['Alpha', 'Beta']);
+    expect(reply.result.warnings.join(' ')).toMatch(/unsaved changes/);
+  });
+
+  it('captures an unsaved draft from the live record with a caution', async () => {
+    const surface = makeSurface({ getResourceId: () => null });
+    const { cs } = makeIntegratedScript(surface, { createApiClient: () => fakeApi() as never });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capture',
+    })) as { ok: boolean; result: { readFrom: string; warnings: string[] } };
+
+    expect(reply.ok).toBe(true);
+    expect(reply.result.readFrom).toBe('live-editor');
+    expect(reply.result.warnings.join(' ')).toMatch(/no server id/);
+  });
+
+  it('falls back to the live record when the API read fails', async () => {
+    const api = fakeApi({
+      getCapturableRecord: vi.fn(async () => {
+        throw new Error('ghost-api: GHOST_ERROR (503): unavailable');
+      }),
+    });
+    const { cs } = makeIntegratedScript(makeSurface(), { createApiClient: () => api as never });
+
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capture',
+    })) as { ok: boolean; result: { readFrom: string; warnings: string[] } };
+
+    expect(reply.ok).toBe(true);
+    expect(reply.result.readFrom).toBe('live-editor');
+    expect(reply.result.warnings.join(' ')).toMatch(/could not be re-read/);
+  });
+
+  it('reports a missing post and rejects malformed import requests', async () => {
+    const api = fakeApi({ getCapturableRecord: vi.fn(async () => null) });
+    const { cs } = makeIntegratedScript(makeSurface(), { createApiClient: () => api as never });
+
+    const missing = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capturePost',
+      resourceType: 'post',
+      resourceId: 'gone',
+    })) as { ok: boolean; error?: string };
+    expect(missing.ok).toBe(false);
+    expect(missing.error).toBe('CAPTURE_NOT_FOUND');
+
+    const badType = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capturePost',
+      resourceType: 'snippet',
+      resourceId: 'x',
+    })) as { ok: boolean; error?: string };
+    expect(badType.error).toBe('INVALID_RESOURCE_TYPE');
+
+    const badId = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'capturePost',
+      resourceType: 'post',
+      resourceId: '   ',
+    })) as { ok: boolean; error?: string };
+    expect(badId.error).toBe('MISSING_RESOURCE_ID');
+  });
+
+  it('reports import failure when the Admin API base cannot be derived', async () => {
+    const { cs } = makeIntegratedScript(makeSurface(), { getAdminApiBase: () => null });
+    const reply = (await cs.handleMessage({
+      source: 'ghost-cms-template-injector/popup/v1',
+      op: 'listPosts',
+    })) as { ok: boolean; error?: string };
+    expect(reply.ok).toBe(false);
+    expect(reply.error).toBe('NO_ADMIN_API_BASE');
+  });
+});

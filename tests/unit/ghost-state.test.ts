@@ -6,7 +6,7 @@ import type {
   GhostSnapshot,
   GhostStateAdapter,
 } from '../../src/ghost-state';
-import { createGhostStateAdapter } from '../../src/ghost-state';
+import { featureImageMatches, createGhostStateAdapter } from '../../src/ghost-state';
 
 /** Build a fully-capable surface with spyable no-op mutations. */
 function capableSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurface {
@@ -328,6 +328,35 @@ describe('adapter exposes a cohesive interface type', () => {
 });
 
 describe('last successful apply undo', () => {
+  it('accepts a save readback where Ghost made a written /content path absolute', async () => {
+    // Ghost normalizes `feature_image` to an absolute URL on the record, so a
+    // preset carrying the portable path must still be treated as applied.
+    const surface = capableSurface({
+      getFeatureImage: () => 'https://blog.example.com/content/images/hero.png',
+      verifyApplied: (plan: ApplicationPlan) =>
+        plan.actions
+          .filter((action) => action.status === 'apply')
+          .every((action) =>
+            featureImageMatches(surface.getFeatureImage(), action.value as string),
+          ),
+    });
+    const adapter = createGhostStateAdapter(surface);
+
+    const outcome = await adapter.apply(
+      readyPlan([
+        {
+          field: 'featureImage',
+          op: 'set',
+          status: 'apply',
+          value: '/content/images/hero.png',
+        },
+      ]),
+    );
+
+    expect(outcome.saved).toBe(true);
+    expect(surface.nativeSave).toHaveBeenCalledTimes(1);
+  });
+
   function statefulSurface() {
     const state = {
       excerpt: 'old excerpt',
@@ -528,5 +557,39 @@ describe('last successful apply undo', () => {
       ).rejects.toMatchObject({ code: 'STALE_EDITOR' });
       expect(state.featureImage).toBe('http://localhost:2368/content/images/user-picked.png');
     });
+  });
+});
+
+describe('featureImageMatches (Ghost normalizes written /content paths)', () => {
+  it('treats a portable path and the stored absolute URL as the same image', () => {
+    expect(
+      featureImageMatches(
+        'https://blog.example.com/content/images/2026/09/hero.png',
+        '/content/images/2026/09/hero.png',
+      ),
+    ).toBe(true);
+    expect(
+      featureImageMatches('/content/images/a.png', 'https://blog.example.com/content/images/a.png'),
+    ).toBe(true);
+  });
+
+  it('keeps the query string significant and different paths apart', () => {
+    expect(featureImageMatches('/content/a.png?v=2', 'https://h/content/a.png?v=3')).toBe(false);
+    expect(featureImageMatches('/content/a.png', 'https://h/content/b.png')).toBe(false);
+  });
+
+  it('does not match across origins when both sides are absolute', () => {
+    expect(
+      featureImageMatches(
+        'https://cdn.other/content/a.png',
+        'https://blog.example.com/content/a.png',
+      ),
+    ).toBe(false);
+  });
+
+  it('handles nulls and unparseable values', () => {
+    expect(featureImageMatches(null, null)).toBe(true);
+    expect(featureImageMatches(null, '/content/a.png')).toBe(false);
+    expect(featureImageMatches('not a url', 'not a url')).toBe(true);
   });
 });

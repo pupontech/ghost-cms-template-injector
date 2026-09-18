@@ -395,6 +395,62 @@ are not part of this field (possible follow-on using the same six-layer path).
 
 ---
 
+## 13. Post import — turning an existing post into a preset
+
+A preset can be authored two ways: by hand in the Options page, or by **importing an existing
+post/page**. The import path is a pure function plus a read-only API read; it never writes to Ghost.
+
+### Capture surface
+
+- `src/preset-capture.ts` (pure, no `chrome.*`): `sourceFromGhostRecord()` maps a Ghost Admin API
+  record (`custom_excerpt`, `custom_template`, `feature_image`, `lexical`, `tags[].name`) onto a
+  `CapturedSource`; `buildPresetFromCapture()` turns that source into a schema-valid `Preset` and
+  returns `{ preset, warnings }`.
+- Sources of a `CapturedSource`, both feeding the same builder:
+  - **stored record** — `GET <admin>/posts/<id>/?formats=lexical&include=tags` through the existing
+    `GhostAdminClient` (session cookie auth, same-origin from the Ghost Admin page). This is what the
+    picker (`listCapturableIndex` → `fields=id,title,slug,status,updated_at&order=updated_at desc`)
+    and any non-open post use.
+  - **live editor record** — the MAIN-world bridge snapshot, used when the editor has unsaved changes
+    or the draft has no server id yet. Metadata still prefers the stored record when one exists.
+- `src/preset-naming.ts` holds `deriveIdFromName`/`nextAvailablePresetId`, shared by the Options page
+  and the import surfaces so imported ids cannot collide with existing presets.
+
+### Field mapping and modes
+
+| Captured | Preset field | Mode | Rationale |
+| --- | --- | --- | --- |
+| `lexical` | `content.lexical` | `replace` | a template's body is the point of the preset |
+| `custom_excerpt` | `metadata.excerpt` | `only-if-empty` | never clobber a written excerpt by surprise |
+| `tags[].name` | `metadata.tags` | `merge` | adding tags should not remove the author's tags |
+| `custom_template` | `metadata.customTemplate` | `only-if-empty` | only when the value ends in `.hbs` (theme allowlist still gates the write) |
+| `feature_image` | `metadata.featureImage.url` | `only-if-empty` | stored as a portable same-origin `/content/…` path |
+| `title` | `metadata.title` | `replace` | **omitted by default** — a captured title would rename every post it is applied to |
+
+`ui.group` is set to `Imported` so imported presets are visually separated from hand-authored ones;
+`description` records the provenance (`Imported from post “…”`).
+
+### Fail-closed rules
+
+- The body must be structurally valid Lexical (`isSerializedLexical`) **and carry content**
+  (`isCapturableLexical`): a blank draft serializes to a valid document with one empty paragraph, and
+  capturing that would build a `replace` body that wipes the target post's body. Cards/images without
+  text still count as content.
+- An excerpt over the 300-character schema limit is trimmed, and the trim is reported as a warning.
+- A non-`.hbs` custom template or an unacceptable image URL is skipped with a warning rather than
+  written.
+- Every result passes `validatePreset` before it is stored, so an import can never persist a document
+  the store would later reject.
+
+### Write path
+
+The importing surface (popup controller, or the in-page toolbar) assigns a free id via
+`nextAvailablePresetId`, then stores the preset with the existing `savePreset`, so imported presets
+obey the same bounds (`MAX_IMPORT_BYTES`, 256 KB) as any other preset. When a preset imported from a
+post is applied, the feature image is written as a `/content/…` path; Ghost normalizes it to an
+absolute URL on the record, so the post-save readback compares the **resolved** form
+(`featureImageMatches`) rather than the literal text.
+
 ## Appendix A — Evidence pointers (from the inspected `main` branch)
 
 - `apps/ember-admin/app/models/snippet.js` — snippet fields: `name, mobiledoc, lexical, createdAtUTC, updatedAtUTC` (content only).

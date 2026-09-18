@@ -1,6 +1,22 @@
 # Release status — v0.3.0 owner acceptance pending
 
-## v0.4.0 (unreleased) — feature image
+## v0.5.0 (unreleased) — import a Ghost post as a preset
+
+Branch `feat/feature-image` (now carrying both features) adds post import on top of v0.4.0: the popup
+panel and the toolbar button turn an existing post/page into a preset (body, excerpt, tags, custom
+template, feature image; the title is opt-in), with the same schema validation, bounds, group, and
+fail-closed rules as hand-authored presets. The live proof in `evidence/post-import-live-proof.md`
+captures a real post through the production capture modules, and applies the captured preset to a
+different draft through the production planner and MAIN-world bridge, confirming every field by an
+authenticated Admin API readback. That proof also found and fixed a real defect: a `/content/…`
+feature image was written correctly but rejected by the post-save readback as `SAVE_FAILED` because
+Ghost stores the absolute URL — the comparison is now normalization-aware (`featureImageMatches`).
+
+Not yet claimed: the isolated content-script path (the optional host-permission consent bubble cannot
+be accepted by headless automation) and owner acceptance on a real Ghost installation. Run A24–A30
+from `docs/manual-test-matrix.md` before treating v0.5.0 as accepted.
+
+## v0.4.0 — feature image
 
 Branch `feat/feature-image` adds the preset feature image (post top image) with a local photo cache.
 `npm run verify` is green (34 files, 467 tests) and the real-browser + real-Ghost proof is recorded in

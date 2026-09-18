@@ -8,15 +8,15 @@ No cookie value, token, or credential appears below.
 
 ## Steps
 
-- **created a draft post through the Admin API** — `{"postId":"6aac3bd3f8fac2000160cdd3"}`
+- **created a draft post through the Admin API** — `{"postId":"6aad243c46fded00018ccefb"}`
 - **unpacked extension loaded with the production bundles** — `{"extensionId":"eaoleodmfffldgklpdhnoehfeknooghh"}`
 - **options page cached the picked photo in the extension** — `{"assetId":"img_1fa47d454cce914b","status":"Photo “preset-hero.png” cached in this browser (157 bytes).","previewVisible":true}`
 - **service worker returned the cached photo bytes over the asset channel** — `{"bytes":157,"expectedBytes":157,"bytesIdentical":true,"mimeType":"image/png"}`
 - **the stored preset references the photo by id — no image bytes in the document** — `{"featureImage":{"assetId":"img_1fa47d454cce914b","mode":"replace"},"documentBytes":283}`
-- **Ghost Admin editor loaded the live Ember record** — `{"postId":"6aac3bd3f8fac2000160cdd3"}`
-- **uploaded the photo through Ghost admin images/upload/ from the page origin** — `{"status":201,"url":"https://localhost:2443/content/images/2026/09/preset-hero-2.png"}`
-- **production MAIN-world bridge applied the feature image with one native save** — `{"saved":true,"resourceId":"6aac3bd3f8fac2000160cdd3"}`
-- **authenticated Admin API readback confirms feature_image persisted** — `{"postId":"6aac3bd3f8fac2000160cdd3","featureImage":"https://localhost:2443/content/images/2026/09/preset-hero-2.png","expected":"https://localhost:2443/content/images/2026/09/preset-hero-2.png"}`
+- **Ghost Admin editor loaded the live Ember record** — `{"postId":"6aad243c46fded00018ccefb"}`
+- **uploaded the photo through Ghost admin images/upload/ from the page origin** — `{"status":201,"url":"https://localhost:2443/content/images/2026/09/preset-hero-3.png"}`
+- **production MAIN-world bridge applied the feature image with one native save** — `{"saved":true,"resourceId":"6aad243c46fded00018ccefb"}`
+- **authenticated Admin API readback confirms feature_image persisted** — `{"postId":"6aad243c46fded00018ccefb","featureImage":"https://localhost:2443/content/images/2026/09/preset-hero-3.png","expected":"https://localhost:2443/content/images/2026/09/preset-hero-3.png"}`
 - **Ghost serves the uploaded photo** — `{"status":200,"bytes":"157","expectedBytes":157}`
 
 ## Storage-level corroboration (run separately against the same post)
@@ -24,7 +24,7 @@ No cookie value, token, or credential appears below.
 The harness cannot query the database itself; the value it wrote was confirmed outside it:
 
 ```bash
-docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select feature_image from posts where id='6aac3bd3f8fac2000160cdd3'\G"
+docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select feature_image from posts where id='6aad243c46fded00018ccefb'\G"
 docker exec ghost-local ls -l /var/lib/ghost/content/images/2026/09/
 ```
 
