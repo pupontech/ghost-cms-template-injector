@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  describeImportFailure,
   FROM_POST_CURRENT,
   importFromPost,
   loadFromPostSource,
@@ -234,6 +235,15 @@ describe('the options-page import reads through the service-worker transport', (
     expect(d.view.fromPost.captured ?? null).toBeNull();
   });
 
+  it('turns a stale-document failure into reload guidance, not a browser sentence', async () => {
+    const d = deps({
+      sendImportMessage: vi.fn().mockResolvedValue({ ok: false, error: 'NO_CONTENT_SCRIPT' }),
+    });
+    await refreshFromPostSources(d);
+    expect(d.view.fromPost.status.textContent).toMatch(/Reload the tab \(Ctrl\/Cmd\+R\)/);
+    expect(d.view.fromPost.status.textContent).not.toMatch(/Receiving end/);
+  });
+
   it('says what is missing when the page has no transport at all', async () => {
     const d = deps();
     await refreshFromPostSources(d);
@@ -247,7 +257,7 @@ describe('the options-page import reads through the service-worker transport', (
     d.view.fromPost.captured = CAPTURE as never;
     await loadFromPostSource(d);
     expect(d.view.fromPost.captured).toBeNull();
-    expect(d.view.fromPost.status.textContent).toMatch(/CAPTURE_NOT_FOUND/);
+    expect(d.view.fromPost.status.textContent).toMatch(/no longer exists on this site/);
   });
 });
 
@@ -296,5 +306,21 @@ describe('importFromPost', () => {
     d.view.fromPost.captured = CAPTURE as never;
     await importFromPost(d);
     expect(d.view.fromPost.status.textContent).toMatch(/storage full/);
+  });
+});
+
+describe('describeImportFailure', () => {
+  it('maps each known code to actionable text', () => {
+    expect(describeImportFailure('NO_GHOST_TAB')).toMatch(/Open your Ghost Admin/);
+    expect(describeImportFailure('NO_CONTENT_SCRIPT')).toMatch(/Reload the tab/);
+    expect(describeImportFailure('CAPTURE_NOT_FOUND')).toMatch(/no longer exists/);
+    expect(describeImportFailure('NO_ADMIN_API_BASE')).toMatch(/Admin API root/);
+    expect(describeImportFailure(undefined)).toMatch(/unknown reason/);
+  });
+
+  it('passes an unfamiliar reason through instead of hiding it', () => {
+    expect(describeImportFailure('GHOST_ERROR (503)')).toBe(
+      'Post list unavailable: GHOST_ERROR (503)',
+    );
   });
 });

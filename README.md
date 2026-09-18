@@ -143,6 +143,16 @@ Import is **fail-closed**, so a half-understood post never becomes a template:
   clean, so the captured body is the saved one; if the editor has unsaved changes it says so and uses
   the live body instead.
 
+### If the post list does not load
+
+- **"Open your Ghost Admin…"** — the section reads through a Ghost Admin tab you have granted. Open
+  your Ghost Admin (or run the Setup page for that site) and press **Refresh post list**.
+- **"This Ghost Admin tab is not running the extension yet."** — the extension now injects itself into
+  that tab and retries automatically, so this should resolve on the click. If it does not, reload the
+  Ghost Admin tab once (Ctrl/Cmd+R).
+- A very old tab can also be healed by closing and reopening it; the extension never reads a site you
+  have not granted.
+
 ### How the Options page reaches your site
 
 The Options page is an extension origin: it has no content script and cannot call your Admin API with

@@ -168,12 +168,22 @@ function buildCapabilityDeps(): CapabilityClientDeps {
   };
 }
 
+/**
+ * Repeat-injection guard. The service worker may inject this bundle into an
+ * already-open tab on demand (self-heal when the dynamic registration predates
+ * the document), so evaluating it twice in one document must not add a second
+ * runtime listener that would answer every message twice.
+ */
+const ACTIVE_FLAG = '__gctiContentScriptActive';
+
 if (
+  (globalThis as Record<string, unknown>)[ACTIVE_FLAG] !== true &&
   deps.isGhostAdminPage() &&
   typeof chrome !== 'undefined' &&
   chrome.storage?.onChanged &&
   typeof chrome.storage.local.get === 'function'
 ) {
+  (globalThis as Record<string, unknown>)[ACTIVE_FLAG] = true;
   const client = createCapabilityClient(buildCapabilityDeps());
   client.activateForDocument();
   client.watchRevocation();

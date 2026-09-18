@@ -1,9 +1,11 @@
 import {
   createBackground,
+  createContentScriptHealer,
   createOptionsCaptureHandler,
   createRelay,
   createRuntimeMessageDispatcher,
 } from './background';
+import { CONTENT_SCRIPT_FILES, MAIN_WORLD_BRIDGE_FILE } from './host-permission';
 import {
   createImageAssetStore,
   createIndexedDbAssetBackend,
@@ -54,8 +56,38 @@ const relay = createRelay(relayDeps);
 // same read-only operations the popup used. `chrome.tabs.query({})` needs no
 // `tabs` permission: `url` is only exposed for hosts the user has granted, so
 // the reachable tab set is exactly the granted one.
+/**
+ * On-demand injection for a Ghost tab that predates the dynamic registration
+ * (e.g. the tab stayed open across an extension reload). The bundles guard
+ * against a second evaluation, so probing first keeps this idempotent.
+ */
+const ensureContentScript = createContentScriptHealer({
+  api: {
+    probe: async (tabId) => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () =>
+          (globalThis as { __gctiContentScriptActive?: boolean }).__gctiContentScriptActive ===
+          true,
+      });
+      return result?.result === true;
+    },
+    injectIsolated: async (tabId) => {
+      await chrome.scripting.executeScript({ target: { tabId }, files: [...CONTENT_SCRIPT_FILES] });
+    },
+    injectMain: async (tabId) => {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [MAIN_WORLD_BRIDGE_FILE],
+        world: 'MAIN',
+      });
+    },
+  },
+});
+
 const handleOptionsCapture = createOptionsCaptureHandler({
   extensionId: chrome.runtime.id,
+  ensureContentScript,
   queryTabs: () =>
     chrome.tabs.query({}).then((tabs) => tabs.map((tab) => ({ id: tab.id, url: tab.url }))),
   sendTabMessage: (tabId: number, message: unknown) => chrome.tabs.sendMessage(tabId, message),

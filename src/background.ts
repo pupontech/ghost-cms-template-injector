@@ -114,9 +114,61 @@ function isExtensionPageSender(sender: CaptureSender, extensionId?: string): boo
   return url.startsWith('chrome-extension://');
 }
 
+/**
+ * Chrome's "no receiver" errors, as thrown by `chrome.tabs.sendMessage` when the
+ * page has no (or a stale) content script. Mapped to a stable code so the UI can
+ * explain what to do instead of showing a browser-level sentence.
+ */
+const NO_RECEIVER_PATTERN = /Receiving end does not exist|Could not establish connection/i;
+
+export interface ExecuteScriptApi {
+  /** Run a function in the tab and return its result (used to probe). */
+  probe: (tabId: number) => Promise<boolean>;
+  /** Inject the isolated content scripts into the tab. */
+  injectIsolated: (tabId: number) => Promise<void>;
+  /** Inject the MAIN-world bridge into the tab. */
+  injectMain: (tabId: number) => Promise<void>;
+}
+
+/**
+ * Self-heal for a Ghost tab that predates the dynamic registration (or was
+ * loaded before the extension was reloaded): the registration only injects into
+ * documents loaded after it exists, so an already-open tab has no receiver.
+ * Probing first keeps this idempotent — the bundles themselves also guard against
+ * a second evaluation in the same document.
+ */
+export function createContentScriptHealer(deps: {
+  api: ExecuteScriptApi;
+  /** Let the injected isolated script finish its bridge activation handshake. */
+  settleMs?: number;
+  wait?: (ms: number) => Promise<void>;
+}): (tabId: number) => Promise<'present' | 'injected' | 'unavailable'> {
+  const settleMs = deps.settleMs ?? 400;
+  const wait =
+    deps.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  return async (tabId) => {
+    try {
+      if (await deps.api.probe(tabId)) return 'present';
+      await deps.api.injectIsolated(tabId);
+      // The MAIN bridge must exist before the isolated script's activation
+      // handshake can succeed; the isolated script polls for it briefly.
+      await deps.api.injectMain(tabId).catch(() => undefined);
+      if (settleMs > 0) await wait(settleMs);
+      return 'injected';
+    } catch {
+      return 'unavailable';
+    }
+  };
+}
+
 export interface OptionsCaptureDeps {
   /** This extension's id, used to reject a sender that is not one of its pages. */
   extensionId?: string;
+  /**
+   * Make sure the target tab has a live content script before the read.
+   * Best-effort: a failure only means the send below reports the reason.
+   */
+  ensureContentScript?: (tabId: number) => Promise<'present' | 'injected' | 'unavailable'>;
   /**
    * Tabs visible to the extension. `url` is only populated for tabs whose host
    * the user has granted (the extension declares no `tabs` permission on
@@ -192,14 +244,30 @@ export function createOptionsCaptureHandler(
         sendResponse({ ok: false, error: 'NO_GHOST_TAB' });
         return;
       }
-      try {
-        const reply = await deps.sendTabMessage(
-          tab.id,
-          toContentScriptMessage(message as OptionsCaptureMessage),
-        );
-        sendResponse(reply);
-      } catch (err) {
-        sendResponse({ ok: false, error: err instanceof Error ? err.message : 'read failed' });
+      const forwarded = toContentScriptMessage(message as OptionsCaptureMessage);
+      /**
+       * One read, with a single self-heal retry: a Ghost tab loaded before the
+       * dynamic registration (or before the extension was reloaded) has no
+       * receiver, and a retry after injecting the bundles turns that dead end
+       * into a working read. Read-only operations, so a retry is always safe.
+       */
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const reply = await deps.sendTabMessage(tab.id, forwarded);
+          sendResponse(reply);
+          return;
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'read failed';
+          const stale = NO_RECEIVER_PATTERN.test(reason);
+          if (attempt === 0 && stale && deps.ensureContentScript) {
+            const healed = await deps
+              .ensureContentScript(tab.id)
+              .catch((): 'unavailable' => 'unavailable');
+            if (healed === 'injected') continue;
+          }
+          sendResponse({ ok: false, error: stale ? 'NO_CONTENT_SCRIPT' : reason });
+          return;
+        }
       }
     })();
     return true;

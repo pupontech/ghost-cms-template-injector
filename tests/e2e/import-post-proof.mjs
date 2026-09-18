@@ -647,6 +647,46 @@ await evaluate(
   false,
 );
 
+// Double-injection guard (real browser): the service worker may inject the
+// bundles on demand for a tab that predates the registration, so a second
+// evaluation of the SAME bundle in one document must not install a second
+// responder — otherwise every request (including an apply) would run twice.
+await evaluate(bridgeSource, editor.sessionId, false);
+await evaluate(bridgeSource, editor.sessionId, false);
+const guardProbe = await evaluate(
+  `(async () => {
+     // The protocol validates the nonce as a UUID (isBridgeRequest).
+     const nonce = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+     let replies = 0;
+     const onMessage = (event) => {
+       const data = event.data;
+       if (!data || data.nonce !== nonce || data.op !== undefined) return;
+       replies += 1;
+     };
+     window.addEventListener('message', onMessage);
+     window.postMessage({
+       v: 1,
+       source: 'ghost-cms-template-injector/page-bridge/v1',
+       nonce,
+       op: 'discover',
+       payload: {},
+     }, window.location.origin);
+     await new Promise((r) => setTimeout(r, 1200));
+     window.removeEventListener('message', onMessage);
+     return JSON.stringify({
+       installedFlag: window.__gctiMainBridgeInstalled === true,
+       replies,
+     });
+   })()`,
+  editor.sessionId,
+);
+const guard = JSON.parse(guardProbe ?? '{}');
+evidence.doubleInjectionGuard = guard;
+if (guard.installedFlag !== true || guard.replies !== 1) {
+  fail(`injecting the bridge twice was not a no-op: ${guardProbe}`);
+}
+record('installing the MAIN bundle three times still answers each request once', guard);
+
 let nonceSeq = 0;
 /** Send one plan to the production bridge and return its reply. */
 async function sendPlan(planPayload, sessionId) {

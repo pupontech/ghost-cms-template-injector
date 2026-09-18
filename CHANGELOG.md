@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.2 — unreleased
+
+### Fixed
+
+- **"Post list unavailable: Could not establish connection. Receiving end does not exist."** A Ghost
+  Admin tab that was already open when the extension was enabled or reloaded has no content script: the
+  dynamic registration only injects into documents loaded after it exists. The service worker now
+  self-heals on exactly that failure — it injects the isolated content script and the MAIN-world bridge
+  into the granted tab and retries the read once — so the import works without reloading the tab. Both
+  bundles carry an installation flag, so a repeat injection is a no-op (verified in a real browser:
+  installing the MAIN bundle three times still answers each request exactly once).
+- Import failures now explain themselves: a stale tab tells you to reload it (or enable site access
+  from the Setup page), a missing Ghost tab tells you to open one, and an unknown reason is passed
+  through rather than replaced with Chrome's wording.
+
 ## 0.5.1 — unreleased
 
 ### Changed

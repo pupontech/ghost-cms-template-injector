@@ -614,6 +614,29 @@ function fromPostSelection(
   return { resourceType, id };
 }
 
+/**
+ * Turn an import failure code into something the owner can act on. The service
+ * worker cannot reach a document that was loaded before the extension was
+ * enabled/reloaded, and Chrome's own wording for that ("Could not establish
+ * connection. Receiving end does not exist.") explains nothing.
+ */
+export function describeImportFailure(error: string | undefined): string {
+  switch (error) {
+    case 'NO_GHOST_TAB':
+      return 'No Ghost Admin tab found. Open your Ghost Admin (and enable the extension for it), then press Refresh post list.';
+    case 'NO_CONTENT_SCRIPT':
+      return 'This Ghost Admin tab is not running the extension yet. Reload the tab (Ctrl/Cmd+R), then press Refresh post list — or enable site access from the Setup page.';
+    case 'CAPTURE_NOT_FOUND':
+      return 'That post no longer exists on this site. Press Refresh post list and pick another.';
+    case 'NO_ADMIN_API_BASE':
+      return 'The Admin API root could not be derived for this tab. Open the post list in Ghost Admin and try again.';
+    case undefined:
+      return 'Import failed for an unknown reason.';
+    default:
+      return `Post list unavailable: ${error}`;
+  }
+}
+
 /** Populate the picker from a granted Ghost Admin tab. */
 export async function refreshFromPostSources(deps: OptionsControllerDeps): Promise<void> {
   const { view } = deps;
@@ -632,13 +655,7 @@ export async function refreshFromPostSources(deps: OptionsControllerDeps): Promi
   const listed = await listCapturable(deps.sendImportMessage);
   if (!listed.ok) {
     renderFromPostSources(section, [], false, (tag) => view.document.createElement(tag));
-    setFromPostStatus(
-      view,
-      listed.error === 'NO_GHOST_TAB'
-        ? 'No Ghost Admin tab found. Open your Ghost Admin (and enable the extension for it), then press Refresh post list.'
-        : `Post list unavailable: ${listed.error ?? 'unknown error'}`,
-      'error',
-    );
+    setFromPostStatus(view, describeImportFailure(listed.error), 'error');
     return;
   }
   renderFromPostSources(section, listed.entries, true, (tag) => view.document.createElement(tag));
@@ -658,7 +675,7 @@ export async function loadFromPostSource(deps: OptionsControllerDeps): Promise<v
     : await captureCurrent(send);
   if (!read.ok || !read.outcome) {
     section.captured = null;
-    setFromPostStatus(view, `Import failed: ${read.error ?? 'unknown error'}`, 'error');
+    setFromPostStatus(view, describeImportFailure(read.error), 'error');
     return;
   }
   section.captured = read.outcome;
