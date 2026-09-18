@@ -1,4 +1,17 @@
-import { createBackground, createRelay } from './background';
+import {
+  createBackground,
+  createContentScriptHealer,
+  createOptionsCaptureHandler,
+  createRelay,
+  createRuntimeMessageDispatcher,
+} from './background';
+import { CONTENT_SCRIPT_FILES, MAIN_WORLD_BRIDGE_FILE } from './host-permission';
+import {
+  createImageAssetStore,
+  createIndexedDbAssetBackend,
+  type ImageAssetBackend,
+  type ImageAssetStore,
+} from './image-asset-store';
 import type { PopupMessage } from './ui-popup';
 
 const deps = {
@@ -25,17 +38,99 @@ createBackground(deps).init();
 // sendResponse (C3/C8: only the fixed identity + discover/apply are forwarded;
 // unknown senders without a tab cannot be relayed).
 const relayDeps = {
-  addRuntimeMessageListener: (
-    cb: (
-      message: unknown,
-      sender: { tab?: { id?: number } },
-      sendResponse: (response: unknown) => void,
-    ) => boolean,
-  ) => {
-    chrome.runtime.onMessage.addListener(cb as never);
+  addRuntimeMessageListener: () => {
+    /* registered below by the single dispatcher */
   },
   sendTabMessage: (tabId: number, message: PopupMessage): Promise<unknown> =>
     chrome.tabs.sendMessage(tabId, message),
 };
 
-createRelay(relayDeps).init();
+const relay = createRelay(relayDeps);
+
+/* ------------------------------------------------------------------ */
+/* Options-page capture routing                                        */
+/* ------------------------------------------------------------------ */
+// The import UI lives in the Options page, which has no content script of its
+// own. It asks this worker for the post list / a capture; the worker picks the
+// Ghost Admin tab the user has granted (an editor route first) and forwards the
+// same read-only operations the popup used. `chrome.tabs.query({})` needs no
+// `tabs` permission: `url` is only exposed for hosts the user has granted, so
+// the reachable tab set is exactly the granted one.
+/**
+ * On-demand injection for a Ghost tab that predates the dynamic registration
+ * (e.g. the tab stayed open across an extension reload). The bundles guard
+ * against a second evaluation, so probing first keeps this idempotent.
+ */
+const ensureContentScript = createContentScriptHealer({
+  api: {
+    probe: async (tabId) => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () =>
+          (globalThis as { __gctiContentScriptActive?: boolean }).__gctiContentScriptActive ===
+          true,
+      });
+      return result?.result === true;
+    },
+    injectIsolated: async (tabId) => {
+      await chrome.scripting.executeScript({ target: { tabId }, files: [...CONTENT_SCRIPT_FILES] });
+    },
+    injectMain: async (tabId) => {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [MAIN_WORLD_BRIDGE_FILE],
+        world: 'MAIN',
+      });
+    },
+  },
+});
+
+const handleOptionsCapture = createOptionsCaptureHandler({
+  extensionId: chrome.runtime.id,
+  ensureContentScript,
+  queryTabs: () =>
+    chrome.tabs.query({}).then((tabs) => tabs.map((tab) => ({ id: tab.id, url: tab.url }))),
+  sendTabMessage: (tabId: number, message: unknown) => chrome.tabs.sendMessage(tabId, message),
+});
+
+/* ------------------------------------------------------------------ */
+/* Feature-image asset store (extension origin)                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The service worker owns the image asset database. If IndexedDB cannot be
+ * opened (rare, but it would otherwise throw at import time and kill the whole
+ * worker), fall back to a store that fails every read: a preset carrying a
+ * cached photo then blocks with an explicit reason instead of applying without
+ * its image — and the popup/toolbar relay keeps working.
+ */
+function buildAssetStore(): ImageAssetStore {
+  try {
+    return createImageAssetStore(createIndexedDbAssetBackend());
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error('asset store unavailable');
+    const unavailable: ImageAssetBackend = {
+      get: () => Promise.reject(failure),
+      put: () => Promise.reject(failure),
+      remove: () => Promise.reject(failure),
+      keys: () => Promise.reject(failure),
+    };
+    return createImageAssetStore(unavailable);
+  }
+}
+
+/**
+ * ONE runtime message listener for the worker: image-asset requests (from the
+ * content script, which cannot reach the extension's IndexedDB) are answered
+ * directly; options-page capture requests are routed to a granted Ghost tab;
+ * everything else goes to the popup/toolbar relay.
+ */
+const dispatch = createRuntimeMessageDispatcher({
+  assetStore: buildAssetStore(),
+  optionsCapture: { handleMessage: handleOptionsCapture },
+  relay,
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>
+  dispatch(message, sender as { tab?: { id?: number } }, sendResponse),
+);

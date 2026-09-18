@@ -12,6 +12,7 @@ import {
   createPlanContext,
   planPresetApplication,
   resolvePrompts,
+  shouldResolveFeatureImage,
 } from '../../src/preset-engine';
 import { validatePreset } from '../../src/preset-schema';
 
@@ -438,5 +439,132 @@ describe('resolvePrompts — turning needs-prompt into an executable plan', () =
       createPlanContext(),
     );
     expect(() => resolvePrompts(ready, { body: true })).toThrow();
+  });
+});
+
+describe('planPresetApplication — feature image (the editor top image)', () => {
+  const RESOLVED = 'http://localhost:2368/content/images/2026/09/hero.png';
+  const base = (featureImage: Record<string, unknown>): Record<string, unknown> =>
+    basePreset({ metadata: { featureImage } });
+
+  const planWith = (
+    featureImage: Record<string, unknown>,
+    snapshotOverrides: Parameters<typeof createEditorSnapshot>[0] = {},
+    contextOverrides: Parameters<typeof createPlanContext>[0] = {},
+  ) =>
+    planPresetApplication(
+      validatePreset(base(featureImage)),
+      createEditorSnapshot(snapshotOverrides),
+      createPlanContext(contextOverrides),
+    );
+
+  it('plans an apply action carrying the resolved Ghost URL', () => {
+    const plan = planWith(
+      { mode: 'replace', assetId: 'img_0123456789abcdef' },
+      {},
+      { featureImageUrl: RESOLVED },
+    );
+    expect(plan.status).toBe('ready');
+    const action = plan.actions.find((a) => a.field === 'featureImage');
+    expect(action).toMatchObject({ op: 'set', status: 'apply', value: RESOLVED });
+  });
+
+  it('skips when the post already has a feature image and mode is only-if-empty', () => {
+    const plan = planWith(
+      { mode: 'only-if-empty', url: '/content/images/a.png' },
+      { featureImage: 'http://localhost:2368/content/images/existing.png' },
+      { featureImageUrl: RESOLVED },
+    );
+    const action = plan.actions.find((a) => a.field === 'featureImage');
+    expect(action?.status).toBe('skip');
+    expect(action?.reason).toMatch(/already has a feature image/i);
+  });
+
+  it('applies only-if-empty when the post has no feature image', () => {
+    const plan = planWith(
+      { mode: 'only-if-empty', url: '/content/images/a.png' },
+      { featureImage: null },
+      { featureImageUrl: RESOLVED },
+    );
+    expect(plan.actions.find((a) => a.field === 'featureImage')?.status).toBe('apply');
+  });
+
+  it('asks before changing an existing top image in prompt mode, then applies on acceptance', () => {
+    const plan = planWith(
+      { mode: 'prompt', assetId: 'img_0123456789abcdef' },
+      {},
+      { featureImageUrl: RESOLVED },
+    );
+    expect(plan.status).toBe('needs-prompt');
+    const action = plan.actions.find((a) => a.field === 'featureImage');
+    expect(action).toMatchObject({ status: 'prompt', value: RESOLVED });
+    expect(action?.question).toMatch(/feature image/i);
+
+    const accepted = resolvePrompts(plan, { featureImage: true });
+    expect(accepted.actions.find((a) => a.field === 'featureImage')).toMatchObject({
+      op: 'set',
+      status: 'apply',
+      value: RESOLVED,
+    });
+    const declined = resolvePrompts(plan, { featureImage: false });
+    expect(declined.actions.find((a) => a.field === 'featureImage')?.status).toBe('skip');
+  });
+
+  it('blocks the whole plan when a cached photo could not be resolved to a URL', () => {
+    const plan = planWith({ mode: 'replace', assetId: 'img_0123456789abcdef' });
+
+    expect(plan.status).toBe('blocked');
+    expect(plan.actions).toEqual([]);
+    expect(plan.problems.join(' ')).toMatch(/metadata\.featureImage/);
+    expect(plan.problems.join(' ')).toMatch(/could not be resolved/i);
+  });
+
+  it('never invents a value from a non-image resolved string', () => {
+    const plan = planWith(
+      { mode: 'replace', assetId: 'img_0123456789abcdef' },
+      {},
+      {
+        featureImageUrl: 'javascript:alert(1)',
+      },
+    );
+    expect(plan.status).toBe('blocked');
+  });
+
+  it('shouldResolveFeatureImage skips uploads the plan could never use', () => {
+    const snapshotWithImage = createEditorSnapshot({
+      featureImage: 'http://localhost:2368/content/images/existing.png',
+    });
+    const emptySnapshot = createEditorSnapshot();
+
+    // A URL-carrying preset always resolves (normalization only, no upload).
+    expect(
+      shouldResolveFeatureImage({ mode: 'replace', url: '/content/images/a.png' }, emptySnapshot),
+    ).toBe(true);
+    // Cached photo + replace → resolve (upload).
+    expect(
+      shouldResolveFeatureImage(
+        { mode: 'replace', assetId: 'img_0123456789abcdef' },
+        emptySnapshot,
+      ),
+    ).toBe(true);
+    // only-if-empty on a post that already has an image → nothing to do.
+    expect(
+      shouldResolveFeatureImage(
+        { mode: 'only-if-empty', assetId: 'img_0123456789abcdef' },
+        snapshotWithImage,
+      ),
+    ).toBe(false);
+    // prompt → only once the owner accepted.
+    expect(
+      shouldResolveFeatureImage({ mode: 'prompt', assetId: 'img_0123456789abcdef' }, emptySnapshot),
+    ).toBe(false);
+    expect(
+      shouldResolveFeatureImage(
+        { mode: 'prompt', assetId: 'img_0123456789abcdef' },
+        emptySnapshot,
+        { featureImage: true },
+      ),
+    ).toBe(true);
+    expect(shouldResolveFeatureImage(undefined, emptySnapshot)).toBe(false);
   });
 });

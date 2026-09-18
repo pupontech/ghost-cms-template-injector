@@ -23,13 +23,24 @@
 import type { DetectedRoute } from './route-detection';
 import { detectEditorUrl } from './route-detection';
 import type { Preset } from './preset-schema';
+import { POPUP_MESSAGE_SOURCE } from './message-sources';
 import type { ApplicationPlan } from './preset-engine';
 
 /** Identity stamped on every popup→content message and accepted on replies. */
-export const POPUP_MESSAGE_SOURCE = 'ghost-cms-template-injector/popup/v1';
+export { POPUP_MESSAGE_SOURCE };
 
 /** Operations the popup is permitted to send to the content script. */
-export type PopupOperation = 'discover' | 'preview' | 'apply' | 'undo';
+export type PopupOperation =
+  | 'discover'
+  | 'preview'
+  | 'apply'
+  | 'undo'
+  /** Import picker: ids + titles of this installation's posts/pages. */
+  | 'listPosts'
+  /** Capture the post/page open in the editor. */
+  | 'capture'
+  /** Capture one saved post/page by id. */
+  | 'capturePost';
 
 export interface PopupMessage {
   source: string;
@@ -38,6 +49,9 @@ export interface PopupMessage {
   tabId: string;
   presetId?: string;
   promptAnswers?: Partial<Record<string, boolean>>;
+  /** Import target for `capturePost`. */
+  resourceType?: 'post' | 'page';
+  resourceId?: string;
 }
 
 /** Capability report returned by the content script's discover probe. */
@@ -90,11 +104,25 @@ export interface PopupRuntime {
   sendMessage: (tabId: string, message: PopupMessage) => Promise<ContentReply | undefined>;
   /** Load validated presets (bundled seeds + chrome.storage.local overrides). */
   loadPresets: () => Promise<Preset[]>;
+  /** Validate + persist a preset (same repository the options page uses). */
+  savePreset: (input: unknown) => Promise<Preset>;
+  /**
+   * Open the Options page on its import section. The popup deliberately owns no
+   * import UI of its own: one button hands the owner to the pane where the
+   * source picker, name, and status live.
+   */
+  openOptionsImport?: () => Promise<void> | void;
 }
 
 export interface PopupController {
   refresh: (route: DetectedRoute) => Promise<PopupState>;
   loadPresets: () => Promise<Preset[]>;
+  /**
+   * Open the Options page on its import section. The popup deliberately owns no
+   * import UI of its own: one button hands the owner to the pane where the
+   * source picker, name, and status live.
+   */
+  openImport: () => Promise<void>;
   applyPreset: (
     presetId: string,
     promptAnswers?: Partial<Record<string, boolean>>,
@@ -146,7 +174,14 @@ function validateReply(reply: ContentReply | undefined): {
   return { ok: false, error: reply.error ?? 'UNKNOWN_ERROR' };
 }
 
-const PREVIEW_FIELDS = new Set(['body', 'title', 'excerpt', 'customTemplate', 'tags']);
+const PREVIEW_FIELDS = new Set([
+  'body',
+  'title',
+  'excerpt',
+  'customTemplate',
+  'tags',
+  'featureImage',
+]);
 
 function asApplicationPlan(value: unknown): ApplicationPlan | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -361,9 +396,27 @@ export function createPopupController(runtime: PopupRuntime): PopupController {
     return { ok: checked.ok, delegated: checked.ok, error: checked.error };
   }
 
+  /** Hand the owner to the Options page's import pane (single popup action). */
+  async function openImport(): Promise<void> {
+    if (!runtime.openOptionsImport) return;
+    try {
+      await runtime.openOptionsImport();
+    } catch {
+      /* the click is a convenience; a failed open must not throw into the UI */
+    }
+  }
+
   function lastStatus(): PopupState {
     return last;
   }
 
-  return { refresh, loadPresets, applyPreset, previewPreset, undoLastApply, lastStatus };
+  return {
+    refresh,
+    loadPresets,
+    applyPreset,
+    previewPreset,
+    undoLastApply,
+    openImport,
+    lastStatus,
+  };
 }

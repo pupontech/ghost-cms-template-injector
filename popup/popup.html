@@ -5,18 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ghost-CMS Template Injector</title>
     <style>
+      /* Design tokens are shared with options/options.html: the popup is the
+         same surface family, so the palette, type scale, radii and control
+         styling must not drift (see the UI-parity contract test). */
       :root {
+        --bg: #f5f5f7;
         --surface: #ffffff;
+        --surface-2: #fbfbfd;
         --text: #1d1d1f;
         --text-2: #6e6e73;
         --text-3: #a1a1a6;
         --line: rgba(0, 0, 0, 0.08);
         --accent: #0a84ff;
         --danger: #ff3b30;
+        --radius: 10px;
       }
       @media (prefers-color-scheme: dark) {
         :root {
+          --bg: #161617;
           --surface: #232325;
+          --surface-2: #1c1c1e;
           --text: #f5f5f7;
           --text-2: #98989d;
           --text-3: #636366;
@@ -30,7 +38,7 @@
       }
       body {
         margin: 0;
-        background: var(--surface);
+        background: var(--bg);
         color: var(--text);
         font-family:
           ui-sans-serif,
@@ -40,128 +48,182 @@
           system-ui,
           sans-serif;
         font-size: 13px;
-        line-height: 1.4;
+        line-height: 1.45;
         -webkit-font-smoothing: antialiased;
-        min-width: 280px;
-        max-width: 320px;
+        width: 340px;
         padding: 16px;
       }
+
+      /* ---- header ---- */
+      header {
+        margin-bottom: 18px;
+      }
       h1 {
-        font-size: 14px;
+        font-size: 16px;
         font-weight: 700;
-        letter-spacing: -0.01em;
-        margin: 0 0 2px;
+        letter-spacing: -0.02em;
+        margin: 0 0 3px;
       }
       .subtitle {
-        margin: 0 0 12px;
-        color: var(--text-3);
-        font-size: 11.5px;
-      }
-      #gcti-status {
-        font-size: 12px;
         color: var(--text-2);
-        background: color-mix(in srgb, var(--text) 5%, transparent);
-        border-radius: 8px;
-        padding: 7px 10px;
-        margin: 0 0 12px;
-        min-height: 16px;
+        font-size: 12px;
+        margin: 0;
+      }
+
+      /* ---- sections ---- */
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-2);
+        margin: 18px 0 8px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      section[hidden] {
+        display: none;
+      }
+
+      /* ---- status ---- */
+      #gcti-status {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 9px 12px;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text-2);
+        margin: 0;
+        min-height: 36px;
       }
       #gcti-status[role='alert'] {
         color: var(--danger);
       }
+
+      /* ---- preset list ---- */
       ul#gcti-preset-list {
         list-style: none;
-        margin: 0 0 4px;
+        margin: 0;
         padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
+        overflow: hidden;
+      }
+      ul#gcti-preset-list li {
+        padding: 10px 12px;
+        color: var(--text-3);
+        font-size: 12.5px;
+      }
+      ul#gcti-preset-list li + li {
+        border-top: 1px solid var(--line);
       }
       #gcti-preset-list button {
         width: 100%;
         text-align: left;
         font: inherit;
+        font-size: 13px;
         font-weight: 500;
-        padding: 9px 11px;
+        padding: 0;
         border: none;
-        border-radius: 8px;
-        background: color-mix(in srgb, var(--text) 5%, transparent);
+        border-radius: 0;
+        background: transparent;
         color: inherit;
         cursor: pointer;
+      }
+      #gcti-preset-list li:has(button) {
+        padding: 0;
+      }
+      #gcti-preset-list button {
+        padding: 10px 12px;
         transition: background-color 120ms ease;
       }
       #gcti-preset-list button:hover:not(:disabled) {
-        background: color-mix(in srgb, var(--accent) 14%, transparent);
-      }
-      #gcti-preset-list button:active:not(:disabled) {
-        background: color-mix(in srgb, var(--accent) 22%, transparent);
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
       }
       #gcti-preset-list button:disabled {
-        opacity: 0.4;
+        opacity: 0.45;
         cursor: default;
       }
-      #gcti-prompt-panel,
-      #gcti-plan-panel {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 10px;
-        margin: 10px 0 4px;
+
+      /* ---- panels ---- */
+      .panel {
+        padding: 12px;
+        margin-top: 12px;
       }
-      #gcti-prompt-panel p,
-      #gcti-plan-panel p {
-        margin: 0 0 6px;
+      .panel p {
+        margin: 0 0 8px;
+        font-size: 12.5px;
         font-weight: 600;
       }
-      #gcti-prompt-list,
-      #gcti-plan-list {
-        margin: 0 0 8px;
+      .panel ul {
+        margin: 0 0 10px;
         padding-left: 18px;
         color: var(--text-2);
+        font-size: 12.5px;
       }
-      .gcti-prompt-actions,
-      .gcti-plan-actions {
+
+      /* ---- buttons ---- */
+      .actions {
         display: flex;
-        gap: 6px;
+        gap: 8px;
+        margin-top: 12px;
       }
-      .gcti-prompt-actions button,
-      .gcti-plan-actions button {
-        flex: 1;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 6px;
+      button {
         font: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
         cursor: pointer;
+        border-radius: 8px;
+        padding: 7px 14px;
+        transition:
+          filter 120ms ease,
+          background-color 120ms ease,
+          opacity 120ms ease;
       }
-      .gcti-prompt-actions button:first-child,
-      .gcti-plan-actions button:first-child {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
+      button:hover:not(:disabled) {
+        filter: brightness(1.06);
       }
-      .gcti-prompt-actions button:last-child,
-      .gcti-plan-actions button:last-child {
-        background: transparent;
-        color: inherit;
+      button:active:not(:disabled) {
+        filter: brightness(0.94);
       }
       #gcti-undo {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 7px;
-        margin: 8px 0 0;
+        flex: 1;
         background: transparent;
-        color: inherit;
-        font: inherit;
-        cursor: pointer;
+        border: 1px solid var(--line);
+        color: var(--text);
       }
       #gcti-undo:disabled {
         opacity: 0.45;
         cursor: default;
       }
+      #gcti-import-open {
+        flex: 1;
+        background: var(--accent);
+        border: none;
+        color: #fff;
+      }
+      .gcti-plan-actions button:first-child,
+      .gcti-prompt-actions button:first-child {
+        flex: 1;
+        background: var(--accent);
+        border: none;
+        color: #fff;
+      }
+      .gcti-plan-actions button:last-child,
+      .gcti-prompt-actions button:last-child {
+        flex: 1;
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--text);
+      }
+
+      /* ---- footer ---- */
       .gcti-setup-link {
         display: inline-block;
-        margin-top: 12px;
-        font-size: 12px;
+        margin-top: 14px;
+        font-size: 12.5px;
         font-weight: 500;
         color: var(--accent);
         text-decoration: none;
@@ -172,28 +234,47 @@
     </style>
   </head>
   <body>
-    <h1>Ghost-CMS Template Injector</h1>
-    <p class="subtitle">Apply a preset to the open editor.</p>
-    <p id="gcti-status" role="status" aria-live="polite">Detecting editor…</p>
-    <ul id="gcti-preset-list"></ul>
-    <section id="gcti-plan-panel" hidden aria-live="polite">
-      <p>Review preset plan</p>
-      <ul id="gcti-plan-list"></ul>
-      <div class="gcti-plan-actions">
-        <button id="gcti-plan-apply" type="button">Apply preset</button>
-        <button id="gcti-plan-cancel" type="button">Cancel</button>
+    <div class="app">
+      <header>
+        <h1>Ghost-CMS Template Injector</h1>
+        <p class="subtitle">Apply a preset to the open editor.</p>
+      </header>
+
+      <p id="gcti-status" role="status" aria-live="polite">Detecting editor…</p>
+
+      <h2>Presets</h2>
+      <div class="card">
+        <ul id="gcti-preset-list"></ul>
       </div>
-    </section>
-    <section id="gcti-prompt-panel" hidden aria-live="polite">
-      <p>Confirm preset changes</p>
-      <ul id="gcti-prompt-list"></ul>
-      <div class="gcti-prompt-actions">
-        <button id="gcti-prompt-yes" type="button">Apply changes</button>
-        <button id="gcti-prompt-no" type="button">Cancel</button>
+
+      <section id="gcti-plan-panel" class="card panel" hidden aria-live="polite">
+        <p>Review preset plan</p>
+        <ul id="gcti-plan-list"></ul>
+        <div class="gcti-plan-actions">
+          <button id="gcti-plan-apply" type="button">Apply preset</button>
+          <button id="gcti-plan-cancel" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <section id="gcti-prompt-panel" class="card panel" hidden aria-live="polite">
+        <p>Confirm preset changes</p>
+        <ul id="gcti-prompt-list"></ul>
+        <div class="gcti-prompt-actions">
+          <button id="gcti-prompt-yes" type="button">Apply changes</button>
+          <button id="gcti-prompt-no" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="gcti-undo" type="button" disabled>Undo last apply</button>
       </div>
-    </section>
-    <button id="gcti-undo" type="button" disabled>Undo last apply</button>
-    <a class="gcti-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
+
+      <div class="actions">
+        <button id="gcti-import-open" type="button">Import as template</button>
+      </div>
+
+      <a class="gcti-setup-link" href="../setup/setup.html" target="_blank">Setup site access</a>
+    </div>
     <script type="module" src="../dist/popup.js"></script>
   </body>
 </html>

@@ -18,6 +18,7 @@ A private Manifest V3 Chromium extension for applying validated presets to Ghost
 - Runtime content scripts are scoped to that installation's `/ghost/*` Admin path.
 - Disabling access unregisters both scripts and makes an already-loaded MAIN-world bridge dormant.
 - Presets stay in `chrome.storage.local`; no API tokens are requested or stored.
+- A picked feature-image photo is kept in the extension's own IndexedDB (never in the preset document). It is uploaded to your Ghost site only when a preset that uses it is applied, with your existing admin session cookie.
 - No remote scripts or remotely hosted executable code.
 
 ## Requirements
@@ -35,6 +36,18 @@ npm run verify
 ```
 
 `npm run verify` runs formatting checks, ESLint, strict TypeScript, a production build, the complete Vitest suite, and manifest/built-artifact validation. Normal builds omit source maps; use `npm run build:debug` for external maps. CI also runs the high-severity dependency audit gate. The generated extension bundles are placed in `dist/` and are intentionally not committed.
+
+Two opt-in live-proof harnesses drive the built extension and this tree's modules against a real Ghost
+installation behind a local TLS proxy (they read the admin session cookie from `/tmp/cj.txt`, never the
+repository, and never print it):
+
+```bash
+npm run proof:feature-image   # preset photo cache + page-origin upload + MAIN-bridge write
+npm run proof:post-import     # capture a real post, then apply that preset to a different draft
+npm run load-check:zip -- <zip>   # extract a release ZIP and load it unpacked in real Chromium
+```
+
+Their redacted output is committed under `evidence/`.
 
 ## Load the extension
 
@@ -68,7 +81,84 @@ The body options are intentionally literal: `inline-lexical` applies structured 
 
 You can move presets between machines with **Export** / **Import** (JSON) at the bottom of the Options page.
 
+## Feature image (the editor's top image)
+
+A preset can also carry the post's **feature image**:
+
+1. In the Options page, pick a photo under **Feature image (top image)**. It is cached in this
+   browser, not in the preset: the preset only stores the photo's id, so preset documents stay tiny
+   and exports never carry image bytes.
+2. Choose the mode: `only-if-empty` (default), `replace`, or `prompt`.
+   You can type an existing image URL instead of picking a photo.
+3. Apply the preset on a post. The first apply uploads the photo to _that_ Ghost installation through
+   Ghost's own admin image endpoint and remembers the returned URL, so repeat applies reuse the same
+   media instead of duplicating files.
+
+If the photo is not cached in the current browser (for example after importing a preset exported
+elsewhere), the apply is **blocked with an explicit reason** — no post is ever half-applied without its
+image. Re-pick the image to fix it.
+
 The default editor refresh is delayed long enough for an explicit Undo and is canceled after a successful Undo. Navigation or a full page reload ends the in-memory Undo window.
+
+## Import an existing post as a preset
+
+Instead of writing a template by hand, you can turn a post you already published into a preset. The
+import lives in the **Options page**; the toolbar popup carries a single **Import as template** button
+that takes you straight to it.
+
+1. Click **Import as template** in the popup (or open the Options page and find **Import a post as a
+   preset**).
+2. Pick the source: **the post open in the editor**, or any post/page from this site — the picker is
+   filled from your own Admin API, newest first. The list is read from a Ghost Admin tab you have
+   already granted access to; if no such tab is open, the section says so instead of showing an empty
+   list.
+3. The preset name prefills from the post title. Tick **Include this post's title** only if you want
+   the preset to rename the posts it is applied to.
+4. Press **Import as preset**. The new preset appears in your preset list under the **Imported** group.
+
+What is captured:
+
+| Field           | Captured as                                                  | Default mode               |
+| --------------- | ------------------------------------------------------------ | -------------------------- |
+| Body            | the post's serialized Lexical document                       | `replace`                  |
+| Excerpt         | `custom_excerpt`                                             | `only-if-empty`            |
+| Tags            | the post's tag names                                         | `merge`                    |
+| Custom template | `custom_template` (only when it ends in `.hbs`)              | `only-if-empty`            |
+| Feature image   | the post's image URL, stored as a portable `/content/…` path | `only-if-empty`            |
+| Title           | `title`                                                      | only when you tick the box |
+
+The captured preset goes through the same schema validation as any other preset, so you can edit its
+modes, photo, name, or group afterwards like anything else. On the editor screen the injected toolbar
+also offers **Save this post as a preset** for a one-click import of the post you are looking at (it
+asks for the name and never captures the title).
+
+Import is **fail-closed**, so a half-understood post never becomes a template:
+
+- an unreadable or blank body aborts the import with a reason (a post whose body is only an empty
+  paragraph has nothing to template);
+- a `custom_template` that is not an `.hbs` filename, or a feature-image URL the preset schema cannot
+  accept, is skipped with a warning instead of being written;
+- an excerpt longer than 300 characters is trimmed to the schema limit and reported;
+- the import reads the **stored** record through your authenticated Admin API when the editor is
+  clean, so the captured body is the saved one; if the editor has unsaved changes it says so and uses
+  the live body instead.
+
+### If the post list does not load
+
+- **"Open your Ghost Admin…"** — the section reads through a Ghost Admin tab you have granted. Open
+  your Ghost Admin (or run the Setup page for that site) and press **Refresh post list**.
+- **"This Ghost Admin tab is not running the extension yet."** — the extension now injects itself into
+  that tab and retries automatically, so this should resolve on the click. If it does not, reload the
+  Ghost Admin tab once (Ctrl/Cmd+R).
+- A very old tab can also be healed by closing and reopening it; the extension never reads a site you
+  have not granted.
+
+### How the Options page reaches your site
+
+The Options page is an extension origin: it has no content script and cannot call your Admin API with
+your session cookie. It therefore asks the extension's service worker, which routes the read-only
+operations to a Ghost Admin tab **you have already granted** (an editor route when one is open). The
+target tab is chosen by the worker, never by the page, so a read can never be pointed at another site.
 
 ## Project layout
 
@@ -81,6 +171,20 @@ The default editor refresh is delayed long enough for an explicit Undo and is ca
 - `presets/presets.json` — read-only bundled seed presets.
 - `tests/` — unit, contract, accessibility, and real-browser proof harnesses.
 - `evidence/` — redacted release evidence; never place credentials here.
+
+## Surfaces at a glance
+
+The popup, the Options page, and the Setup page share one design language (same tokens, cards,
+hairline buttons, one accent colour, dark mode): the popup is meant to read as the same product as the
+settings it opens.
+
+- **Popup** — apply a preset to the open editor, undo the last apply, and one **Import as template**
+  button that opens the Options import section. Nothing import-specific lives here.
+- **Options page** — preset authoring, the import section, Import/Export of preset JSON.
+- **Setup page** — per-site access consent.
+
+`npm run proof:ui-parity` loads the built extension in real Chromium and asserts the popup and the
+Options page compute the same palette, radii, heading treatment and primary-button colour.
 
 ## Release state
 

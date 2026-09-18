@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  clearFeatureImage,
   deriveIdFromName,
+  handleFeatureImageFile,
   nextAvailablePresetId,
   readFormPreset,
+  refreshFeatureImagePreview,
   fillFormForEdit,
   handleDelete,
   handleExport,
@@ -44,6 +47,9 @@ function formView(): OptionsView {
     excerptMode: input('replace'),
     customTemplate: input(),
     customTemplateMode: input('replace'),
+    featureImageMode: input('only-if-empty'),
+    featureImageUrl: input(),
+    featureImageAsset: input(),
   };
   return {
     form,
@@ -202,3 +208,193 @@ describe('simplified options form', () => {
     expect(readFormPreset(view)).toEqual(preset);
   });
 });
+
+describe('options page — feature image (top image)', () => {
+  const presetView = (preset: Preset): OptionsPresetView => ({
+    id: preset.id,
+    name: preset.name,
+    source: preset.content.source,
+    mode: preset.content.mode,
+    preset,
+    seeded: false,
+  });
+
+  const presetWithPhoto = (field: Record<string, unknown> | undefined): Preset => ({
+    schemaVersion: 1,
+    id: 'with-photo',
+    name: 'With photo',
+    content: { source: 'inline-text', mode: 'replace', text: 'Body' },
+    ...(field ? { metadata: { featureImage: field as never } } : {}),
+  });
+
+  it('saves a cached photo reference (not the bytes) with the chosen mode', () => {
+    const view = formView();
+    view.form.featureImageAsset.value = 'img_0123456789abcdef';
+    view.form.featureImageMode.value = 'replace';
+
+    const preset = readFormPreset(view) as {
+      metadata?: { featureImage?: { mode: string; assetId?: string; url?: string } };
+    };
+    expect(preset.metadata?.featureImage).toEqual({
+      mode: 'replace',
+      assetId: 'img_0123456789abcdef',
+    });
+  });
+
+  it('saves an image URL when no photo was picked', () => {
+    const view = formView();
+    view.form.featureImageUrl.value = '/content/images/2026/09/hero.png';
+
+    const preset = readFormPreset(view) as {
+      metadata?: { featureImage?: { mode: string; assetId?: string; url?: string } };
+    };
+    expect(preset.metadata?.featureImage).toEqual({
+      mode: 'only-if-empty',
+      url: '/content/images/2026/09/hero.png',
+    });
+  });
+
+  it('prefers the picked photo over a typed URL and omits the field when empty', () => {
+    const view = formView();
+    view.form.featureImageAsset.value = 'img_0123456789abcdef';
+    view.form.featureImageUrl.value = '/content/images/stale.png';
+    const preset = readFormPreset(view) as { metadata?: { featureImage?: { assetId?: string } } };
+    expect(preset.metadata?.featureImage?.assetId).toBe('img_0123456789abcdef');
+
+    const empty = formView();
+    const emptyPreset = readFormPreset(empty) as { metadata?: { featureImage?: unknown } };
+    expect(emptyPreset.metadata?.featureImage).toBeUndefined();
+  });
+
+  it('rehydrates a saved photo reference and mode when editing', () => {
+    const view = formView();
+    const preset = presetWithPhoto({ mode: 'prompt', assetId: 'img_0123456789abcdef' });
+    fillFormForEdit(view, presetView(preset));
+
+    expect(view.form.featureImageMode.value).toBe('prompt');
+    expect(view.form.featureImageAsset.value).toBe('img_0123456789abcdef');
+    expect(view.form.featureImageUrl.value).toBe('');
+    expect(readFormPreset(view)).toEqual(preset);
+  });
+
+  it('rehydrates a saved image URL when editing', () => {
+    const view = formView();
+    const preset = presetWithPhoto({ mode: 'replace', url: 'https://cdn.example.com/a.png' });
+    fillFormForEdit(view, presetView(preset));
+
+    expect(view.form.featureImageUrl.value).toBe('https://cdn.example.com/a.png');
+    expect(view.form.featureImageAsset.value).toBe('');
+    expect(readFormPreset(view)).toEqual(preset);
+  });
+
+  it('caches a picked photo and points the preset at it', async () => {
+    const view = formView();
+    view.featureImageStatus = {
+      textContent: null,
+      setAttribute: () => undefined,
+      getAttribute: () => null,
+      removeAttribute: () => undefined,
+      appendChild: () => undefined,
+      addEventListener: () => undefined,
+    };
+    const putImage = vi.fn(async () => ({
+      id: 'img_0123456789abcdef',
+      name: 'hero.png',
+      mimeType: 'image/png',
+      bytes: 4096,
+      sha256: 'a'.repeat(64),
+      createdAt: '2026-09-17T10:00:00.000Z',
+    }));
+
+    await handleFeatureImageFile(
+      { rt: stubRuntime(), view, imageAssets: { putImage, getRecord: async () => null } },
+      {
+        name: 'hero.png',
+        type: 'image/png',
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      },
+    );
+
+    expect(putImage).toHaveBeenCalledTimes(1);
+    expect(view.form.featureImageAsset.value).toBe('img_0123456789abcdef');
+    expect(view.featureImageStatus.textContent).toMatch(/cached in this browser/i);
+  });
+
+  it('reports a rejected photo without touching the preset', async () => {
+    const view = formView();
+    view.featureImageStatus = {
+      textContent: null,
+      setAttribute: () => undefined,
+      getAttribute: () => null,
+      removeAttribute: () => undefined,
+      appendChild: () => undefined,
+      addEventListener: () => undefined,
+    };
+
+    await handleFeatureImageFile(
+      {
+        rt: stubRuntime(),
+        view,
+        imageAssets: {
+          putImage: async () => {
+            throw new Error('image-asset-store: unsupported image type "image/svg+xml"');
+          },
+          getRecord: async () => null,
+        },
+      },
+      { name: 'x.svg', type: 'image/svg+xml', arrayBuffer: async () => new ArrayBuffer(2) },
+    );
+
+    expect(view.form.featureImageAsset.value).toBe('');
+    expect(view.featureImageStatus.textContent).toMatch(/could not be stored/i);
+  });
+
+  it('warns when a preset references a photo this browser does not have', async () => {
+    const view = formView();
+    view.featureImageStatus = {
+      textContent: null,
+      setAttribute: () => undefined,
+      getAttribute: () => null,
+      removeAttribute: () => undefined,
+      appendChild: () => undefined,
+      addEventListener: () => undefined,
+    };
+
+    await refreshFeatureImagePreview(
+      { rt: stubRuntime(), view, imageAssets: { putImage: vi.fn(), getRecord: async () => null } },
+      { mode: 'replace', assetId: 'img_0123456789abcdef' },
+    );
+
+    expect(view.featureImageStatus.textContent).toMatch(/not cached in this browser/i);
+  });
+
+  it('clears every feature-image control', () => {
+    const view = formView();
+    view.featureImageStatus = {
+      textContent: 'Photo cached',
+      setAttribute: () => undefined,
+      getAttribute: () => null,
+      removeAttribute: () => undefined,
+      appendChild: () => undefined,
+      addEventListener: () => undefined,
+    };
+    view.form.featureImageAsset.value = 'img_0123456789abcdef';
+    view.form.featureImageUrl.value = '/content/images/a.png';
+
+    clearFeatureImage(view);
+
+    expect(view.form.featureImageAsset.value).toBe('');
+    expect(view.form.featureImageUrl.value).toBe('');
+    expect(view.featureImageStatus.textContent).toBe('No photo selected.');
+  });
+});
+
+function stubRuntime(): OptionsRuntime {
+  return {
+    loadPresets: async () => [],
+    loadBundledDefaults: async () => [],
+    savePreset: async (input) => input as Preset,
+    importPresetsIntoStore: async () => [],
+    exportPresets: () => '[]',
+  };
+}

@@ -2,6 +2,8 @@ import { createContentScript } from './content-script';
 import { deriveAdminApiBase, GhostAdminClient } from './ghost-api';
 import { createCapabilityClient, type CapabilityClientDeps } from './capability-client';
 import { CONSENT_STORAGE_KEY } from './host-permission';
+import { ASSET_MESSAGE_SOURCE, base64ToBytes, type ImageAssetReply } from './image-asset-store';
+import { createFeatureImageUploadCache, type CachedImageBytes } from './feature-image';
 import type { PageBridgeEnv } from './page-bridge';
 
 const deps = {
@@ -42,6 +44,50 @@ const deps = {
     }
   },
   createApiClient: (base: string) => new GhostAdminClient(globalThis.fetch.bind(globalThis), base),
+  /**
+   * Ask the service worker for a cached photo. The content script's IndexedDB
+   * belongs to the PAGE origin, so the extension's asset store is only
+   * reachable through the runtime message channel; a missing/blocked asset
+   * returns null and the preset blocks rather than applying image-less.
+   */
+  getImageAsset: async (assetId: string): Promise<CachedImageBytes | null> => {
+    try {
+      const reply = (await chrome.runtime.sendMessage({
+        source: ASSET_MESSAGE_SOURCE,
+        op: 'getImageAsset',
+        assetId,
+      })) as ImageAssetReply | undefined;
+      if (!reply || reply.ok !== true || typeof reply.base64 !== 'string') return null;
+      return {
+        data: base64ToBytes(reply.base64),
+        name: typeof reply.name === 'string' && reply.name.length > 0 ? reply.name : assetId,
+        mimeType: typeof reply.mimeType === 'string' ? reply.mimeType : 'image/png',
+      };
+    } catch {
+      return null;
+    }
+  },
+  /** Per-installation memo of uploaded image URLs (chrome.storage.local). */
+  featureImageUploadCache: createFeatureImageUploadCache({
+    get: (key) => chrome.storage.local.get(key),
+    set: (items) => chrome.storage.local.set(items),
+  }),
+  /**
+   * Existence check for a memoized image URL. Only same-origin URLs can be
+   * checked with this page's session; a cross-site URL is assumed valid rather
+   * than treated as broken.
+   */
+  verifyImageUrl: async (url: string): Promise<boolean> => {
+    try {
+      const origin = globalThis.location?.origin ?? '';
+      const target = new URL(url, globalThis.location?.href ?? undefined);
+      if (target.origin !== origin) return true;
+      const response = await fetch(target.href, { method: 'HEAD', credentials: 'same-origin' });
+      return response.ok;
+    } catch {
+      return true;
+    }
+  },
 };
 
 const contentScript = createContentScript(deps);
@@ -122,12 +168,22 @@ function buildCapabilityDeps(): CapabilityClientDeps {
   };
 }
 
+/**
+ * Repeat-injection guard. The service worker may inject this bundle into an
+ * already-open tab on demand (self-heal when the dynamic registration predates
+ * the document), so evaluating it twice in one document must not add a second
+ * runtime listener that would answer every message twice.
+ */
+const ACTIVE_FLAG = '__gctiContentScriptActive';
+
 if (
+  (globalThis as Record<string, unknown>)[ACTIVE_FLAG] !== true &&
   deps.isGhostAdminPage() &&
   typeof chrome !== 'undefined' &&
   chrome.storage?.onChanged &&
   typeof chrome.storage.local.get === 'function'
 ) {
+  (globalThis as Record<string, unknown>)[ACTIVE_FLAG] = true;
   const client = createCapabilityClient(buildCapabilityDeps());
   client.activateForDocument();
   client.watchRevocation();

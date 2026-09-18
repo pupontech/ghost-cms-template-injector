@@ -277,3 +277,24 @@ describe('popup controller — preview and undo delegation', () => {
     expect(sendMessage.mock.calls[0]?.[1]).not.toHaveProperty('token');
   });
 });
+
+describe('popup import entry point', () => {
+  it('opens the Options import pane through the injected seam', async () => {
+    const openOptionsImport = vi.fn().mockResolvedValue(undefined);
+    const ctrl = createPopupController(makeRuntime({ openOptionsImport }));
+
+    await ctrl.openImport();
+
+    expect(openOptionsImport).toHaveBeenCalledTimes(1);
+  });
+
+  it('never throws into the UI when opening the pane fails or is unavailable', async () => {
+    const failing = createPopupController(
+      makeRuntime({ openOptionsImport: vi.fn().mockRejectedValue(new Error('no permission')) }),
+    );
+    await expect(failing.openImport()).resolves.toBeUndefined();
+
+    const absent = createPopupController(makeRuntime());
+    await expect(absent.openImport()).resolves.toBeUndefined();
+  });
+});

@@ -41,6 +41,15 @@ function makeEl(): TestEl {
       this.listeners[type] = cb;
     },
   };
+  // Model the real DOM: assigning textContent replaces the element's children.
+  let text: string | null = null;
+  Object.defineProperty(el, 'textContent', {
+    get: () => text,
+    set: (value: string | null) => {
+      text = value;
+      el.children.length = 0;
+    },
+  });
   return el;
 }
 
@@ -78,6 +87,7 @@ describe('ui-popup-main — status summary', () => {
               error: 'UNSUPPORTED_CAPABILITY',
             } as never),
       loadPresets: async () => [],
+      savePreset: async (input: unknown) => input as never,
     };
     return createPopupController(runtime);
   }
@@ -443,5 +453,79 @@ describe('ui-popup-main — read-only plan preview', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendMessage.mock.calls[3]?.[1]).toMatchObject({ op: 'undo' });
     expect(undoButton.attrs['disabled']).toBe('');
+  });
+});
+
+describe('popup import button', () => {
+  it('opens the Options import section in a new tab when clicked', async () => {
+    const tabsCreate = vi.fn().mockResolvedValue({ id: 9 });
+    const api = {
+      tabs: {
+        query: vi
+          .fn()
+          .mockResolvedValue([{ id: 5, url: 'https://example.com/ghost/#/editor/post/abc123' }]),
+        sendMessage: vi.fn().mockResolvedValue({
+          source: 'ghost-cms-template-injector/popup/v1',
+          ok: true,
+          result: {
+            supported: true,
+            capability: { resourceType: 'post', isNew: false, dirty: false },
+          },
+        }),
+      },
+      runtime: { getURL: (path: string) => `chrome-extension://abc/${path}` },
+      tabsCreate,
+    };
+    const importButton = makeEl();
+    const listeners: Record<string, () => void> = {};
+    importButton.addEventListener = (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    };
+
+    await initPopup(api as never, {
+      statusEl: makeEl(),
+      listEl: makeEl(),
+      importButton,
+      document: { createElement: () => makeEl() },
+    });
+
+    expect(listeners['click']).toBeTypeOf('function');
+    listeners['click']?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(tabsCreate).toHaveBeenCalledWith({
+      url: 'chrome-extension://abc/options/options.html#import',
+    });
+  });
+
+  it('falls back to the plain options page when opening a tab is refused', async () => {
+    const openOptionsPage = vi.fn().mockResolvedValue(undefined);
+    const api = {
+      tabs: {
+        query: vi.fn().mockResolvedValue([]),
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      },
+      runtime: {
+        getURL: (path: string) => `chrome-extension://abc/${path}`,
+        openOptionsPage,
+      },
+      tabsCreate: vi.fn().mockRejectedValue(new Error('blocked')),
+    };
+    const importButton = makeEl();
+    const listeners: Record<string, () => void> = {};
+    importButton.addEventListener = (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    };
+
+    await initPopup(api as never, {
+      statusEl: makeEl(),
+      listEl: makeEl(),
+      importButton,
+      document: { createElement: () => makeEl() },
+    });
+    listeners['click']?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(openOptionsPage).toHaveBeenCalledTimes(1);
   });
 });

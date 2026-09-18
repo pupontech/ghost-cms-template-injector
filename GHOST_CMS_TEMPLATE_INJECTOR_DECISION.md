@@ -355,6 +355,121 @@ Project-level future-agent instructions live in [`AGENTS.md`](./AGENTS.md). A re
 
 ---
 
+## 12. Feature image (post top image) — data model and photo cache
+
+**Ghost contract (verified against `main` source and live Ghost 6.59).**
+
+- `feature_image` is a plain post attribute (`ghost/core/core/server/models/post.js`); it has **no
+  scratch buffer**, unlike `title`/`lexical`. Ghost Admin's own write path is the controller action
+  `setFeatureImage(url)` → `this.post.set('featureImage', url)`
+  (`apps/ember-admin/app/controllers/lexical-editor.js`). Alt text and caption live on
+  `posts_meta` (not in scope here).
+- Uploads go through `POST <subdir>/ghost/api/admin/images/upload/` (`mw.authAdminApi`,
+  `upload.single('file')`, validation type `images`). The admin client's own uploader
+  (`gh-uploader.js`) posts `apiRoot + 'images/upload/'` with the file under `file` and
+  `purpose=image`, and reads the response as `{ images: [{ url, ref }] }`. With local file storage the
+  returned `url` is absolute; the database stores it transform-ready (`__GHOST_URL__/content/images/...`).
+
+**Why the photo cannot live in the preset document.** The stored preset document is capped at
+`MAX_IMPORT_BYTES` (256 KB) and is rewritten as JSON in `chrome.storage.local` (10 MB area quota
+without `unlimitedStorage`). One real photo would blow the document bound; base64 would add ~33 %.
+
+**Decision.** Photos are cached in an extension-origin IndexedDB asset store, addressed by content
+(`img_<sha256[0:16]>`, so re-picking the same photo is idempotent and dedupes). A preset stores only
+`metadata.featureImage = { mode, assetId }` (or `{ mode, url }` for a URL the owner already has). At
+apply time the content script resolves the field: a per-installation memo of previously uploaded URLs
+(`chrome.storage.local` key `featureImageUploads`, bounded to 200 entries, oldest pruned) is reused
+when the media still exists, otherwise the bytes are fetched from the service worker over the asset
+message channel (`chrome.runtime` messaging is JSON, so bytes travel base64), uploaded through the
+session-cookie multipart request above, and the returned absolute URL is memoized. The resolved URL
+is what the plan carries, and the MAIN-world bridge writes it through the controller action.
+
+**Fail-closed rules.** A missing, unreadable, oversized, or unsupported photo — or a rejected upload —
+blocks the entire plan (no field is mutated) with an explicit reason the owner can act on. The field
+participates in rollback capture/restore, undo, stale-editor comparison, and post-save readback
+verification like every other planned field. Exports carry the reference only: importing on another
+machine blocks until the photo is re-picked, which the UI and the error text state directly.
+
+**Limits.** 8 MB per cached photo; PNG/JPEG/WebP/GIF only; one photo per preset; alt text and caption
+are not part of this field (possible follow-on using the same six-layer path).
+
+---
+
+## 13. Post import — turning an existing post into a preset
+
+A preset can be authored two ways: by hand in the Options page, or by **importing an existing
+post/page**. The import path is a pure function plus a read-only API read; it never writes to Ghost.
+
+### Capture surface
+
+- `src/preset-capture.ts` (pure, no `chrome.*`): `sourceFromGhostRecord()` maps a Ghost Admin API
+  record (`custom_excerpt`, `custom_template`, `feature_image`, `lexical`, `tags[].name`) onto a
+  `CapturedSource`; `buildPresetFromCapture()` turns that source into a schema-valid `Preset` and
+  returns `{ preset, warnings }`.
+- Sources of a `CapturedSource`, both feeding the same builder:
+  - **stored record** — `GET <admin>/posts/<id>/?formats=lexical&include=tags` through the existing
+    `GhostAdminClient` (session cookie auth, same-origin from the Ghost Admin page). This is what the
+    picker (`listCapturableIndex` → `fields=id,title,slug,status,updated_at&order=updated_at desc`)
+    and any non-open post use.
+  - **live editor record** — the MAIN-world bridge snapshot, used when the editor has unsaved changes
+    or the draft has no server id yet. Metadata still prefers the stored record when one exists.
+- `src/preset-naming.ts` holds `deriveIdFromName`/`nextAvailablePresetId`, shared by the Options page
+  and the import surfaces so imported ids cannot collide with existing presets.
+
+### Field mapping and modes
+
+| Captured | Preset field | Mode | Rationale |
+| --- | --- | --- | --- |
+| `lexical` | `content.lexical` | `replace` | a template's body is the point of the preset |
+| `custom_excerpt` | `metadata.excerpt` | `only-if-empty` | never clobber a written excerpt by surprise |
+| `tags[].name` | `metadata.tags` | `merge` | adding tags should not remove the author's tags |
+| `custom_template` | `metadata.customTemplate` | `only-if-empty` | only when the value ends in `.hbs` (theme allowlist still gates the write) |
+| `feature_image` | `metadata.featureImage.url` | `only-if-empty` | stored as a portable same-origin `/content/…` path |
+| `title` | `metadata.title` | `replace` | **omitted by default** — a captured title would rename every post it is applied to |
+
+`ui.group` is set to `Imported` so imported presets are visually separated from hand-authored ones;
+`description` records the provenance (`Imported from post “…”`).
+
+### Fail-closed rules
+
+- The body must be structurally valid Lexical (`isSerializedLexical`) **and carry content**
+  (`isCapturableLexical`): a blank draft serializes to a valid document with one empty paragraph, and
+  capturing that would build a `replace` body that wipes the target post's body. Cards/images without
+  text still count as content.
+- An excerpt over the 300-character schema limit is trimmed, and the trim is reported as a warning.
+- A non-`.hbs` custom template or an unacceptable image URL is skipped with a warning rather than
+  written.
+- Every result passes `validatePreset` before it is stored, so an import can never persist a document
+  the store would later reject.
+
+### Surfaces and routing
+
+Owner-facing placement (decided after the first build): the import UI belongs to the **Options page**
+— the popup carries a single *Import as template* button that opens `options/options.html#import`.
+
+An extension page has no content script, so the Options page cannot read the Admin API with the site's
+session cookie nor touch the live editor. It sends a fixed-identity request
+(`ghost-cms-template-injector/options-capture/v1`, operations `listPosts`/`capture`/`capturePost`) to
+the service worker, which:
+- accepts it only from a sender **without** a tab (a content script or web page arrives with one; no
+  `externally_connectable` is declared, so web pages cannot message the extension at all);
+- picks the target itself — a granted tab whose URL is a Ghost Admin page, preferring an editor route.
+  `chrome.tabs.query({})` needs no `tabs` permission because `url` is only exposed for hosts the user
+  granted, so the reachable set is exactly the consented one, and the caller can never redirect a read
+  to another tab;
+- re-identifies the message with the popup source and forwards it, so the content script's existing
+  read-only operations are reused unchanged.
+- reports `NO_GHOST_TAB` so the section can tell the owner what to do instead of failing silently.
+
+### Write path
+
+The importing surface (popup controller, or the in-page toolbar) assigns a free id via
+`nextAvailablePresetId`, then stores the preset with the existing `savePreset`, so imported presets
+obey the same bounds (`MAX_IMPORT_BYTES`, 256 KB) as any other preset. When a preset imported from a
+post is applied, the feature image is written as a `/content/…` path; Ghost normalizes it to an
+absolute URL on the record, so the post-save readback compares the **resolved** form
+(`featureImageMatches`) rather than the literal text.
+
 ## Appendix A — Evidence pointers (from the inspected `main` branch)
 
 - `apps/ember-admin/app/models/snippet.js` — snippet fields: `name, mobiledoc, lexical, createdAtUTC, updatedAtUTC` (content only).
