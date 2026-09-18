@@ -1,6 +1,14 @@
 # Release status — v0.3.0 owner acceptance pending
 
-## v0.5.0 (unreleased) — import a Ghost post as a preset
+## v0.5.1 (unreleased) — import moved into the Options page
+
+Per the owner's workflow, the popup carries a single **Import as template** button that opens the
+Options page's import section; the picker/name/title/status controls live there. The Options page has
+no content script, so it reads through a service-worker route that targets a Ghost Admin tab the user
+has already granted (editor route preferred, target chosen by the worker, no `tabs` permission). The
+live proof asserts the delivered section is live and refuses to store anything before a capture.
+
+## v0.5.0 — import a Ghost post as a preset
 
 Branch `feat/feature-image` (now carrying both features) adds post import on top of v0.4.0: the popup
 panel and the toolbar button turn an existing post/page into a preset (body, excerpt, tags, custom

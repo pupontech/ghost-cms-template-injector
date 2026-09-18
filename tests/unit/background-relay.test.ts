@@ -156,19 +156,24 @@ describe('background SW runtime.onMessage relay', () => {
   });
 });
 
-/** One runtime.onMessage listener serves both message families. */
+/** One runtime.onMessage listener serves every message family. */
 function makeDispatcher(
   assetStore: Parameters<typeof createRuntimeMessageDispatcher>[0]['assetStore'],
+  optionsCaptureHandler?: (m: unknown, s: unknown, r: (x: unknown) => void) => boolean | null,
 ) {
   const relayHandler = vi.fn((_m: unknown, _s: unknown, sendResponse: (r: unknown) => void) => {
     sendResponse({ relayed: 'popup' });
     return true;
   });
+  const optionsCaptureHandlerFn = vi.fn(
+    optionsCaptureHandler ?? ((_m: unknown, _s: unknown, _r: (x: unknown) => void) => null),
+  );
   const dispatch = createRuntimeMessageDispatcher({
     assetStore,
+    optionsCapture: { handleMessage: optionsCaptureHandlerFn },
     relay: { handleMessage: relayHandler },
   });
-  return { dispatch, relayHandler };
+  return { dispatch, relayHandler, optionsCaptureHandler: optionsCaptureHandlerFn };
 }
 
 function assetStoreWith(

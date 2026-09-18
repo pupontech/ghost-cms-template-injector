@@ -283,6 +283,39 @@
       }
 
       /* ---- import/export ---- */
+
+      /* ---- import an existing post ---- */
+      #opt-frompost-section .io-card-note {
+        margin: 0 0 12px;
+        color: var(--text-2);
+        font-size: 12.5px;
+      }
+      #opt-frompost-section select {
+        width: 100%;
+        font: inherit;
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .field-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .field-check input {
+        width: auto;
+      }
+      #opt-frompost-status {
+        margin: 10px 0 0;
+        font-size: 12px;
+        color: var(--text-2);
+        min-height: 16px;
+      }
+      #opt-frompost-status[data-tone='error'] {
+        color: var(--danger);
+      }
       .io-card {
         padding: 16px 20px;
       }
@@ -325,6 +358,40 @@
       <div class="card">
         <ul id="opt-preset-list"></ul>
       </div>
+
+      <h2 id="opt-frompost-heading">Import a post as a preset</h2>
+      <section class="card" id="opt-frompost-section" aria-labelledby="opt-frompost-heading">
+        <p class="io-card-note">
+          Turn a post you already published into a preset. The body, excerpt, tags, custom template
+          and feature image are captured; the title is only captured when you ask for it, so
+          re-applying a preset never renames a post. The list is read from a Ghost Admin tab you
+          have granted access to.
+        </p>
+        <div class="field">
+          <label for="opt-frompost-source">Source</label>
+          <select id="opt-frompost-source" aria-describedby="opt-frompost-status"></select>
+        </div>
+        <div class="field">
+          <label for="opt-frompost-name">Preset name</label>
+          <input
+            id="opt-frompost-name"
+            type="text"
+            autocomplete="off"
+            placeholder="Imported preset"
+          />
+        </div>
+        <div class="field field-check">
+          <input id="opt-frompost-title" type="checkbox" />
+          <label for="opt-frompost-title">Include this post's title</label>
+        </div>
+        <div class="actions" style="margin-top: 12px">
+          <button id="opt-frompost-save" type="button">Import as preset</button>
+          <button id="opt-frompost-refresh" type="button">Refresh post list</button>
+        </div>
+        <p id="opt-frompost-status" role="status" aria-live="polite">
+          Looking for a Ghost Admin tab…
+        </p>
+      </section>
 
       <h2>Create a preset</h2>
       <form id="opt-form" aria-label="Create or edit a preset">
@@ -404,7 +471,7 @@
         </div>
       </form>
 
-      <h2>Import</h2>
+      <h2>Import presets (JSON)</h2>
       <div class="card io-card">
         <p>Paste a preset collection (JSON array or <code>{ "presets": [...] }</code>).</p>
         <textarea

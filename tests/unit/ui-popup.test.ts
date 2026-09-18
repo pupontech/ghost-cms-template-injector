@@ -278,159 +278,23 @@ describe('popup controller — preview and undo delegation', () => {
   });
 });
 
-const CAPTURE_SOURCE = {
-  resourceType: 'post' as const,
-  title: 'Imported post',
-  excerpt: 'Summary text',
-  tags: ['Alpha', 'Beta'],
-  customTemplate: null,
-  featureImage: 'https://example.com/content/images/hero.png',
-  lexical:
-    '{"root":{"children":[{"children":[{"text":"Hello","type":"extended-text","version":1}],"type":"paragraph","version":1}],"type":"root","version":1}}',
-};
+describe('popup import entry point', () => {
+  it('opens the Options import pane through the injected seam', async () => {
+    const openOptionsImport = vi.fn().mockResolvedValue(undefined);
+    const ctrl = createPopupController(makeRuntime({ openOptionsImport }));
 
-describe('popup controller — import an existing post as a preset', () => {
-  it('lists importable posts through the content script', async () => {
-    const sendMessage = vi.fn().mockResolvedValue(
-      reply(true, {
-        entries: [
-          {
-            id: 'p1',
-            title: 'First post',
-            resourceType: 'post',
-            updatedAt: '2026-09-01T00:00:00.000Z',
-          },
-          { id: 'x1', title: 'Broken entry' },
-        ],
-      }),
+    await ctrl.openImport();
+
+    expect(openOptionsImport).toHaveBeenCalledTimes(1);
+  });
+
+  it('never throws into the UI when opening the pane fails or is unavailable', async () => {
+    const failing = createPopupController(
+      makeRuntime({ openOptionsImport: vi.fn().mockRejectedValue(new Error('no permission')) }),
     );
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
+    await expect(failing.openImport()).resolves.toBeUndefined();
 
-    const result = await ctrl.listCapturable();
-
-    expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({ op: 'listPosts' });
-    expect(result.ok).toBe(true);
-    expect(result.entries).toEqual([
-      {
-        id: 'p1',
-        title: 'First post',
-        resourceType: 'post',
-        status: 'unknown',
-        updatedAt: '2026-09-01T00:00:00.000Z',
-      },
-    ]);
-  });
-
-  it('rejects a malformed picker payload instead of rendering it', async () => {
-    const sendMessage = vi.fn().mockResolvedValue(reply(true, { entries: 'not-an-array' }));
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
-    const result = await ctrl.listCapturable();
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('the editor returned no post list');
-  });
-
-  it('captures the open editor and validates the reply shape', async () => {
-    const sendMessage = vi.fn().mockResolvedValue(
-      reply(true, {
-        source: CAPTURE_SOURCE,
-        warnings: ['unsaved changes'],
-        readFrom: 'live-editor',
-        siteOrigin: 'https://example.com',
-      }),
-    );
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
-
-    const result = await ctrl.captureCurrent();
-
-    expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({ op: 'capture' });
-    expect(result.ok).toBe(true);
-    expect(result.outcome?.source.tags).toEqual(['Alpha', 'Beta']);
-    expect(result.outcome?.warnings).toEqual(['unsaved changes']);
-  });
-
-  it('captures a chosen post by resource type and id', async () => {
-    const sendMessage = vi
-      .fn()
-      .mockResolvedValue(reply(true, { source: CAPTURE_SOURCE, siteOrigin: null }));
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
-
-    await ctrl.capturePost('page', 'x1');
-
-    expect(sendMessage.mock.calls[0]?.[1]).toMatchObject({
-      op: 'capturePost',
-      resourceType: 'page',
-      resourceId: 'x1',
-    });
-  });
-
-  it('refuses a capture payload that is not a usable source', async () => {
-    const sendMessage = vi.fn().mockResolvedValue(reply(true, { source: { title: 1 } }));
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
-    const result = await ctrl.captureCurrent();
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('the editor returned an unusable capture payload');
-  });
-
-  it('surfaces a failed capture request', async () => {
-    const sendMessage = vi.fn().mockRejectedValue(new Error('no receiver'));
-    const ctrl = createPopupController(makeRuntime({ sendMessage }));
-    await expect(ctrl.captureCurrent()).resolves.toMatchObject({ ok: false, error: 'no receiver' });
-  });
-
-  it('saves the captured post as a new preset with a free id', async () => {
-    const savePreset = vi.fn().mockImplementation(async (input: unknown) => input);
-    const ctrl = createPopupController(
-      makeRuntime({
-        loadPresets: vi.fn().mockResolvedValue([{ id: 'imported-post', name: 'Imported post' }]),
-        savePreset,
-      }),
-    );
-
-    const result = await ctrl.saveCapture(
-      {
-        source: CAPTURE_SOURCE,
-        warnings: [],
-        readFrom: 'admin-api',
-        siteOrigin: 'https://example.com',
-      },
-      { name: 'Imported post' },
-    );
-
-    expect(result.ok).toBe(true);
-    expect(result.preset?.id).toBe('imported-post-2');
-    expect(result.preset?.metadata?.featureImage).toEqual({
-      mode: 'only-if-empty',
-      url: '/content/images/hero.png',
-    });
-    expect(savePreset).toHaveBeenCalledTimes(1);
-  });
-
-  it('refuses to save when the capture cannot produce a valid preset', async () => {
-    const savePreset = vi.fn();
-    const ctrl = createPopupController(makeRuntime({ savePreset }));
-    const result = await ctrl.saveCapture(
-      {
-        source: { ...CAPTURE_SOURCE, lexical: null },
-        warnings: [],
-        readFrom: 'live-editor',
-        siteOrigin: null,
-      },
-      { name: 'Broken' },
-    );
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/no readable body/);
-    expect(savePreset).not.toHaveBeenCalled();
-  });
-
-  it('reports a store rejection without pretending the preset was saved', async () => {
-    const ctrl = createPopupController(
-      makeRuntime({ savePreset: vi.fn().mockRejectedValue(new Error('storage full')) }),
-    );
-    const result = await ctrl.saveCapture(
-      { source: CAPTURE_SOURCE, warnings: [], readFrom: 'admin-api', siteOrigin: null },
-      { name: 'Any' },
-    );
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('storage full');
+    const absent = createPopupController(makeRuntime());
+    await expect(absent.openImport()).resolves.toBeUndefined();
   });
 });

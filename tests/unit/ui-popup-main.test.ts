@@ -3,9 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildPopupRuntime,
   buildPromptAnswers,
-  defaultImportName,
-  IMPORT_CURRENT_VALUE,
-  renderImportOptions,
   initPopup,
   renderPromptPanel,
   renderPlanPanel,
@@ -459,43 +456,76 @@ describe('ui-popup-main — read-only plan preview', () => {
   });
 });
 
-describe('renderImportOptions', () => {
-  const entries = [
-    { id: 'p1', title: 'First post', status: 'published', resourceType: 'post' as const },
-    { id: 'x1', title: 'About page', status: 'draft', resourceType: 'page' as const },
-  ];
+describe('popup import button', () => {
+  it('opens the Options import section in a new tab when clicked', async () => {
+    const tabsCreate = vi.fn().mockResolvedValue({ id: 9 });
+    const api = {
+      tabs: {
+        query: vi
+          .fn()
+          .mockResolvedValue([{ id: 5, url: 'https://example.com/ghost/#/editor/post/abc123' }]),
+        sendMessage: vi.fn().mockResolvedValue({
+          source: 'ghost-cms-template-injector/popup/v1',
+          ok: true,
+          result: {
+            supported: true,
+            capability: { resourceType: 'post', isNew: false, dirty: false },
+          },
+        }),
+      },
+      runtime: { getURL: (path: string) => `chrome-extension://abc/${path}` },
+      tabsCreate,
+    };
+    const importButton = makeEl();
+    const listeners: Record<string, () => void> = {};
+    importButton.addEventListener = (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    };
 
-  it('offers the open editor first when the route has one', () => {
-    const select = makeEl();
-    renderImportOptions(select, entries, true, () => makeEl());
+    await initPopup(api as never, {
+      statusEl: makeEl(),
+      listEl: makeEl(),
+      importButton,
+      document: { createElement: () => makeEl() },
+    });
 
-    expect(select.children.map((child) => child.value)).toEqual([
-      IMPORT_CURRENT_VALUE,
-      'post:p1',
-      'page:x1',
-    ]);
-    expect(select.children[0]?.textContent).toBe('The post open in the editor');
-    expect(select.children[1]?.textContent).toBe('First post (post, published)');
-    // The editor entry is the default selection.
-    expect(select.value).toBe(IMPORT_CURRENT_VALUE);
+    expect(listeners['click']).toBeTypeOf('function');
+    listeners['click']?.();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(tabsCreate).toHaveBeenCalledWith({
+      url: 'chrome-extension://abc/options/options.html#import',
+    });
   });
 
-  it('lists only stored posts when there is no editor route', () => {
-    const select = makeEl();
-    renderImportOptions(select, entries, false, () => makeEl());
-    expect(select.children).toHaveLength(2);
-    expect(select.children[0]?.value).toBe('post:p1');
-  });
+  it('falls back to the plain options page when opening a tab is refused', async () => {
+    const openOptionsPage = vi.fn().mockResolvedValue(undefined);
+    const api = {
+      tabs: {
+        query: vi.fn().mockResolvedValue([]),
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+      },
+      runtime: {
+        getURL: (path: string) => `chrome-extension://abc/${path}`,
+        openOptionsPage,
+      },
+      tabsCreate: vi.fn().mockRejectedValue(new Error('blocked')),
+    };
+    const importButton = makeEl();
+    const listeners: Record<string, () => void> = {};
+    importButton.addEventListener = (type: string, cb: () => void) => {
+      listeners[type] = cb;
+    };
 
-  it('clears a previously rendered list instead of appending to it', () => {
-    const select = makeEl();
-    renderImportOptions(select, entries, true, () => makeEl());
-    renderImportOptions(select, [], true, () => makeEl());
-    expect(select.children).toHaveLength(1);
-  });
+    await initPopup(api as never, {
+      statusEl: makeEl(),
+      listEl: makeEl(),
+      importButton,
+      document: { createElement: () => makeEl() },
+    });
+    listeners['click']?.();
+    await new Promise((r) => setTimeout(r, 0));
 
-  it('shares the default preset name with the capture module', () => {
-    expect(defaultImportName({ title: 'Hello', resourceType: 'post' })).toBe('Hello');
-    expect(defaultImportName({ title: '(Untitled)', resourceType: 'page' })).toBe('Page template');
+    expect(openOptionsPage).toHaveBeenCalledTimes(1);
   });
 });

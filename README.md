@@ -102,15 +102,19 @@ The default editor refresh is delayed long enough for an explicit Undo and is ca
 
 ## Import an existing post as a preset
 
-Instead of writing a template by hand, you can turn a post you already published into a preset:
+Instead of writing a template by hand, you can turn a post you already published into a preset. The
+import lives in the **Options page**; the toolbar popup carries a single **Import as template** button
+that takes you straight to it.
 
-1. Open the extension popup on any Ghost Admin screen.
-2. Under **Import a post as a preset**, pick the source: the post open in the editor, or any post/page
-   from this site (the picker is filled from your own Admin API).
-3. Give the preset a name (it defaults to the post's title) and choose whether the **title** should be
-   captured too — it is off by default, because a preset that carries a title renames every post it is
-   applied to.
-4. Press **Import as preset**.
+1. Click **Import as template** in the popup (or open the Options page and find **Import a post as a
+   preset**).
+2. Pick the source: **the post open in the editor**, or any post/page from this site — the picker is
+   filled from your own Admin API, newest first. The list is read from a Ghost Admin tab you have
+   already granted access to; if no such tab is open, the section says so instead of showing an empty
+   list.
+3. The preset name prefills from the post title. Tick **Include this post's title** only if you want
+   the preset to rename the posts it is applied to.
+4. Press **Import as preset**. The new preset appears in your preset list under the **Imported** group.
 
 What is captured:
 
@@ -123,11 +127,10 @@ What is captured:
 | Feature image   | the post's image URL, stored as a portable `/content/…` path | `only-if-empty`            |
 | Title           | `title`                                                      | only when you tick the box |
 
-The captured preset goes through the same schema validation as any other preset, lands in the
-**Imported** group, and can be edited in the Options page afterwards (mode changes, photo cache,
-naming, deletion). On the editor screen the generated toolbar also offers
-**Save this post as a preset** for a one-click import of the post you are looking at (it asks for the
-name and never captures the title).
+The captured preset goes through the same schema validation as any other preset, so you can edit its
+modes, photo, name, or group afterwards like anything else. On the editor screen the injected toolbar
+also offers **Save this post as a preset** for a one-click import of the post you are looking at (it
+asks for the name and never captures the title).
 
 Import is **fail-closed**, so a half-understood post never becomes a template:
 
@@ -139,6 +142,13 @@ Import is **fail-closed**, so a half-understood post never becomes a template:
 - the import reads the **stored** record through your authenticated Admin API when the editor is
   clean, so the captured body is the saved one; if the editor has unsaved changes it says so and uses
   the live body instead.
+
+### How the Options page reaches your site
+
+The Options page is an extension origin: it has no content script and cannot call your Admin API with
+your session cookie. It therefore asks the extension's service worker, which routes the read-only
+operations to a Ghost Admin tab **you have already granted** (an editor route when one is open). The
+target tab is chosen by the worker, never by the page, so a read can never be pointed at another site.
 
 ## Project layout
 

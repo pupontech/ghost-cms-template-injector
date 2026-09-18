@@ -33,7 +33,8 @@
  * never printed or written to evidence.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import WebSocket from 'ws';
@@ -54,7 +55,59 @@ const ORIGIN = 'https://localhost:2443';
 const PORT = Number(process.env.IMPORT_PROOF_CDP_PORT ?? 9391);
 const PNG_PATH = process.env.IMPORT_PROOF_PNG ?? '/tmp/spike-feature-image.png';
 
-const pngBytes = readFileSync(PNG_PATH);
+/**
+ * The proof needs a real image, and /tmp is cleaned between runs: generate a
+ * small deterministic PNG when the fixture is missing.
+ */
+function generatePng(width = 8, height = 8) {
+  const stride = width * 3 + 1;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y += 1) {
+    raw[y * stride] = 0; // filter: none
+    for (let x = 0; x < width; x += 1) {
+      const offset = y * stride + 1 + x * 3;
+      raw[offset] = (x * 30) % 256;
+      raw[offset + 1] = (y * 30) % 256;
+      raw[offset + 2] = 128;
+    }
+  }
+  const crc32 = (buf) => {
+    let c = ~0;
+    for (const byte of buf) {
+      c ^= byte;
+      for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+    return ~c >>> 0;
+  };
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const name = Buffer.from(type, 'ascii');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([name, data])));
+    return Buffer.concat([length, name, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolour
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function loadPng(pathname) {
+  if (existsSync(pathname)) return readFileSync(pathname);
+  const bytes = generatePng();
+  writeFileSync(pathname, bytes);
+  return bytes;
+}
+
+const pngBytes = loadPng(PNG_PATH);
 const pngBase64 = pngBytes.toString('base64');
 
 const sessionLine = readFileSync('/tmp/cj.txt', 'utf8')
@@ -438,6 +491,51 @@ if (!listed) fail('the real options page did not list the captured preset from t
 const seedResult = { listed: true, documentBytes: JSON.stringify(preset).length };
 evidence.store = seedResult;
 record('the REAL options page lists the captured preset from chrome.storage.local', seedResult);
+
+// The import UI itself lives in the Options page. A granted-content-script
+// Ghost tab is required for a real read, which headless Chrome cannot consent
+// to, so this checks the delivered section is live and reports the actionable
+// reason instead of silently doing nothing — and that a click cannot store
+// anything without a capture.
+const importSection = await evaluate(
+  `(async () => {
+     const status = document.getElementById('opt-frompost-status');
+     const select = document.getElementById('opt-frompost-source');
+     const name = document.getElementById('opt-frompost-name');
+     const save = document.getElementById('opt-frompost-save');
+     const heading = document.getElementById('opt-frompost-heading');
+     if (!status || !select || !name || !save || !heading) {
+       return JSON.stringify({ sectionPresent: false });
+     }
+     const initialStatus = status.textContent.trim();
+     name.value = 'Must not be created';
+     save.click();
+     await new Promise((r) => setTimeout(r, 400));
+     const stored = await chrome.storage.local.get('presetStore');
+     const ids = (((stored || {}).presetStore || {}).presets || []).map((p) => p.id);
+     return JSON.stringify({
+       sectionPresent: true,
+       heading: heading.textContent,
+       sourceOptions: select.options.length,
+       initialStatus,
+       statusAfterClick: status.textContent.trim(),
+       storedIds: ids,
+       refusedWithoutCapture: /Pick a post to import first/.test(status.textContent),
+       storedNothingNew: !ids.includes('must-not-be-created'),
+     });
+   })()`,
+  optionsPage.sessionId,
+);
+const importUi = JSON.parse(importSection ?? '{}');
+evidence.importSection = importUi;
+if (!importUi.sectionPresent) fail('the delivered options page has no import section');
+if (!importUi.refusedWithoutCapture || !importUi.storedNothingNew) {
+  fail(`the import section stored something without a capture: ${importSection}`);
+}
+record(
+  'the delivered options import section is live and refuses to save without a capture',
+  importUi,
+);
 
 // B2 — plan the imported preset with the production planner in the page.
 const planBundle = path.join(bundleDir, 'plan-iife.js');

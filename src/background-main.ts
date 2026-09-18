@@ -1,4 +1,9 @@
-import { createBackground, createRelay, createRuntimeMessageDispatcher } from './background';
+import {
+  createBackground,
+  createOptionsCaptureHandler,
+  createRelay,
+  createRuntimeMessageDispatcher,
+} from './background';
 import {
   createImageAssetStore,
   createIndexedDbAssetBackend,
@@ -41,6 +46,22 @@ const relayDeps = {
 const relay = createRelay(relayDeps);
 
 /* ------------------------------------------------------------------ */
+/* Options-page capture routing                                        */
+/* ------------------------------------------------------------------ */
+// The import UI lives in the Options page, which has no content script of its
+// own. It asks this worker for the post list / a capture; the worker picks the
+// Ghost Admin tab the user has granted (an editor route first) and forwards the
+// same read-only operations the popup used. `chrome.tabs.query({})` needs no
+// `tabs` permission: `url` is only exposed for hosts the user has granted, so
+// the reachable tab set is exactly the granted one.
+const handleOptionsCapture = createOptionsCaptureHandler({
+  extensionId: chrome.runtime.id,
+  queryTabs: () =>
+    chrome.tabs.query({}).then((tabs) => tabs.map((tab) => ({ id: tab.id, url: tab.url }))),
+  sendTabMessage: (tabId: number, message: unknown) => chrome.tabs.sendMessage(tabId, message),
+});
+
+/* ------------------------------------------------------------------ */
 /* Feature-image asset store (extension origin)                        */
 /* ------------------------------------------------------------------ */
 
@@ -69,9 +90,14 @@ function buildAssetStore(): ImageAssetStore {
 /**
  * ONE runtime message listener for the worker: image-asset requests (from the
  * content script, which cannot reach the extension's IndexedDB) are answered
- * directly; everything else goes to the popup/toolbar relay.
+ * directly; options-page capture requests are routed to a granted Ghost tab;
+ * everything else goes to the popup/toolbar relay.
  */
-const dispatch = createRuntimeMessageDispatcher({ assetStore: buildAssetStore(), relay });
+const dispatch = createRuntimeMessageDispatcher({
+  assetStore: buildAssetStore(),
+  optionsCapture: { handleMessage: handleOptionsCapture },
+  relay,
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>
   dispatch(message, sender as { tab?: { id?: number } }, sendResponse),

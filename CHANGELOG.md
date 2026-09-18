@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.1 — unreleased
+
+### Changed
+
+- **The import UI now lives in the Options page, not the popup.** The popup keeps a single
+  **Import as template** button that opens the Options page on its new _Import a post as a preset_
+  section, where the source picker, name, title opt-in, status, and Import button live — next to the
+  preset form the owner already uses.
+- Because the Options page is an extension origin, it cannot read your Admin API or the live editor
+  itself. It asks the extension's **service worker**, which routes the same read-only operations to a
+  Ghost Admin tab you have already granted (an editor route when one is open) and reports an
+  actionable message when no such tab exists. The target tab is chosen by the worker, never by the
+  page, and no `tabs` permission was added.
+- The preset-collection import keeps its own card and is now labelled **Import presets (JSON)** so the
+  two imports are unmistakable.
+
+### Verification
+
+- `npm run verify` green: formatting, ESLint, strict TypeScript, production build, manifest/built-artifact
+  validation, and the Vitest suite (38 files, 556 tests).
+- The post-import live proof was re-run against real Ghost 6.59 and now also asserts that the delivered
+  Options section is live, refuses to store anything before a post is read, and reports the reason it
+  cannot read a Ghost tab in a headless browser. See `evidence/post-import-live-proof.md`.
+
 ## 0.5.0 — unreleased
 
 ### Added

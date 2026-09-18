@@ -28,7 +28,8 @@
  * never printed or written to evidence.
  */
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import WebSocket from 'ws';
@@ -49,7 +50,59 @@ const ORIGIN = 'https://localhost:2443';
 const PORT = Number(process.env.FEATURE_IMAGE_CDP_PORT ?? 9381);
 const PNG_PATH = process.env.FEATURE_IMAGE_PNG ?? '/tmp/spike-feature-image.png';
 
-const pngBytes = readFileSync(PNG_PATH);
+/**
+ * The proof needs a real image, and /tmp is cleaned between runs: generate a
+ * small deterministic PNG when the fixture is missing.
+ */
+function generatePng(width = 8, height = 8) {
+  const stride = width * 3 + 1;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y += 1) {
+    raw[y * stride] = 0; // filter: none
+    for (let x = 0; x < width; x += 1) {
+      const offset = y * stride + 1 + x * 3;
+      raw[offset] = (x * 30) % 256;
+      raw[offset + 1] = (y * 30) % 256;
+      raw[offset + 2] = 128;
+    }
+  }
+  const crc32 = (buf) => {
+    let c = ~0;
+    for (const byte of buf) {
+      c ^= byte;
+      for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+    return ~c >>> 0;
+  };
+  const chunk = (type, data) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const name = Buffer.from(type, 'ascii');
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([name, data])));
+    return Buffer.concat([length, name, data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolour
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function loadPng(pathname) {
+  if (existsSync(pathname)) return readFileSync(pathname);
+  const bytes = generatePng();
+  writeFileSync(pathname, bytes);
+  return bytes;
+}
+
+const pngBytes = loadPng(PNG_PATH);
 const pngBase64 = pngBytes.toString('base64');
 
 const sessionLine = readFileSync('/tmp/cj.txt', 'utf8')

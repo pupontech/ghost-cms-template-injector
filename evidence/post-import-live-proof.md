@@ -11,8 +11,8 @@ No cookie value, token, or credential appears below.
 
 ```json
 {
-  "presetId": "imported-1789731850020",
-  "name": "Imported 1789731850020",
+  "presetId": "imported-1789734650571",
+  "name": "Imported 1789734650571",
   "warnings": [],
   "metadata": {
     "excerpt": {
@@ -29,7 +29,7 @@ No cookie value, token, or credential appears below.
     },
     "featureImage": {
       "mode": "only-if-empty",
-      "url": "/content/images/2026/09/import-source-9.png"
+      "url": "/content/images/2026/09/import-source-12.png"
     }
   },
   "content": {
@@ -61,13 +61,13 @@ No cookie value, token, or credential appears below.
 {
   "store": {
     "listed": true,
-    "documentBytes": 1147
+    "documentBytes": 1148
   },
   "snapshot": {
     "bodyEmpty": true,
     "excerpt": null,
     "customTemplate": null,
-    "title": "Import target 1789731850020",
+    "title": "Import target 1789734650571",
     "tags": [],
     "featureImage": null
   },
@@ -76,13 +76,13 @@ No cookie value, token, or credential appears below.
     "fields": ["body", "customTemplate", "excerpt", "featureImage", "tags"]
   },
   "readback": {
-    "postId": "6aad240a46fded00018ccec9",
-    "title": "Import target 1789731850020",
+    "postId": "6aad2efbee75c80001df7625",
+    "title": "Import target 1789734650571",
     "titleUnchanged": true,
     "customExcerpt": "An excerpt worth templating.",
     "customTemplate": "custom-review.hbs",
-    "featureImage": "https://localhost:2443/content/images/2026/09/import-source-9.png",
-    "expectedFeatureImagePath": "/content/images/2026/09/import-source-9.png",
+    "featureImage": "https://localhost:2443/content/images/2026/09/import-source-12.png",
+    "expectedFeatureImagePath": "/content/images/2026/09/import-source-12.png",
     "tags": ["Reviews", "Software"],
     "bodyTextNodes": 2,
     "bodyContainsImportedText": true,
@@ -101,28 +101,29 @@ No cookie value, token, or credential appears below.
 ## Steps
 
 - **compiled the production capture + schema modules from this tree** — `{"bundles":["capture.mjs","schema.mjs"]}`
-- **uploaded the source post photo through Ghost admin images/upload/** — `{"status":201,"url":"https://localhost:2443/content/images/2026/09/import-source-9.png"}`
-- **created the source post to import through the Admin API** — `{"postId":"6aad240a46fded00018ccebf","tags":["Software","Reviews"],"customTemplate":"custom-review.hbs"}`
+- **uploaded the source post photo through Ghost admin images/upload/** — `{"status":201,"url":"https://localhost:2443/content/images/2026/09/import-source-12.png"}`
+- **created the source post to import through the Admin API** — `{"postId":"6aad2efaee75c80001df761b","tags":["Software","Reviews"],"customTemplate":"custom-review.hbs"}`
 - **read the post back with ?formats=lexical&include=tags (the extension's own query)** — `{"lexicalBytes":507,"tagNames":["Software","Reviews"]}`
-- **the captured preset passes production schema validation** — `{"presetId":"imported-1789731850020"}`
+- **the captured preset passes production schema validation** — `{"presetId":"imported-1789734650571"}`
 - **every capture expectation holds for the real post** — `{"bodyCaptured":true,"bodyByteIdentical":true,"excerptCaptured":true,"excerptOnlyIfEmpty":true,"tagsCaptured":true,"tagsMerge":true,"customTemplateCaptured":true,"featureImagePortable":true,"featureImageOnlyIfEmpty":true,"titleNotCaptured":true,"grouped":true,"documentBytesUnderLimit":true}`
 - **negative control: an unreadable body aborts the import (fail closed)** — `{"message":"preset-capture: this post has no body content to capture (the post is empty)"}`
-- **created the target draft the imported preset will be applied to** — `{"postId":"6aad240a46fded00018ccec9"}`
+- **created the target draft the imported preset will be applied to** — `{"postId":"6aad2efbee75c80001df7625"}`
 - **unpacked extension loaded with the production bundles** — `{"extensionId":"eaoleodmfffldgklpdhnoehfeknooghh"}`
-- **the REAL options page lists the captured preset from chrome.storage.local** — `{"listed":true,"documentBytes":1147}`
+- **the REAL options page lists the captured preset from chrome.storage.local** — `{"listed":true,"documentBytes":1148}`
+- **the delivered options import section is live and refuses to save without a capture** — `{"sectionPresent":true,"heading":"Import a post as a preset","sourceOptions":0,"initialStatus":"No Ghost Admin tab found. Open your Ghost Admin (and enable the extension for it), then press Refresh post list.","statusAfterClick":"Pick a post to import first.","storedIds":["imported-1789734650571"],"refusedWithoutCapture":true,"storedNothingNew":true}`
 - **compiled the production planner from this tree** — `{"bundle":"plan-iife.js"}`
-- **Ghost Admin editor loaded the live Ember record** — `{"postId":"6aad240a46fded00018ccec9"}`
-- **snapshotted the live editor record (empty body, no excerpt/photo)** — `{"bodyEmpty":true,"excerpt":null,"customTemplate":null,"title":"Import target 1789731850020","tags":[],"featureImage":null}`
+- **Ghost Admin editor loaded the live Ember record** — `{"postId":"6aad2efbee75c80001df7625"}`
+- **snapshotted the live editor record (empty body, no excerpt/photo)** — `{"bodyEmpty":true,"excerpt":null,"customTemplate":null,"title":"Import target 1789734650571","tags":[],"featureImage":null}`
 - **the production planner planned the imported preset against the live record** — `{"status":"ready","fields":["body","customTemplate","excerpt","featureImage","tags"]}`
 - **per-field live diagnostics through the production path** — `[{"field":"body","ok":true,"error":null,"status":null},{"field":"excerpt","ok":true,"error":null,"status":null},{"field":"tags","ok":true,"error":null,"status":null},{"field":"customTemplate","ok":true,"error":null,"status":null},{"field":"featureImage","ok":true,"error":null,"status":null}]`
-- **production MAIN-world bridge applied the imported preset with one native save** — `{"saved":true,"resourceId":"6aad240a46fded00018ccec9","fields":["body","customTemplate","excerpt","featureImage","tags"]}`
-- **authenticated Admin API readback confirms every imported field** — `{"postId":"6aad240a46fded00018ccec9","title":"Import target 1789731850020","titleUnchanged":true,"customExcerpt":"An excerpt worth templating.","customTemplate":"custom-review.hbs","featureImage":"https://localhost:2443/content/images/2026/09/import-source-9.png","expectedFeatureImagePath":"/content/images/2026/09/import-source-9.png","tags":["Reviews","Software"],"bodyTextNodes":2,"bodyContainsImportedText":true,"checks":{"excerptApplied":true,"tagsApplied":true,"customTemplateApplied":true,"featureImageApplied":true,"bodyApplied":true,"titleUntouched":true}}`
+- **production MAIN-world bridge applied the imported preset with one native save** — `{"saved":true,"resourceId":"6aad2efbee75c80001df7625","fields":["body","customTemplate","excerpt","featureImage","tags"]}`
+- **authenticated Admin API readback confirms every imported field** — `{"postId":"6aad2efbee75c80001df7625","title":"Import target 1789734650571","titleUnchanged":true,"customExcerpt":"An excerpt worth templating.","customTemplate":"custom-review.hbs","featureImage":"https://localhost:2443/content/images/2026/09/import-source-12.png","expectedFeatureImagePath":"/content/images/2026/09/import-source-12.png","tags":["Reviews","Software"],"bodyTextNodes":2,"bodyContainsImportedText":true,"checks":{"excerptApplied":true,"tagsApplied":true,"customTemplateApplied":true,"featureImageApplied":true,"bodyApplied":true,"titleUntouched":true}}`
 
 ## Storage-level corroboration (run separately against the same instance)
 
 ```bash
-docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select title, custom_excerpt, custom_template, feature_image from posts where id='6aad240a46fded00018ccec9'\\G"
-docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select p.slug, t.name from posts p join posts_tags pt on pt.post_id=p.id join tags t on t.id=pt.tag_id where p.id='6aad240a46fded00018ccec9';"
+docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select title, custom_excerpt, custom_template, feature_image from posts where id='6aad2efbee75c80001df7625'\\G"
+docker exec ghost-local-mysql mysql -ughost -pghostpw ghost -e "select p.slug, t.name from posts p join posts_tags pt on pt.post_id=p.id join tags t on t.id=pt.tag_id where p.id='6aad2efbee75c80001df7625';"
 ```
 
 ## Limitation recorded honestly

@@ -20,6 +20,17 @@ import {
 } from './options-crud';
 import { PRESET_SCHEMA_VERSION, type FeatureImageField, type Preset } from './preset-schema';
 import type { ImageAssetMeta } from './image-asset-store';
+import { deriveIdFromName, nextAvailablePresetId } from './preset-naming';
+import { OPTIONS_CAPTURE_SOURCE } from './message-sources';
+import { defaultImportName, describeCapture } from './preset-capture';
+import {
+  captureCurrent,
+  capturePost,
+  listCapturable,
+  saveCapturedPreset,
+  type CapturableEntry,
+} from './preset-import';
+import type { CaptureOutcome, ImportSender } from './preset-import';
 import { createImageAssetStore, createIndexedDbAssetBackend } from './image-asset-store';
 import {
   exportPresets,
@@ -80,6 +91,8 @@ export interface OptionsView {
   bodyHelp?: RenderEl;
   importArea: RenderInput;
   exportArea: RenderInput;
+  /** Import-from-a-post controls (absent in reduced views). */
+  fromPost?: OptionsFromPostView;
   document: {
     createElement: (tag: string) => RenderEl;
     getElementById: (id: string) => RenderEl | null;
@@ -90,8 +103,22 @@ export interface OptionsView {
   resetForm: () => void;
 }
 
+/** Controls of the "import a post as a preset" section. */
+export interface OptionsFromPostView {
+  source: RenderInput;
+  name: RenderInput;
+  includeTitle?: RenderInput;
+  save: RenderEl;
+  refresh?: RenderEl;
+  status: RenderEl;
+  /** Last successful read of a post, kept so the Import button can build it. */
+  captured?: CaptureOutcome | null;
+}
+
 export interface RenderEl {
   textContent: string | null;
+  /** Present on form controls (select/input). */
+  value?: string;
   setAttribute(name: string, value: string): void;
   getAttribute(name: string): string | null;
   removeAttribute(name: string): void;
@@ -103,6 +130,8 @@ export interface RenderEl {
 export interface RenderInput extends RenderEl {
   value: string;
   disabled: boolean;
+  /** Present on the checkbox controls (title opt-in). */
+  checked?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,8 +180,6 @@ export function renderPresetRow(
 /* ID derivation (shared with post import — see preset-naming.ts)      */
 /* ------------------------------------------------------------------ */
 
-import { deriveIdFromName, nextAvailablePresetId } from './preset-naming';
-
 export { deriveIdFromName, nextAvailablePresetId };
 
 /* ------------------------------------------------------------------ */
@@ -168,6 +195,14 @@ export interface OptionsControllerDeps {
    * asset id. Absent in tests that do not exercise the photo picker.
    */
   imageAssets?: OptionsImageAssets;
+  /**
+   * Transport for the import section. The options page cannot reach the Admin
+   * API or the live editor itself (it is an extension origin with no content
+   * script), so it hands read-only operations to the service worker, which
+   * routes them to a granted Ghost Admin tab. Absent in tests that do not
+   * exercise the import.
+   */
+  sendImportMessage?: ImportSender;
 }
 
 /** Narrow view of the image asset store the options page needs. */
@@ -525,6 +560,143 @@ export function setStatus(view: OptionsView, message: string, isError = false): 
 /* ------------------------------------------------------------------ */
 
 /** Wire the options page once the DOM is ready. */
+
+/* ------------------------------------------------------------------ */
+/* Import an existing post (Options-page flow)                         */
+/* ------------------------------------------------------------------ */
+
+/** Fill the source picker: the open editor first, then stored posts/pages. */
+export function renderFromPostSources(
+  view: OptionsFromPostView,
+  entries: readonly CapturableEntry[],
+  includeCurrent: boolean,
+  createEl: (tag: string) => RenderEl,
+): void {
+  view.source.textContent = '';
+  if (includeCurrent) {
+    const option = createEl('option');
+    option.value = FROM_POST_CURRENT;
+    option.textContent = 'The post open in the editor';
+    view.source.appendChild(option);
+  }
+  for (const entry of entries) {
+    const option = createEl('option');
+    option.value = `${entry.resourceType}:${entry.id}`;
+    option.textContent = `${entry.title} (${entry.resourceType}, ${entry.status})`;
+    view.source.appendChild(option);
+  }
+  if (includeCurrent) view.source.value = FROM_POST_CURRENT;
+  else if (entries[0]) view.source.value = `${entries[0].resourceType}:${entries[0].id}`;
+}
+
+/** Value used for the "the post open in the editor" picker entry. */
+export const FROM_POST_CURRENT = 'current';
+
+function setFromPostStatus(
+  view: OptionsView,
+  message: string,
+  tone: 'info' | 'error' = 'info',
+): void {
+  if (!view.fromPost) return;
+  view.fromPost.status.textContent = message;
+  if (tone === 'error') view.fromPost.status.setAttribute('data-tone', 'error');
+  else view.fromPost.status.removeAttribute('data-tone');
+}
+
+function fromPostSelection(
+  view: OptionsFromPostView,
+): { resourceType: 'post' | 'page'; id: string } | null {
+  const value = view.source.value ?? '';
+  if (value.length === 0 || value === FROM_POST_CURRENT) return null;
+  const [resourceType, id] = value.split(':');
+  if (resourceType !== 'post' && resourceType !== 'page') return null;
+  if (!id) return null;
+  return { resourceType, id };
+}
+
+/** Populate the picker from a granted Ghost Admin tab. */
+export async function refreshFromPostSources(deps: OptionsControllerDeps): Promise<void> {
+  const { view } = deps;
+  if (!view.fromPost) return;
+  const section = view.fromPost;
+  if (!deps.sendImportMessage) {
+    setFromPostStatus(
+      view,
+      'Import needs a Ghost Admin tab: open your Ghost Admin and enable the extension for it, then reload this page.',
+      'error',
+    );
+    renderFromPostSources(section, [], false, (tag) => view.document.createElement(tag));
+    return;
+  }
+  setFromPostStatus(view, 'Reading your posts…');
+  const listed = await listCapturable(deps.sendImportMessage);
+  if (!listed.ok) {
+    renderFromPostSources(section, [], false, (tag) => view.document.createElement(tag));
+    setFromPostStatus(
+      view,
+      listed.error === 'NO_GHOST_TAB'
+        ? 'No Ghost Admin tab found. Open your Ghost Admin (and enable the extension for it), then press Refresh post list.'
+        : `Post list unavailable: ${listed.error ?? 'unknown error'}`,
+      'error',
+    );
+    return;
+  }
+  renderFromPostSources(section, listed.entries, true, (tag) => view.document.createElement(tag));
+  await loadFromPostSource(deps);
+}
+
+/** Read the selected source into capture fields and prefill the name. */
+export async function loadFromPostSource(deps: OptionsControllerDeps): Promise<void> {
+  const { view } = deps;
+  const section = view.fromPost;
+  const send = deps.sendImportMessage;
+  if (!section || !send) return;
+  const selection = fromPostSelection(section);
+  setFromPostStatus(view, 'Reading the post…');
+  const read = selection
+    ? await capturePost(send, selection.resourceType, selection.id)
+    : await captureCurrent(send);
+  if (!read.ok || !read.outcome) {
+    section.captured = null;
+    setFromPostStatus(view, `Import failed: ${read.error ?? 'unknown error'}`, 'error');
+    return;
+  }
+  section.captured = read.outcome;
+  const summary = describeCapture(read.outcome.source, {
+    name: '',
+    includeTitle: section.includeTitle?.checked === true,
+  });
+  section.name.value = defaultImportName(read.outcome.source);
+  const cautions = read.outcome.warnings.length > 0 ? ` — ${read.outcome.warnings.join('; ')}` : '';
+  setFromPostStatus(view, `Ready to import: ${summary.join(', ')}.${cautions}`);
+}
+
+/** Build a preset from the captured post and store it. */
+export async function importFromPost(deps: OptionsControllerDeps): Promise<void> {
+  const { view, rt } = deps;
+  const section = view.fromPost;
+  if (!section) return;
+  const captured = section.captured;
+  if (!captured) {
+    setFromPostStatus(view, 'Pick a post to import first.', 'error');
+    return;
+  }
+  const name = (section.name.value ?? '').trim() || defaultImportName(captured.source);
+  const saved = await saveCapturedPreset(
+    captured,
+    { name, includeTitle: section.includeTitle?.checked === true },
+    { loadPresets: () => rt.loadPresets(), savePreset: (input) => rt.savePreset(input) },
+  );
+  if (!saved.ok || !saved.preset) {
+    setFromPostStatus(view, `Import failed: ${saved.error ?? 'unknown error'}`, 'error');
+    return;
+  }
+  await refreshList(deps);
+  const warnings = saved.warnings.length > 0 ? ` (${saved.warnings.join('; ')})` : '';
+  setFromPostStatus(view, `Saved preset “${saved.preset.name}”${warnings}.`);
+  setStatus(view, `Imported “${saved.preset.name}” as a preset.`);
+}
+
 export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
   const { view } = deps;
   view.form.source.addEventListener('change', () => updateBodyEditor(view));
@@ -541,6 +713,17 @@ export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
     view.resetForm();
     setStatus(view, 'Form cleared.');
   });
+  if (view.fromPost) {
+    const section = view.fromPost;
+    section.source.addEventListener('change', () => void loadFromPostSource(deps));
+    section.includeTitle?.addEventListener('change', () => {
+      if (section.captured) void loadFromPostSource(deps);
+    });
+    section.save.addEventListener('click', () => void importFromPost(deps));
+    section.refresh?.addEventListener('click', () => void refreshFromPostSources(deps));
+    // A missing transport (no `chrome` in tests) leaves the section inert.
+    if (deps.sendImportMessage) void refreshFromPostSources(deps);
+  }
   const featureImageClear = view.document.getElementById('opt-feature-image-clear');
   featureImageClear?.addEventListener('click', () => {
     clearFeatureImage(view);
@@ -596,6 +779,14 @@ if (isBrowserContext()) {
       featureImageStatus: el('opt-feature-image-status') as RenderEl,
       importArea,
       exportArea,
+      fromPost: {
+        source: input('opt-frompost-source') as RenderInput,
+        name: input('opt-frompost-name') as RenderInput,
+        includeTitle: input('opt-frompost-title') as RenderInput,
+        save: el('opt-frompost-save') as RenderEl,
+        refresh: el('opt-frompost-refresh') as RenderEl,
+        status: el('opt-frompost-status') as RenderEl,
+      },
       document: {
         createElement: (tag: string) => doc.createElement(tag) as unknown as RenderEl,
         getElementById: (id: string) => el(id),
@@ -633,7 +824,19 @@ if (isBrowserContext()) {
       rt: createOptionsRuntime(),
       view,
       ...(imageAssets ? { imageAssets } : {}),
+      // The import section reads through the service worker, which routes the
+      // operation to a Ghost Admin tab the user has granted.
+      sendImportMessage: (message) =>
+        chrome.runtime.sendMessage({ source: OPTIONS_CAPTURE_SOURCE, ...message }),
     };
+
+    // The popup's "Import as template" button lands here: bring the section into
+    // view so the owner sees the picker immediately.
+    if (globalThis.location?.hash === '#import') {
+      const section = doc.getElementById('opt-frompost-section');
+      section?.scrollIntoView?.({ block: 'start' });
+      (doc.getElementById('opt-frompost-name') as HTMLInputElement | null)?.focus();
+    }
 
     const fileInput = doc.getElementById('opt-feature-image-file') as HTMLInputElement | null;
     fileInput?.addEventListener('change', () => {

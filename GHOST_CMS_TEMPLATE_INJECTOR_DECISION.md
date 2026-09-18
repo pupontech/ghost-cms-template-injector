@@ -442,6 +442,25 @@ post/page**. The import path is a pure function plus a read-only API read; it ne
 - Every result passes `validatePreset` before it is stored, so an import can never persist a document
   the store would later reject.
 
+### Surfaces and routing
+
+Owner-facing placement (decided after the first build): the import UI belongs to the **Options page**
+— the popup carries a single *Import as template* button that opens `options/options.html#import`.
+
+An extension page has no content script, so the Options page cannot read the Admin API with the site's
+session cookie nor touch the live editor. It sends a fixed-identity request
+(`ghost-cms-template-injector/options-capture/v1`, operations `listPosts`/`capture`/`capturePost`) to
+the service worker, which:
+- accepts it only from a sender **without** a tab (a content script or web page arrives with one; no
+  `externally_connectable` is declared, so web pages cannot message the extension at all);
+- picks the target itself — a granted tab whose URL is a Ghost Admin page, preferring an editor route.
+  `chrome.tabs.query({})` needs no `tabs` permission because `url` is only exposed for hosts the user
+  granted, so the reachable set is exactly the consented one, and the caller can never redirect a read
+  to another tab;
+- re-identifies the message with the popup source and forwards it, so the content script's existing
+  read-only operations are reused unchanged.
+- reports `NO_GHOST_TAB` so the section can tell the owner what to do instead of failing silently.
+
 ### Write path
 
 The importing surface (popup controller, or the in-page toolbar) assigns a free id via
