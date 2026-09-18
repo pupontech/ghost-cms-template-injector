@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "manifest:validate": "node scripts/validate-manifest.mjs",
+    "package:release": "node scripts/package-release.mjs",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "build:debug": "DEBUG_BUILD=1 npm run build",
     "audit:high": "npm audit --audit-level=high",
