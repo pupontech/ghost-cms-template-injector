@@ -172,6 +172,20 @@ target tab is chosen by the worker, never by the page, so a read can never be po
 - `tests/` — unit, contract, accessibility, and real-browser proof harnesses.
 - `evidence/` — redacted release evidence; never place credentials here.
 
+## Surfaces at a glance
+
+The popup, the Options page, and the Setup page share one design language (same tokens, cards,
+hairline buttons, one accent colour, dark mode): the popup is meant to read as the same product as the
+settings it opens.
+
+- **Popup** — apply a preset to the open editor, undo the last apply, and one **Import as template**
+  button that opens the Options import section. Nothing import-specific lives here.
+- **Options page** — preset authoring, the import section, Import/Export of preset JSON.
+- **Setup page** — per-site access consent.
+
+`npm run proof:ui-parity` loads the built extension in real Chromium and asserts the popup and the
+Options page compute the same palette, radii, heading treatment and primary-button colour.
+
 ## Release state
 
 The automated suite and genuine headed Chromium C8 Disable/re-enable lifecycle are green. See [`docs/release-status.md`](docs/release-status.md) and the redacted evidence under `evidence/`. Final release acceptance remains the repository owner's decision after following `TESTING.md`.

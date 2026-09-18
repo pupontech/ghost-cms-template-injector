@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.3 — unreleased
+
+### Changed
+
+- **The popup now looks like the rest of the extension's settings.** It was the one surface with its own
+  palette: no page background token, no shared radius, a different heading scale. It now uses the same
+  design tokens as the Options and Setup pages (page background, card surface, hairline borders, one
+  accent colour, 10px radii, uppercase section labels, system font stack, dark mode), the preset list is
+  a card like the Options preset list, **Import as template** is the primary accent button, and Undo is
+  the hairline secondary button. Element ids and every script contract are unchanged.
+- A contract test now fails the build if any extension page's palette tokens or markup ids drift apart,
+  and a live-proof harness (`npm run proof:ui-parity`) loads the built extension in real Chromium and
+  compares what the browser computes for the popup against the Options page.
+- The release-ZIP load check no longer reports Chromium's own service chatter (GCM/GPU/DBus "ERROR"
+  lines) as extension load errors, and it now fails if the ZIP's manifest version differs from the
+  version it claims — previously it pinned a hardcoded version, so a correct ZIP could exit non-zero.
+
 ## 0.5.2 — unreleased
 
 ### Fixed

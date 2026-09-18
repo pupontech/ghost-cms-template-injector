@@ -1,6 +1,6 @@
 {
   "name": "ghost-cms-template-injector",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
   "description": "Secure MV3 preset toolbar for Ghost Admin posts and pages.",
   "type": "module",
@@ -18,7 +18,8 @@
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm test && npm run manifest:validate",
     "proof:post-import": "node tests/e2e/import-post-proof.mjs",
     "proof:feature-image": "node tests/e2e/feature-image-proof.mjs",
-    "load-check:zip": "node tests/e2e/release-zip-load-check.mjs"
+    "load-check:zip": "node tests/e2e/release-zip-load-check.mjs",
+    "proof:ui-parity": "node tests/e2e/ui-design-parity-proof.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.1",

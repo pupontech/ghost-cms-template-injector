@@ -4,9 +4,11 @@
  * bundle, surfaces here and nowhere else).
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 import WebSocket from 'ws';
+import { extensionLoadErrors } from './lib/chromium-stderr.mjs';
 
 const ZIP = process.argv[2];
 const dir = mkdtempSync('/tmp/gcti-zip-load-');
@@ -16,6 +18,9 @@ execFileSync('python3', [
   ZIP,
   dir,
 ]);
+
+/** The version the ZIP claims, so the check cannot pass on a stale build. */
+const expectedVersion = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')).version;
 
 const PORT = 9393;
 const child = spawn(
@@ -109,11 +114,12 @@ if (extensionId) {
   }
 }
 
-const errors = stderr
-  .split('\n')
-  .filter((line) => /Could not load|Manifest|Failed to load extension|ERROR/.test(line))
-  .slice(0, 5);
+// Extension load failures only: Chromium's own services (GCM, GPU, DBus, audio)
+// also write "ERROR" lines to stderr and must not be reported as load errors.
+const errors = extensionLoadErrors(stderr);
 
-console.log(JSON.stringify({ extensionId, manifestVersion, loadErrors: errors }, null, 2));
+console.log(
+  JSON.stringify({ extensionId, manifestVersion, expectedVersion, loadErrors: errors }, null, 2),
+);
 child.kill('SIGTERM');
-process.exit(extensionId && manifestVersion === '0.4.0' && errors.length === 0 ? 0 : 1);
+process.exit(extensionId && manifestVersion === expectedVersion && errors.length === 0 ? 0 : 1);
