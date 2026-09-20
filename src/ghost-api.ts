@@ -11,7 +11,7 @@
  */
 
 /** Resources this client may touch (C1/C6). */
-export type ApiResource = 'posts' | 'pages' | 'snippets' | 'themes';
+export type ApiResource = 'posts' | 'pages' | 'snippets' | 'themes' | 'images';
 
 export interface GhostTagRef {
   name?: string;
@@ -128,6 +128,15 @@ export interface UpdateInput {
   custom_template?: string | null;
   lexical?: string;
   tags?: readonly string[];
+  /** Absolute or Ghost-root-relative feature image URL. */
+  feature_image?: string | null;
+}
+
+/** One image handed to Ghost's admin upload endpoint. */
+export interface ImageUploadInput {
+  data: Uint8Array;
+  name: string;
+  mimeType: string;
 }
 
 export interface CleanEditorLiveState {
@@ -240,6 +249,116 @@ export class GhostAdminClient {
     );
   }
 
+  /**
+   * Lightweight index of posts/pages for the "import an existing post" picker:
+   * ids, titles and timestamps only. Never used for writes.
+   */
+  async listCapturableIndex(
+    resource: 'posts' | 'pages',
+  ): Promise<Array<{ id: string; title: string; status: string; updatedAt: string | null }>> {
+    const body = await this.#request(
+      resource,
+      '?limit=all&fields=id,title,slug,status,updated_at&order=updated_at%20desc',
+    );
+    return extractPlural<GhostPostRecord>(resource, body)
+      .filter((record): record is GhostPostRecord & { id: string } => typeof record.id === 'string')
+      .map((record) => ({
+        id: record.id,
+        title:
+          typeof record.title === 'string' && record.title.trim().length > 0
+            ? record.title
+            : '(Untitled)',
+        status: typeof record.status === 'string' ? record.status : 'unknown',
+        updatedAt: typeof record.updated_at === 'string' ? record.updated_at : null,
+      }));
+  }
+
+  /**
+   * Full record for one post/page, with the formats an import needs: serialized
+   * Lexical body and the tag relation. Returns null when the id does not exist
+   * (Ghost answers 404), so callers can report "not found" without guessing.
+   */
+  async getCapturableRecord(
+    resource: 'posts' | 'pages',
+    id: string,
+  ): Promise<GhostPostRecord | null> {
+    if (typeof id !== 'string' || id.trim().length === 0) {
+      throw new TypeError('ghost-api: a resource id is required');
+    }
+    let body: unknown;
+    try {
+      body = await this.#request(
+        resource,
+        `${encodeURIComponent(id)}/?formats=lexical&include=tags`,
+      );
+    } catch (err) {
+      if (err instanceof GhostApiError && err.status === 404) return null;
+      throw err;
+    }
+    const records = extractPlural<GhostPostRecord>(resource, body);
+    return records[0] ?? null;
+  }
+
+  /**
+   * Upload one image through Ghost's own admin image endpoint
+   * (`POST <admin>/images/upload/`, multipart, cookie-authenticated) and
+   * return the URL Ghost now serves it from.
+   *
+   * This is exactly the request Ghost Admin's own uploader makes
+   * (`gh-uploader.js`: `apiRoot + 'images/upload/'`, param `file`,
+   * `purpose=image`), so the media lands in the site's normal image storage
+   * with the usual path (`/content/images/<year>/<month>/<name>`).
+   */
+  async uploadImage(input: ImageUploadInput): Promise<string> {
+    if (!input || !(input.data instanceof Uint8Array) || input.data.byteLength === 0) {
+      throw new TypeError('ghost-api: image upload requires non-empty bytes');
+    }
+    if (typeof input.name !== 'string' || input.name.trim().length === 0) {
+      throw new TypeError('ghost-api: image upload requires a file name');
+    }
+    const form = new FormData();
+    // Copy into a fresh ArrayBuffer-backed view so the Blob part is well typed
+    // and cannot alias a buffer the caller keeps mutating.
+    const bytes = new Uint8Array(input.data);
+    form.append('file', new Blob([bytes], { type: input.mimeType }), input.name);
+    form.append('purpose', 'image');
+
+    let response: Response;
+    try {
+      response = await this.#fetch(`${this.#base}images/upload/`, {
+        method: 'POST',
+        // Same-origin: the Admin session cookie rides along, exactly like the
+        // reads/writes above. No Authorization header, no stored secret.
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+        body: form,
+      });
+    } catch (cause) {
+      throw new GhostApiError('NETWORK_ERROR', 0, [
+        { message: cause instanceof Error ? cause.message : String(cause) },
+      ]);
+    }
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const errors =
+        isRecord(body) && Array.isArray(body['errors'])
+          ? (body['errors'] as { type?: string; message?: string }[])
+          : [{ message: 'image upload rejected' }];
+      throw new GhostApiError('IMAGE_UPLOAD_FAILED', response.status, errors);
+    }
+    const images = isRecord(body) ? body['images'] : undefined;
+    const first = Array.isArray(images)
+      ? (images[0] as Record<string, unknown> | undefined)
+      : undefined;
+    const url = first?.['url'];
+    if (typeof url !== 'string' || url.trim().length === 0) {
+      throw new GhostApiError('INVALID_IMAGE_UPLOAD_RESPONSE', response.status, [
+        { message: 'expected an images[] envelope carrying a url' },
+      ]);
+    }
+    return url;
+  }
+
   async #update(resource: 'posts' | 'pages', input: UpdateInput): Promise<GhostPostRecord> {
     if (!input.updated_at) {
       throw new TypeError('ghost-api: mutation requires optimistic-concurrency updated_at');
@@ -253,6 +372,7 @@ export class GhostAdminClient {
     if (input.custom_template !== undefined) payload['custom_template'] = input.custom_template;
     if (input.lexical !== undefined) payload['lexical'] = input.lexical;
     if (input.tags !== undefined) payload['tags'] = input.tags;
+    if (input.feature_image !== undefined) payload['feature_image'] = input.feature_image;
 
     let response: Response;
     try {

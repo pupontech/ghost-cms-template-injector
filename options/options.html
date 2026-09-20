@@ -203,6 +203,29 @@
       textarea.optional:not(:focus) {
         border-style: solid;
       }
+      .feature-image-picker {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .feature-image-picker img {
+        width: 96px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+      }
+      .feature-image-picker input[type='file'] {
+        width: auto;
+      }
+      .feature-image-picker-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
       .optional-label {
         color: var(--text-3);
         font-weight: 400;
@@ -260,6 +283,39 @@
       }
 
       /* ---- import/export ---- */
+
+      /* ---- import an existing post ---- */
+      #opt-frompost-section .io-card-note {
+        margin: 0 0 12px;
+        color: var(--text-2);
+        font-size: 12.5px;
+      }
+      #opt-frompost-section select {
+        width: 100%;
+        font: inherit;
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      .field-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .field-check input {
+        width: auto;
+      }
+      #opt-frompost-status {
+        margin: 10px 0 0;
+        font-size: 12px;
+        color: var(--text-2);
+        min-height: 16px;
+      }
+      #opt-frompost-status[data-tone='error'] {
+        color: var(--danger);
+      }
       .io-card {
         padding: 16px 20px;
       }
@@ -303,6 +359,40 @@
         <ul id="opt-preset-list"></ul>
       </div>
 
+      <h2 id="opt-frompost-heading">Import a post as a preset</h2>
+      <section class="card" id="opt-frompost-section" aria-labelledby="opt-frompost-heading">
+        <p class="io-card-note">
+          Turn a post you already published into a preset. The body, excerpt, tags, custom template
+          and feature image are captured; the title is only captured when you ask for it, so
+          re-applying a preset never renames a post. The list is read from a Ghost Admin tab you
+          have granted access to.
+        </p>
+        <div class="field">
+          <label for="opt-frompost-source">Source</label>
+          <select id="opt-frompost-source" aria-describedby="opt-frompost-status"></select>
+        </div>
+        <div class="field">
+          <label for="opt-frompost-name">Preset name</label>
+          <input
+            id="opt-frompost-name"
+            type="text"
+            autocomplete="off"
+            placeholder="Imported preset"
+          />
+        </div>
+        <div class="field field-check">
+          <input id="opt-frompost-title" type="checkbox" />
+          <label for="opt-frompost-title">Include this post's title</label>
+        </div>
+        <div class="actions" style="margin-top: 12px">
+          <button id="opt-frompost-save" type="button">Import as preset</button>
+          <button id="opt-frompost-refresh" type="button">Refresh post list</button>
+        </div>
+        <p id="opt-frompost-status" role="status" aria-live="polite">
+          Looking for a Ghost Admin tab…
+        </p>
+      </section>
+
       <h2>Create a preset</h2>
       <form id="opt-form" aria-label="Create or edit a preset">
         <div class="field">
@@ -344,13 +434,44 @@
           <small>Up to 300 characters. Only applied when the post has no excerpt yet.</small>
         </div>
 
+        <div class="field">
+          <label for="opt-feature-image-file"
+            >Feature image (top image) <span class="optional-label">· optional</span></label
+          >
+          <div class="feature-image-picker">
+            <img id="opt-feature-image-preview" alt="Selected feature image" hidden />
+            <div class="feature-image-picker-actions">
+              <input
+                id="opt-feature-image-file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+              />
+              <button id="opt-feature-image-clear" type="button">Remove photo</button>
+            </div>
+          </div>
+          <small id="opt-feature-image-status" role="status">No photo selected.</small>
+          <small
+            >The photo stays in this browser and is uploaded to your Ghost site the first time the
+            preset is applied. Preset exports do not carry photos.</small
+          >
+        </div>
+
+        <div class="field">
+          <label for="opt-feature-image-mode">Feature image mode</label>
+          <select id="opt-feature-image-mode">
+            <option value="only-if-empty">Only set it when the post has no feature image</option>
+            <option value="replace">Always replace the post's feature image</option>
+            <option value="prompt">Ask before changing it</option>
+          </select>
+        </div>
+
         <div class="actions">
           <button id="opt-cancel" type="button">Clear</button>
           <button id="opt-save" type="button">Save preset</button>
         </div>
       </form>
 
-      <h2>Import</h2>
+      <h2>Import presets (JSON)</h2>
       <div class="card io-card">
         <p>Paste a preset collection (JSON array or <code>{ "presets": [...] }</code>).</p>
         <textarea
@@ -454,6 +575,19 @@
         <label for="opt-icon">Icon <span class="optional-label">· optional</span></label>
         <input id="opt-icon" type="text" autocomplete="off" placeholder="📝" />
       </div>
+      <div class="field">
+        <label for="opt-feature-image-url"
+          >Feature image URL
+          <span class="optional-label">· alternative to a cached photo</span></label
+        >
+        <input
+          id="opt-feature-image-url"
+          type="text"
+          autocomplete="off"
+          placeholder="/content/images/2026/09/photo.jpg"
+        />
+      </div>
+      <input id="opt-feature-image-asset" type="hidden" />
     </div>
 
     <script type="module" src="../dist/options.js"></script>

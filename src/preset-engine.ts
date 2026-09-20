@@ -14,11 +14,12 @@ import type {
   BodyMode,
   CustomTemplateField,
   ExcerptField,
+  FeatureImageField,
   Preset,
   TagsField,
   TitleField,
 } from './preset-schema';
-import { isSerializedLexical } from './preset-schema';
+import { isAcceptableImageUrl, isSerializedLexical } from './preset-schema';
 import { plainTextToLexical } from './plain-text-lexical';
 
 /** Live per-field state captured by a C4 `snapshot` on the open editor. */
@@ -30,6 +31,8 @@ export interface EditorSnapshot {
   title: string | null;
   /** Existing tag display names in live relation order. */
   tags: string[];
+  /** Live feature image URL (the editor's top image), or null when unset. */
+  featureImage: string | null;
 }
 
 /** Dependency lookups resolved from validated Ghost Admin API responses (C6). */
@@ -44,9 +47,17 @@ export interface PlanContext {
    * customTemplate write must fail closed.
    */
   templates?: string[];
+  /**
+   * Resolved feature-image URL for the preset being planned (a Ghost-served
+   * URL, produced by uploading a cached photo when the preset carries one).
+   * Absent means the photo could not be resolved, so any feature-image write
+   * fails closed rather than saving a post with a broken image.
+   */
+  featureImageUrl?: string;
 }
 
-export type PlannedField = 'body' | 'excerpt' | 'customTemplate' | 'tags' | 'title';
+export type PlannedField =
+  'body' | 'excerpt' | 'customTemplate' | 'tags' | 'title' | 'featureImage';
 
 export type PlanActionOp = 'set' | 'skip';
 
@@ -80,6 +91,7 @@ export function createEditorSnapshot(overrides: Partial<EditorSnapshot> = {}): E
     customTemplate: null,
     title: null,
     tags: [],
+    featureImage: null,
     ...overrides,
   });
 }
@@ -271,6 +283,76 @@ function planTags(field: TagsField, snapshot: EditorSnapshot): PlanAction {
 }
 
 /**
+ * Whether the pipeline must resolve this field to a Ghost-served image URL
+ * before planning. Resolution is not free for a cached photo (it uploads to
+ * the Ghost install), so it is skipped whenever the planned action could not
+ * possibly apply:
+ *   - URL-carrying presets always resolve (normalization only, no upload);
+ *   - `only-if-empty` on a post that already has a feature image never applies;
+ *   - `prompt` resolves only once the owner has accepted the write.
+ */
+export function shouldResolveFeatureImage(
+  field: FeatureImageField | undefined,
+  snapshot: EditorSnapshot,
+  answers?: Partial<Record<PlannedField, boolean>>,
+): boolean {
+  if (!field) return false;
+  if (typeof field.url === 'string') return true;
+  if (field.mode === 'only-if-empty' && (snapshot.featureImage ?? '').length > 0) return false;
+  if (field.mode === 'prompt') return answers?.featureImage === true;
+  return true; // replace
+}
+
+/**
+ * The URL written to the record. Never invents a value: an unresolved cached
+ * photo blocks the plan instead of saving a feature image that does not exist.
+ */
+function requireResolvedFeatureImage(field: FeatureImageField, context: PlanContext): string {
+  const resolved =
+    context.featureImageUrl ?? (typeof field.url === 'string' ? field.url : undefined);
+  if (typeof resolved !== 'string' || !isAcceptableImageUrl(resolved)) {
+    throw new TypeError(
+      'metadata.featureImage: the photo could not be resolved to a Ghost image URL; refusing to write the feature image',
+    );
+  }
+  return resolved;
+}
+
+function planFeatureImage(
+  field: FeatureImageField,
+  snapshot: EditorSnapshot,
+  context: PlanContext,
+): PlanAction {
+  if (field.mode === 'prompt') {
+    // A prompt action is not validated or mutated until the owner answers, so
+    // an unresolved photo is carried as an empty value on this first pass.
+    const resolved =
+      typeof context.featureImageUrl === 'string' ? context.featureImageUrl : (field.url ?? '');
+    return {
+      field: 'featureImage',
+      op: 'skip',
+      status: 'prompt',
+      value: resolved,
+      question: 'Set the post’s feature image (top image) to this photo?',
+    };
+  }
+  if (field.mode === 'only-if-empty' && (snapshot.featureImage ?? '').length > 0) {
+    return {
+      field: 'featureImage',
+      op: 'skip',
+      status: 'skip',
+      reason: 'post already has a feature image',
+    };
+  }
+  return {
+    field: 'featureImage',
+    op: 'set',
+    status: 'apply',
+    value: requireResolvedFeatureImage(field, context),
+  };
+}
+
+/**
  * Resolve every field of the preset into a complete plan before any mutation.
  * Dependency failures abort the entire plan with zero actions (C4/C6).
  */
@@ -360,6 +442,9 @@ export function planPresetApplication(
       actions.push(planCustomTemplate(metadata.customTemplate, snapshot, context));
     }
     if (metadata?.tags) actions.push(planTags(metadata.tags, snapshot));
+    if (metadata?.featureImage) {
+      actions.push(planFeatureImage(metadata.featureImage, snapshot, context));
+    }
   } catch (error) {
     // A malformed/unknown metadata mode should block the plan, not escape as an
     // unhandled rejection (matches how body resolution failures are handled).

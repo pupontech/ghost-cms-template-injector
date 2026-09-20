@@ -12,9 +12,9 @@
  */
 
 import { createPopupController, type PopupRuntime } from './ui-popup';
-import type { PopupMessage, ContentReply } from './ui-popup';
+import type { ContentReply, PopupMessage } from './ui-popup';
 import { detectEditorUrl, type DetectedRoute } from './route-detection';
-import { listPresets } from './preset-store';
+import { listPresets, savePreset } from './preset-store';
 import type { Preset } from './preset-schema';
 import type { ApplicationPlan } from './preset-engine';
 
@@ -29,9 +29,17 @@ export interface PopupChromeApi {
       currentWindow: boolean;
     }) => Promise<Array<{ id?: number; url?: string; hash?: string }>>;
     sendMessage: (tabId: number, message: PopupMessage) => Promise<ContentReply | undefined>;
+    /** Open a new tab (used to hand over to the Options import section). */
+    create?: (createProperties: { url: string }) => Promise<unknown>;
   };
   /** Optional explicit prompt-mode confirmation delegate. */
   confirmPrompt?: (question: string) => boolean | Promise<boolean>;
+  /** Extension APIs used by the single "Import as template" action. */
+  runtime?: {
+    getURL: (path: string) => string;
+    openOptionsPage?: () => Promise<void> | void;
+  };
+  tabsCreate?: (createProperties: { url: string }) => Promise<unknown>;
 }
 
 export interface ResolvedActiveTab {
@@ -67,6 +75,22 @@ export function buildPopupRuntime(
       return api.tabs.sendMessage(Number(resolved.tabId), message);
     },
     loadPresets: () => listPresets(),
+    savePreset: (input) => savePreset(input),
+    // The import itself lives in the Options page; the popup only hands the
+    // owner over. `tabs.create` is used because it can carry the `#import`
+    // deep link that `openOptionsPage()` cannot.
+    openOptionsImport: async () => {
+      const target = api.runtime?.getURL('options/options.html#import');
+      if (target && api.tabsCreate) {
+        try {
+          await api.tabsCreate({ url: target });
+          return;
+        } catch {
+          /* fall back to the plain options page */
+        }
+      }
+      await api.runtime?.openOptionsPage?.();
+    },
   };
 }
 
@@ -77,6 +101,10 @@ export function buildPopupRuntime(
 /** Element subset the renderer touches, so it can be faked in tests. */
 export interface RenderEl {
   textContent: string | null;
+  /** Present on form controls (select/input/checkbox). */
+  value?: string;
+  disabled?: boolean;
+  checked?: boolean;
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
   appendChild(child: RenderEl): void;
@@ -204,6 +232,11 @@ export interface PopupView {
   planApply?: RenderEl;
   planCancel?: RenderEl;
   undoButton?: RenderEl;
+  /**
+   * The popup's single import action: it opens the Options page's import
+   * section (absent in reduced views used by tests).
+   */
+  importButton?: RenderEl;
   document: { createElement: CreateEl };
 }
 
@@ -342,14 +375,24 @@ export async function initPopup(api: PopupChromeApi, view: PopupView): Promise<v
     view.statusEl.textContent = 'Apply failed: too many prompt rounds.';
   }
 
-  renderPresetList(
-    view.listEl,
-    presets,
-    (presetId) => {
-      void runApply(presetId);
-    },
-    view.document.createElement,
-  );
+  function renderList(): void {
+    renderPresetList(
+      view.listEl,
+      presets,
+      (presetId) => {
+        void runApply(presetId);
+      },
+      view.document.createElement,
+    );
+  }
+
+  renderList();
+
+  if (view.importButton) {
+    view.importButton.addEventListener('click', () => {
+      void controller.openImport();
+    });
+  }
 }
 
 /* Browser bootstrap: only runs when a real `chrome` global is present. */
@@ -374,6 +417,7 @@ if (isBrowserContext()) {
       const planApply = doc.getElementById('gcti-plan-apply');
       const planCancel = doc.getElementById('gcti-plan-cancel');
       const undoButton = doc.getElementById('gcti-undo');
+      const importButton = doc.getElementById('gcti-import-open');
       if (statusEl && listEl) {
         const popupView: PopupView = {
           statusEl: statusEl as unknown as RenderEl,
@@ -395,6 +439,10 @@ if (isBrowserContext()) {
           popupView.planCancel = planCancel as unknown as RenderEl;
         }
         if (undoButton) popupView.undoButton = undoButton as unknown as RenderEl;
+        if (importButton) popupView.importButton = importButton as unknown as RenderEl;
+        // The global `chrome` object is passed by reference: the popup bundle
+        // must never spell `chrome.tabs` (the packaging guard treats every
+        // non-worker bundle as a content script).
         void initPopup(chrome, popupView);
       }
     });

@@ -149,7 +149,20 @@ export function installMainBridge(
 
 type BridgeReply = BridgeResponse;
 
+/**
+ * Repeat-injection guard. `installMainBridge` is deliberately re-entrant for
+ * tests, but evaluating this entry point twice in one document would install a
+ * second listener — and therefore run an apply twice. The service worker can
+ * inject this file on demand (self-heal for a document that predates the
+ * dynamic registration), so the browser bootstrap installs exactly once.
+ */
+const INSTALLED_FLAG = '__gctiMainBridgeInstalled' as const;
+
 if (isBrowserContext() && typeof globalThis.addEventListener === 'function') {
-  const { handle } = createGhostMainBridge();
-  installMainBridge(handle);
+  const marker = globalThis as Record<string, unknown>;
+  if (marker[INSTALLED_FLAG] !== true) {
+    marker[INSTALLED_FLAG] = true;
+    const { handle } = createGhostMainBridge();
+    installMainBridge(handle);
+  }
 }

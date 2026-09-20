@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CreateEl } from '../../src/ui-popup-main';
 import {
   createToolbarElement,
+  importPresetFromEditor,
   initToolbar,
   renderToolbarPresets,
+  TOOLBAR_IMPORT_LABEL,
   type ToolbarDomElement,
   type ToolbarEnv,
 } from '../../src/ui-toolbar-main';
@@ -270,5 +272,145 @@ describe('initToolbar — apply uses chrome.runtime.sendMessage (no chrome.tabs)
 
     Reflect.deleteProperty(store, 'chrome');
     vi.resetModules();
+  });
+});
+
+describe('toolbar import — save the open post as a preset', () => {
+  const CAPTURED = {
+    resourceType: 'post' as const,
+    title: 'Reviewing software',
+    excerpt: 'How I review things',
+    tags: ['Reviews'],
+    customTemplate: null,
+    featureImage: null,
+    lexical:
+      '{"root":{"children":[{"children":[{"text":"Hello","type":"extended-text","version":1}],"type":"paragraph","version":1}],"type":"root","version":1}}',
+  };
+
+  type ImportEnv = Parameters<typeof importPresetFromEditor>[0];
+  function importEnv(overrides: Partial<ImportEnv> = {}) {
+    return {
+      sendMessage: vi.fn().mockResolvedValue({
+        source: 'ghost-cms-template-injector/popup/v1',
+        ok: true,
+        result: { source: CAPTURED, warnings: [], readFrom: 'admin-api', siteOrigin: null },
+      }),
+      promptText: vi.fn().mockReturnValue('My review template'),
+      savePreset: vi.fn().mockImplementation(async (input: unknown) => input),
+      listPresets: vi
+        .fn()
+        .mockResolvedValue([{ id: 'my-review-template', name: 'Taken', icon: '' }]),
+      ...overrides,
+    };
+  }
+
+  it('builds and stores a preset from the captured post', async () => {
+    const env = importEnv();
+    const result = await importPresetFromEditor(env);
+
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe('My review template');
+    expect(env.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ op: 'capture' }));
+    const saved = (env.savePreset as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      id: string;
+      metadata: Record<string, unknown>;
+      content: Record<string, unknown>;
+    };
+    expect(saved.id).toBe('my-review-template-2');
+    expect(saved.content.mode).toBe('replace');
+    expect(saved.metadata.tags).toEqual({ mode: 'merge', values: ['Reviews'] });
+  });
+
+  it('does nothing when the name prompt is cancelled', async () => {
+    const env = importEnv({ promptText: vi.fn().mockReturnValue(null) });
+    const result = await importPresetFromEditor(env);
+    expect(result).toEqual({ ok: false, error: 'cancelled' });
+    expect(env.savePreset).not.toHaveBeenCalled();
+  });
+
+  it('refuses a blank name', async () => {
+    const env = importEnv({ promptText: vi.fn().mockReturnValue('   ') });
+    const result = await importPresetFromEditor(env);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/name is required/);
+    expect(env.savePreset).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed or unusable capture instead of saving junk', async () => {
+    const failed = importEnv({
+      sendMessage: vi.fn().mockResolvedValue({ source: 'x', ok: false, error: 'NOT_ON_EDITOR' }),
+    });
+    await expect(importPresetFromEditor(failed)).resolves.toMatchObject({
+      ok: false,
+      error: 'NOT_ON_EDITOR',
+    });
+
+    const junk = importEnv({
+      sendMessage: vi.fn().mockResolvedValue({ source: 'x', ok: true, result: { nope: true } }),
+    });
+    await expect(importPresetFromEditor(junk)).resolves.toMatchObject({
+      ok: false,
+      error: 'unrecognized capture payload',
+    });
+
+    const thrown = importEnv({
+      sendMessage: vi.fn().mockRejectedValue(new Error('no content script')),
+    });
+    await expect(importPresetFromEditor(thrown)).resolves.toMatchObject({
+      ok: false,
+      error: 'no content script',
+    });
+  });
+
+  it('refuses a post whose body is not readable', async () => {
+    const env = importEnv({
+      sendMessage: vi.fn().mockResolvedValue({
+        source: 'x',
+        ok: true,
+        result: { source: { ...CAPTURED, lexical: null }, warnings: [], siteOrigin: null },
+      }),
+    });
+    const result = await importPresetFromEditor(env);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no readable body/);
+    expect(env.savePreset).not.toHaveBeenCalled();
+  });
+
+  it('still saves when the preset list cannot be read (id falls back to the base slug)', async () => {
+    const env = importEnv({ listPresets: vi.fn().mockRejectedValue(new Error('storage gone')) });
+    const result = await importPresetFromEditor(env);
+    expect(result.ok).toBe(true);
+    expect(
+      ((env.savePreset as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as { id: string }).id,
+    ).toBe('my-review-template');
+  });
+
+  it('adds the import button to the toolbar DOM', () => {
+    const handle = createToolbarElement(() => makeEl());
+    const button = (handle.root as TestEl).children.find(
+      (child) => child.attrs['data-gcti-save-preset'] === '1',
+    );
+    expect(button).toBeDefined();
+    expect(button?.textContent).toBe(TOOLBAR_IMPORT_LABEL);
+    expect(button?.attrs['type']).toBe('button');
+  });
+
+  it('triggers the import when the toolbar button is clicked', async () => {
+    const importPreset = vi.fn().mockReturnValue(null);
+    const env = makeEnv({
+      sendMessage: vi.fn().mockResolvedValue({
+        source: 'ghost-cms-template-injector/popup/v1',
+        ok: true,
+        result: { source: CAPTURED, warnings: [], siteOrigin: null },
+      }),
+      promptText: importPreset,
+    });
+    await initToolbar(env);
+    await flush();
+    const root = (env.appendToBody as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as TestEl;
+    const button = root.children.find((child) => child.attrs['data-gcti-save-preset'] === '1');
+    button?.listeners['click']?.();
+    await flush();
+    expect(importPreset).toHaveBeenCalled();
   });
 });

@@ -92,6 +92,64 @@ export interface CustomTemplateField {
   value: string;
 }
 
+/**
+ * Ghost's "feature image" — the top image of a post/page (`feature_image`).
+ *
+ * A preset can carry the photo in two ways, and exactly one is present:
+ *   - `url`: a Ghost-hosted or external image URL already known to the owner
+ *     (root-relative `/content/images/...` is the portable form);
+ *   - `assetId`: a photo cached in the extension's local image-asset store.
+ *     The bytes stay in the extension until an apply uploads them to the Ghost
+ *     installation being edited, which yields the URL written to the record.
+ *
+ * The preset document itself never embeds image bytes: the stored document is
+ * bounded (MAX_IMPORT_BYTES) and chrome.storage.local is JSON-only.
+ */
+export interface FeatureImageField {
+  mode: (typeof METADATA_MODES)[number];
+  /** Absolute https URL (http only for a localhost dev host) or `/content/...`. */
+  url?: string;
+  /** Cached photo id produced by the extension image-asset store. */
+  assetId?: string;
+}
+
+/** Cached-photo id shape emitted by the image asset store (content-addressed). */
+export const IMAGE_ASSET_ID_PATTERN = /^img_[0-9a-f]{16}$/;
+
+/** Ghost serves uploaded images from `/content/images/...` in every install. */
+const GHOST_IMAGE_PATH_PREFIX = '/content/';
+
+const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Accept only URLs a Ghost install can render as a feature image. Fails closed
+ * on anything a browser would execute or fetch with local privileges
+ * (data:, blob:, javascript:, file:) or on path traversal.
+ */
+export function isAcceptableImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const url = value.trim();
+  if (url.length === 0 || url.length > 2048) return false;
+  // Reject control characters/whitespace that could smuggle a second directive.
+  if (/[\u0000-\u001f\u007f\s]/.test(url)) return false;
+
+  if (url.startsWith('/')) {
+    // Root-relative: must be a Ghost content path, never a traversal.
+    return url.startsWith(GHOST_IMAGE_PATH_PREFIX) && !url.includes('..');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.username.length > 0 || parsed.password.length > 0) return false;
+  if (parsed.protocol === 'https:') return true;
+  // Plain http is only tolerated for a local development Ghost instance.
+  return parsed.protocol === 'http:' && LOCAL_DEV_HOSTS.has(parsed.hostname);
+}
+
 export interface TagsField {
   mode: TagMode;
   values: string[];
@@ -110,6 +168,8 @@ export interface PresetMetadata {
   tags?: TagsField;
   /** Optional post title write (replace mode only). */
   title?: TitleField;
+  /** Optional Ghost feature image (the editor's top image). */
+  featureImage?: FeatureImageField;
 }
 
 export interface PresetUi {
@@ -245,6 +305,47 @@ function validateTitle(raw: Record<string, unknown>): TitleField {
   return { mode: 'replace', value };
 }
 
+function validateFeatureImage(raw: Record<string, unknown>): FeatureImageField {
+  const mode = raw['mode'];
+  if (typeof mode !== 'string' || !(METADATA_MODES as readonly string[]).includes(mode)) {
+    fail('metadata.featureImage.mode', `must be one of ${METADATA_MODES.join(', ')}`);
+  }
+  const hasUrl = 'url' in raw;
+  const hasAsset = 'assetId' in raw;
+  if (hasUrl === hasAsset) {
+    fail(
+      'metadata.featureImage',
+      'must carry exactly one of "url" (an image URL) or "assetId" (a cached photo)',
+    );
+  }
+  for (const key of Object.keys(raw)) {
+    if (key !== 'mode' && key !== 'url' && key !== 'assetId') {
+      fail('metadata.featureImage', `unknown field "${key}" (fail closed)`);
+    }
+  }
+  const field: FeatureImageField = { mode: mode as FeatureImageField['mode'] };
+  if (hasUrl) {
+    const url = raw['url'];
+    if (!isAcceptableImageUrl(url)) {
+      fail(
+        'metadata.featureImage.url',
+        'must be an absolute https URL (http is allowed only for a localhost dev host) or a /content/ path',
+      );
+    }
+    field.url = url;
+  } else {
+    const assetId = raw['assetId'];
+    if (typeof assetId !== 'string' || !IMAGE_ASSET_ID_PATTERN.test(assetId)) {
+      fail(
+        'metadata.featureImage.assetId',
+        'must be an image asset id such as img_0123456789abcdef',
+      );
+    }
+    field.assetId = assetId;
+  }
+  return field;
+}
+
 function validateMetadata(raw: unknown): PresetMetadata {
   if (!isRecord(raw)) fail('metadata', 'must be an object');
 
@@ -260,6 +361,8 @@ function validateMetadata(raw: unknown): PresetMetadata {
       metadata.tags = validateTags(value);
     } else if (key === 'title') {
       metadata.title = validateTitle(value);
+    } else if (key === 'featureImage') {
+      metadata.featureImage = validateFeatureImage(value);
     } else {
       fail('metadata', `unknown field "${key}" (fail closed)`);
     }

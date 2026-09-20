@@ -262,3 +262,167 @@ describe('C7 — clean-editor-only API fallback', () => {
     expect(fake.calls).toHaveLength(0);
   });
 });
+
+describe('feature image — Ghost admin image upload', () => {
+  const BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+  it('POSTs multipart to images/upload/ and returns the served URL', async () => {
+    const fake = makeFetch([
+      jsonResponse(201, {
+        images: [{ url: 'https://example.com/content/images/2026/09/a.png', ref: null }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const url = await client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' });
+
+    expect(url).toBe('https://example.com/content/images/2026/09/a.png');
+    expect(fake.calls).toHaveLength(1);
+    const call = fake.calls[0]!;
+    expect(call.input).toBe('https://example.com/ghost/api/admin/images/upload/');
+    expect(call.init?.method).toBe('POST');
+    // Same-origin cookie auth, exactly like the reads/writes above.
+    expect(call.init?.credentials).toBe('same-origin');
+    expect(call.init?.headers).toEqual({ accept: 'application/json' });
+    const body = call.init?.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    const file = body.get('file') as File;
+    expect(file.name).toBe('a.png');
+    expect(file.type).toBe('image/png');
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(BYTES);
+    expect(body.get('purpose')).toBe('image');
+  });
+
+  it('surfaces a rejected upload as IMAGE_UPLOAD_FAILED with the Ghost error text', async () => {
+    const fake = makeFetch([
+      jsonResponse(422, {
+        errors: [{ type: 'ValidationError', message: 'The file type is not supported' }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/IMAGE_UPLOAD_FAILED.*file type is not supported/s);
+  });
+
+  it('rejects a response without an images[] url', async () => {
+    const fake = makeFetch([jsonResponse(201, { images: [] })]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/INVALID_IMAGE_UPLOAD_RESPONSE/);
+  });
+
+  it('surfaces transport failures as NETWORK_ERROR and never sends an empty upload', async () => {
+    const failing = makeFetch([new Error('offline')]);
+    const client = new GhostAdminClient(failing.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      client.uploadImage({ data: BYTES, name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/NETWORK_ERROR/);
+
+    const idle = makeFetch([]);
+    const emptyClient = new GhostAdminClient(idle.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(
+      emptyClient.uploadImage({ data: new Uint8Array(0), name: 'a.png', mimeType: 'image/png' }),
+    ).rejects.toThrow(/non-empty bytes/);
+    await expect(
+      emptyClient.uploadImage({ data: BYTES, name: '  ', mimeType: 'image/png' }),
+    ).rejects.toThrow(/file name/);
+    expect(idle.calls).toHaveLength(0);
+  });
+
+  it('writes feature_image in a plural envelope on the clean-editor fallback', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        posts: [{ ...postFixture, feature_image: 'https://example.com/content/images/a.png' }],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    await applyCleanEditorFallback({
+      client,
+      resource: 'posts',
+      record: { id: 'p1', updated_at: 'x', feature_image: '/content/images/a.png' },
+      liveState: { dirty: false, savedResourceId: 'p1' },
+      reconcile: () => {},
+    });
+
+    const body = JSON.parse(String(fake.calls[0]!.init?.body)) as {
+      posts: Array<Record<string, unknown>>;
+    };
+    expect(body.posts[0]?.['feature_image']).toBe('/content/images/a.png');
+  });
+});
+
+describe('post import — reading existing posts through the Admin API', () => {
+  it('lists posts for the import picker with a narrow field set, newest first', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        posts: [
+          { id: 'p1', title: 'First', status: 'published', updated_at: '2026-09-01T00:00:00.000Z' },
+          { id: 'p2', title: '   ', status: 'draft', updated_at: '2026-09-02T00:00:00.000Z' },
+          { title: 'no id' },
+        ],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const entries = await client.listCapturableIndex('posts');
+
+    expect(fake.calls[0]!.input).toContain('fields=id,title,slug,status,updated_at');
+    expect(fake.calls[0]!.input).toContain('limit=all');
+    expect(entries).toEqual([
+      { id: 'p1', title: 'First', status: 'published', updatedAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'p2', title: '(Untitled)', status: 'draft', updatedAt: '2026-09-02T00:00:00.000Z' },
+    ]);
+  });
+
+  it('reads one record with the lexical format and the tag relation', async () => {
+    const fake = makeFetch([
+      jsonResponse(200, {
+        pages: [
+          {
+            ...pageFixture,
+            custom_excerpt: 'Summary',
+            custom_template: 'custom-x.hbs',
+            feature_image: '/content/images/x.png',
+            tags: [{ name: 'Alpha' }],
+          },
+        ],
+      }),
+    ]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+
+    const record = await client.getCapturableRecord('pages', 'page-1');
+
+    expect(fake.calls[0]!.input).toBe(
+      'https://example.com/ghost/api/admin/pages/page-1/?formats=lexical&include=tags',
+    );
+    expect(record?.custom_excerpt).toBe('Summary');
+  });
+
+  it('encodes the id and reports a missing record as null', async () => {
+    const missing = makeFetch([
+      jsonResponse(404, { errors: [{ type: 'NotFoundError', message: 'Resource not found' }] }),
+    ]);
+    const client = new GhostAdminClient(missing.fetch, 'https://example.com/ghost/api/admin/');
+
+    expect(await client.getCapturableRecord('posts', 'a/b')).toBeNull();
+    expect(missing.calls[0]!.input).toContain('posts/a%2Fb/');
+  });
+
+  it('rejects an empty id before any request and surfaces other API errors', async () => {
+    const fake = makeFetch([]);
+    const client = new GhostAdminClient(fake.fetch, 'https://example.com/ghost/api/admin/');
+    await expect(client.getCapturableRecord('posts', '  ')).rejects.toThrow(/resource id/);
+    expect(fake.calls).toHaveLength(0);
+
+    const failing = makeFetch([jsonResponse(500, { errors: [{ message: 'boom' }] })]);
+    const failingClient = new GhostAdminClient(
+      failing.fetch,
+      'https://example.com/ghost/api/admin/',
+    );
+    await expect(failingClient.getCapturableRecord('posts', 'p1')).rejects.toThrow(/boom/);
+  });
+});

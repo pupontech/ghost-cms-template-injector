@@ -81,3 +81,45 @@ describe('Phase-4 persistence and route-change manual seams', () => {
     expect(matrix).toContain('Optional permission setup');
   });
 });
+
+describe('post-import surfaces (Options owns the UI, popup owns the entry)', () => {
+  it('keeps the import UI in the Options page with labelled, live-status controls', () => {
+    const html = read('options/options.html');
+    expect(html).toMatch(/<h2 id="opt-frompost-heading">Import a post as a preset<\/h2>/);
+    expect(html).toMatch(
+      /<section class="card" id="opt-frompost-section" aria-labelledby="opt-frompost-heading">/,
+    );
+    expect(html).toMatch(/<label for="opt-frompost-source">Source<\/label>/);
+    expect(html).toMatch(
+      /<select id="opt-frompost-source" aria-describedby="opt-frompost-status">/,
+    );
+    expect(html).toMatch(/<label for="opt-frompost-name">Preset name<\/label>/);
+    expect(html).toMatch(/<label for="opt-frompost-title">Include this post's title<\/label>/);
+    expect(html).toMatch(/<button id="opt-frompost-save" type="button">/);
+    expect(html).toMatch(/<p id="opt-frompost-status" role="status" aria-live="polite">/);
+    // The preset-collection import keeps its own heading, so the two are distinct.
+    expect(html).toContain('<h2>Import presets (JSON)</h2>');
+  });
+
+  it('keeps exactly one import action in the popup', () => {
+    const html = read('popup/popup.html');
+    expect(html).toContain(
+      '<button id="gcti-import-open" type="button">Import as template</button>',
+    );
+    // The picker/name/checkbox/Import controls belong to the Options page now.
+    expect(html).not.toContain('gcti-import-source');
+    expect(html).not.toContain('gcti-import-save');
+    expect(html).not.toContain('gcti-import-panel');
+  });
+
+  it('routes the options-page import through the service worker (no direct Ghost access)', () => {
+    const source = read('src/options-main.ts');
+    expect(source).toContain('OPTIONS_CAPTURE_SOURCE');
+    expect(source).toContain('sendImportMessage');
+    const background = read('src/background.ts');
+    expect(background).toContain('createOptionsCaptureHandler');
+    expect(background).toContain('NO_GHOST_TAB');
+    // Still no `tabs` permission: the worker reads only granted tabs.
+    expect(JSON.parse(read('manifest.json')).permissions).not.toContain('tabs');
+  });
+});

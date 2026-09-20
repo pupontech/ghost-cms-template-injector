@@ -32,6 +32,7 @@ function fakeAdapter(overrides: Partial<ApplyPipelineAdapter> = {}): {
     recordIdentity: 'post-1',
     excerpt: null,
     customTemplate: null,
+    featureImage: null,
     title: null,
     tags: [],
     lexical: '{"root":{"children":[]}}',
@@ -189,6 +190,7 @@ describe('Phase-5 atomic apply pipeline', () => {
         excerpt: 'already written by the user',
         title: null,
         customTemplate: null,
+        featureImage: null,
         tags: ['Reviews'],
         lexical: '{"root":{"children":[{"children":[{"text":""}]}]}}',
         bodyEmpty: false,
@@ -307,6 +309,7 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
     getTitle: () => null,
     getExcerpt: () => null,
     getCustomTemplate: () => null,
+    getFeatureImage: () => null,
     getTags: () => [],
     setField: vi.fn(),
     setLexical: vi.fn(),
@@ -320,3 +323,154 @@ function makeSurface(overrides: Partial<GhostLiveSurface> = {}): GhostLiveSurfac
 function makeGhostState(surface: GhostLiveSurface) {
   return createGhostStateAdapter(surface);
 }
+
+describe('atomic apply pipeline — feature image resolution', () => {
+  const RESOLVED = 'http://localhost:2368/content/images/2026/09/hero.png';
+
+  const presetWithPhoto = (mode: 'replace' | 'only-if-empty' | 'prompt'): Preset => ({
+    schemaVersion: 1,
+    id: 'with-photo',
+    name: 'With photo',
+    content: {
+      source: 'inline-lexical',
+      mode: 'replace',
+      lexical: '{"root":{"children":[],"type":"root","version":1}}',
+    },
+    metadata: { featureImage: { mode, assetId: 'img_0123456789abcdef' } },
+  });
+
+  it('resolves the cached photo BEFORE planning and applies the returned URL', async () => {
+    const { adapter, appliedPlans } = fakeAdapter();
+    const resolveFeatureImage = vi.fn(async () => ({ ok: true as const, url: RESOLVED }));
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetWithPhoto('replace') }),
+      resolveFeatureImage,
+    };
+
+    const out = await runApplyPipeline(deps, 'with-photo');
+
+    expect(out.status).toBe('applied');
+    expect(resolveFeatureImage).toHaveBeenCalledWith({
+      mode: 'replace',
+      assetId: 'img_0123456789abcdef',
+    });
+    const action = appliedPlans[0]?.actions.find((a) => a.field === 'featureImage');
+    expect(action).toMatchObject({ status: 'apply', value: RESOLVED });
+  });
+
+  it('blocks the whole plan when the photo cannot be resolved (no mutation)', async () => {
+    const { adapter, appliedPlans } = fakeAdapter();
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetWithPhoto('replace') }),
+      resolveFeatureImage: vi.fn(async () => ({
+        ok: false as const,
+        reason: 'cached photo img_0123456789abcdef is not present in this browser',
+      })),
+    };
+
+    const out = await runApplyPipeline(deps, 'with-photo');
+
+    expect(out.status).toBe('blocked');
+    if (out.status !== 'blocked') throw new Error('expected blocked');
+    expect(out.problems.join(' ')).toMatch(/is not present in this browser/);
+    expect(appliedPlans).toHaveLength(0);
+  });
+
+  it('blocks when the preset asks for a feature image but no resolver is wired', async () => {
+    const { adapter, appliedPlans } = fakeAdapter();
+    const out = await runApplyPipeline(
+      depsWith({ adapter, preset: presetWithPhoto('replace') }),
+      'with-photo',
+    );
+
+    expect(out.status).toBe('blocked');
+    if (out.status !== 'blocked') throw new Error('expected blocked');
+    expect(out.problems.join(' ')).toMatch(/resolution is unavailable/i);
+    expect(appliedPlans).toHaveLength(0);
+  });
+
+  it('does not upload when only-if-empty finds the post already has a feature image', async () => {
+    const { adapter, appliedPlans } = fakeAdapter({
+      snapshot: () => ({
+        resourceType: 'post',
+        resourceId: 'post-1',
+        recordIdentity: 'post-1',
+        excerpt: null,
+        customTemplate: null,
+        featureImage: 'http://localhost:2368/content/images/existing.png',
+        title: null,
+        tags: [],
+        lexical: '{"root":{"children":[]}}',
+        bodyEmpty: true,
+        dirty: false,
+        updatedAt: '2026-08-21T00:00:00.000Z',
+        saving: false,
+      }),
+    });
+    const resolveFeatureImage = vi.fn(async () => ({ ok: true as const, url: RESOLVED }));
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetWithPhoto('only-if-empty') }),
+      resolveFeatureImage,
+    };
+
+    const out = await runApplyPipeline(deps, 'with-photo');
+
+    expect(out.status).toBe('applied');
+    expect(resolveFeatureImage).not.toHaveBeenCalled();
+    expect(appliedPlans[0]?.actions.find((a) => a.field === 'featureImage')?.status).toBe('skip');
+  });
+
+  it('does not upload for a prompt-mode preset until the owner accepts it', async () => {
+    const { adapter, appliedPlans } = fakeAdapter();
+    const resolveFeatureImage = vi.fn(async () => ({ ok: true as const, url: RESOLVED }));
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetWithPhoto('prompt') }),
+      resolveFeatureImage,
+    };
+
+    // First pass: the owner is asked; nothing is uploaded yet.
+    const first = await runApplyPipeline(deps, 'with-photo');
+    expect(first.status).toBe('needs-prompt');
+    expect(resolveFeatureImage).not.toHaveBeenCalled();
+
+    // Declined: still no upload, and the field is skipped.
+    const declined = await runApplyPipeline(deps, 'with-photo', { featureImage: false });
+    expect(declined.status).toBe('applied');
+    expect(resolveFeatureImage).not.toHaveBeenCalled();
+    expect(appliedPlans.at(-1)?.actions.find((a) => a.field === 'featureImage')?.status).toBe(
+      'skip',
+    );
+
+    // Accepted: the photo is uploaded once and applied.
+    const accepted = await runApplyPipeline(deps, 'with-photo', { featureImage: true });
+    expect(accepted.status).toBe('applied');
+    expect(resolveFeatureImage).toHaveBeenCalledTimes(1);
+    expect(appliedPlans.at(-1)?.actions.find((a) => a.field === 'featureImage')).toMatchObject({
+      status: 'apply',
+      value: RESOLVED,
+    });
+  });
+
+  it('blocks a preview too, so the owner never sees a plan that cannot be applied', async () => {
+    const { adapter } = fakeAdapter();
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetWithPhoto('replace') }),
+      resolveFeatureImage: vi.fn(async () => ({ ok: false as const, reason: 'upload failed' })),
+    };
+
+    const out = await previewApplyPipeline(deps, 'with-photo');
+    expect(out.status).toBe('blocked');
+  });
+
+  it('leaves presets without a feature image untouched (no resolver call)', async () => {
+    const { adapter } = fakeAdapter();
+    const resolveFeatureImage = vi.fn(async () => ({ ok: true as const, url: RESOLVED }));
+    const deps: ApplyPipelineDeps = {
+      ...depsWith({ adapter, preset: presetSoftwareReview }),
+      resolveFeatureImage,
+    };
+
+    expect((await runApplyPipeline(deps, 'software-review')).status).toBe('applied');
+    expect(resolveFeatureImage).not.toHaveBeenCalled();
+  });
+});

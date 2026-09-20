@@ -23,15 +23,17 @@
  * concurrent `apply` is refused without partial mutation.
  */
 
-import type { Preset } from './preset-schema';
+import type { FeatureImageField, Preset } from './preset-schema';
 import {
   planPresetApplication,
   resolvePrompts,
+  shouldResolveFeatureImage,
   type ApplicationPlan,
   type EditorSnapshot,
   type PlanContext,
   type PlannedField,
 } from './preset-engine';
+import type { ResolveFeatureImageResult } from './feature-image';
 import type { ApplyResult, DiscoverOutcome, GhostSnapshot } from './ghost-state';
 
 /**
@@ -51,6 +53,13 @@ export interface ApplyPipelineDeps {
   loadPreset: (id: string) => Promise<Preset | null>;
   /** Resolve dependency allowlists (snippet names, active-theme templates). */
   resolveContext: () => Promise<PlanContext>;
+  /**
+   * Resolve a preset's feature-image field to a URL this Ghost install serves
+   * (uploading a cached photo when the preset carries one). When a preset asks
+   * for a feature image and this is absent or fails, the plan is blocked —
+   * a preset never saves a post with a missing or broken image.
+   */
+  resolveFeatureImage?: (field: FeatureImageField) => Promise<ResolveFeatureImageResult>;
 }
 
 export interface ApplyPrompt {
@@ -79,7 +88,41 @@ function toEditorSnapshot(s: GhostSnapshot): EditorSnapshot {
     customTemplate: s.customTemplate,
     title: s.title ?? null,
     tags: s.tags,
+    featureImage: s.featureImage ?? null,
   };
+}
+
+/**
+ * Resolve the preset's feature-image field (uploading a cached photo when
+ * needed) and fold the result into the planning context. Failures block the
+ * whole plan — a preset must never half-apply because its photo was missing.
+ */
+async function withResolvedFeatureImage(
+  deps: ApplyPipelineDeps,
+  preset: Preset,
+  snapshot: EditorSnapshot,
+  context: PlanContext,
+  answers?: Partial<Record<PlannedField, boolean>>,
+): Promise<{ ok: true; context: PlanContext } | { ok: false; reason: string }> {
+  const field = preset.metadata?.featureImage;
+  if (!field) return { ok: true, context };
+  if (!shouldResolveFeatureImage(field, snapshot, answers)) return { ok: true, context };
+  if (!deps.resolveFeatureImage) {
+    return {
+      ok: false,
+      reason: 'metadata.featureImage: feature-image resolution is unavailable in this context',
+    };
+  }
+  try {
+    const resolved = await deps.resolveFeatureImage(field);
+    if (!resolved.ok) return { ok: false, reason: `metadata.featureImage: ${resolved.reason}` };
+    return { ok: true, context: { ...context, featureImageUrl: resolved.url } };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `metadata.featureImage: ${err instanceof Error ? err.message : 'resolution failed'}`,
+    };
+  }
 }
 
 /** Produce a field-aware plan without invoking the adapter mutation surface. */
@@ -93,7 +136,10 @@ export async function previewApplyPipeline(
     const preset = await deps.loadPreset(presetId);
     if (!preset) return { status: 'blocked', problems: [`preset "${presetId}" not found`] };
     const [snapshot, context] = await Promise.all([deps.adapter.snapshot(), deps.resolveContext()]);
-    const plan = planPresetApplication(preset, toEditorSnapshot(snapshot), context);
+    const editorSnapshot = toEditorSnapshot(snapshot);
+    const resolvedContext = await withResolvedFeatureImage(deps, preset, editorSnapshot, context);
+    if (!resolvedContext.ok) return { status: 'blocked', problems: [resolvedContext.reason] };
+    const plan = planPresetApplication(preset, editorSnapshot, resolvedContext.context);
     if (plan.status === 'blocked') return { status: 'blocked', problems: plan.problems };
     return { status: 'preview', plan, snapshot };
   } catch (err) {
@@ -126,8 +172,22 @@ export async function runApplyPipeline(
   // 3 + 4. Live snapshot + dependency context (parallel, independent reads).
   const [snapshot, context] = await Promise.all([deps.adapter.snapshot(), deps.resolveContext()]);
 
+  const editorSnapshot = toEditorSnapshot(snapshot);
+  // 4b. Feature image: resolve a cached photo to a Ghost-served URL (upload)
+  // only when the field can actually apply. A failure blocks the whole plan.
+  const resolvedContext = await withResolvedFeatureImage(
+    deps,
+    preset,
+    editorSnapshot,
+    context,
+    promptAnswers,
+  );
+  if (!resolvedContext.ok) {
+    return { status: 'blocked', problems: [resolvedContext.reason] };
+  }
+
   // 5. Pure plan — every dependency/mode resolved before any mutation.
-  const plan = planPresetApplication(preset, toEditorSnapshot(snapshot), context);
+  const plan = planPresetApplication(preset, editorSnapshot, resolvedContext.context);
   if (plan.status === 'blocked') {
     return { status: 'blocked', problems: plan.problems };
   }

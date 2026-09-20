@@ -18,7 +18,20 @@ import {
   type OptionsPresetView,
   type OptionsRuntime,
 } from './options-crud';
-import { PRESET_SCHEMA_VERSION, type Preset } from './preset-schema';
+import { PRESET_SCHEMA_VERSION, type FeatureImageField, type Preset } from './preset-schema';
+import type { ImageAssetMeta } from './image-asset-store';
+import { deriveIdFromName, nextAvailablePresetId } from './preset-naming';
+import { OPTIONS_CAPTURE_SOURCE } from './message-sources';
+import { defaultImportName, describeCapture } from './preset-capture';
+import {
+  captureCurrent,
+  capturePost,
+  listCapturable,
+  saveCapturedPreset,
+  type CapturableEntry,
+} from './preset-import';
+import type { CaptureOutcome, ImportSender } from './preset-import';
+import { createImageAssetStore, createIndexedDbAssetBackend } from './image-asset-store';
 import {
   exportPresets,
   importPresetsIntoStore,
@@ -66,11 +79,20 @@ export interface OptionsView {
     excerptMode: RenderInput;
     customTemplate: RenderInput;
     customTemplateMode: RenderInput;
+    /** Visible feature-image controls (mode + optional URL + cached asset id). */
+    featureImageMode: RenderInput;
+    featureImageUrl: RenderInput;
+    featureImageAsset: RenderInput;
   };
+  /** Optional feature-image preview + status elements (absent in fake views). */
+  featureImagePreview?: RenderEl;
+  featureImageStatus?: RenderEl;
   bodyLabel?: RenderEl;
   bodyHelp?: RenderEl;
   importArea: RenderInput;
   exportArea: RenderInput;
+  /** Import-from-a-post controls (absent in reduced views). */
+  fromPost?: OptionsFromPostView;
   document: {
     createElement: (tag: string) => RenderEl;
     getElementById: (id: string) => RenderEl | null;
@@ -81,8 +103,22 @@ export interface OptionsView {
   resetForm: () => void;
 }
 
+/** Controls of the "import a post as a preset" section. */
+export interface OptionsFromPostView {
+  source: RenderInput;
+  name: RenderInput;
+  includeTitle?: RenderInput;
+  save: RenderEl;
+  refresh?: RenderEl;
+  status: RenderEl;
+  /** Last successful read of a post, kept so the Import button can build it. */
+  captured?: CaptureOutcome | null;
+}
+
 export interface RenderEl {
   textContent: string | null;
+  /** Present on form controls (select/input). */
+  value?: string;
   setAttribute(name: string, value: string): void;
   getAttribute(name: string): string | null;
   removeAttribute(name: string): void;
@@ -94,6 +130,8 @@ export interface RenderEl {
 export interface RenderInput extends RenderEl {
   value: string;
   disabled: boolean;
+  /** Present on the checkbox controls (title opt-in). */
+  checked?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -139,36 +177,10 @@ export function renderPresetRow(
 }
 
 /* ------------------------------------------------------------------ */
-/* ID derivation                                                       */
+/* ID derivation (shared with post import — see preset-naming.ts)      */
 /* ------------------------------------------------------------------ */
 
-/** Derive a slug id from the visible name ("Review checklist" -> "review-checklist"). */
-export function deriveIdFromName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-  return slug.length > 0 ? slug : `preset-${Date.now()}`;
-}
-
-/**
- * Return the next unused preset id when `base` already exists in `existing`,
- * so a newly-created preset never shadows a name already in the list. Appends
- * an increasing numeric suffix (`...-2`, `...-3`, …) and keeps the result
- * within the 64-char id bound by trimming the stem for the suffix.
- */
-export function nextAvailablePresetId(base: string, existing: ReadonlySet<string>): string {
-  if (!existing.has(base)) return base;
-  for (let n = 2; ; n++) {
-    const suffix = String(n);
-    // Reserve room for `-` + the numeric suffix within the 64-char bound.
-    const stem = base.slice(0, 64 - suffix.length - 1);
-    const candidate = `${stem}-${suffix}`;
-    if (!existing.has(candidate)) return candidate;
-  }
-}
+export { deriveIdFromName, nextAvailablePresetId };
 
 /* ------------------------------------------------------------------ */
 /* Controller wiring                                                   */
@@ -177,6 +189,152 @@ export function nextAvailablePresetId(base: string, existing: ReadonlySet<string
 export interface OptionsControllerDeps {
   rt: OptionsRuntime;
   view: OptionsView;
+  /**
+   * Extension-origin image asset store. The options page is the only place a
+   * photo is picked; its bytes are cached here and the preset keeps just the
+   * asset id. Absent in tests that do not exercise the photo picker.
+   */
+  imageAssets?: OptionsImageAssets;
+  /**
+   * Transport for the import section. The options page cannot reach the Admin
+   * API or the live editor itself (it is an extension origin with no content
+   * script), so it hands read-only operations to the service worker, which
+   * routes them to a granted Ghost Admin tab. Absent in tests that do not
+   * exercise the import.
+   */
+  sendImportMessage?: ImportSender;
+}
+
+/** Narrow view of the image asset store the options page needs. */
+export interface OptionsImageAssets {
+  putImage(input: { data: Uint8Array; name: string; mimeType: string }): Promise<ImageAssetMeta>;
+  getRecord(id: string): Promise<{ data: ArrayBuffer; name: string; mimeType: string } | null>;
+}
+
+/** Minimal file shape the picker needs (a real File satisfies this). */
+export interface PickedImageFile {
+  name: string;
+  type: string;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+const FEATURE_IMAGE_STATUS_DEFAULT = 'No photo selected.';
+
+/** Human-readable photo size (157 bytes must not read as "0 KB"). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  return `${Math.round(bytes / 1024)} KB`;
+}
+
+function setFeatureImageStatus(view: OptionsView, message: string): void {
+  if (view.featureImageStatus) view.featureImageStatus.textContent = message;
+}
+
+/** Clear every feature-image control back to "no photo". */
+export function clearFeatureImage(view: OptionsView): void {
+  view.form.featureImageAsset.value = '';
+  view.form.featureImageUrl.value = '';
+  view.featureImagePreview?.removeAttribute('src');
+  view.featureImagePreview?.setAttribute('hidden', 'true');
+  setFeatureImageStatus(view, FEATURE_IMAGE_STATUS_DEFAULT);
+}
+
+/**
+ * Cache a picked photo in the extension asset store and point the preset at
+ * it. The bytes never enter the preset document (which is size-bounded and
+ * JSON-only); the apply path uploads them to the Ghost site and memoizes the
+ * resulting URL.
+ */
+export async function handleFeatureImageFile(
+  deps: OptionsControllerDeps,
+  file: PickedImageFile | null | undefined,
+): Promise<void> {
+  const { view, imageAssets } = deps;
+  if (!file) return;
+  if (!imageAssets) {
+    setFeatureImageStatus(view, 'Photo storage is unavailable in this browser.');
+    return;
+  }
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const meta = await imageAssets.putImage({
+      data,
+      name: file.name,
+      mimeType: file.type,
+    });
+    view.form.featureImageAsset.value = meta.id;
+    view.form.featureImageUrl.value = '';
+    setFeatureImagePreview(view, meta);
+    setFeatureImageStatus(
+      view,
+      `Photo “${meta.name}” cached in this browser (${formatBytes(meta.bytes)}).`,
+    );
+  } catch (error) {
+    setFeatureImageStatus(
+      view,
+      `Photo could not be stored: ${error instanceof Error ? error.message : 'unsupported image'}`,
+    );
+  }
+}
+
+function setFeatureImagePreview(view: OptionsView, meta: { id: string; name: string }): void {
+  const preview = view.featureImagePreview;
+  if (!preview) return;
+  // Text-only preview marker: the browser bootstrap swaps in an object URL.
+  preview.setAttribute('data-asset-id', meta.id);
+  preview.setAttribute('alt', meta.name);
+  preview.removeAttribute('hidden');
+}
+
+/**
+ * Paint the stored state of a preset's feature image after loading it for
+ * edit: a cached photo is shown with its size, a missing one is called out so
+ * the owner knows to re-pick it (assets are local to this browser).
+ */
+export async function refreshFeatureImagePreview(
+  deps: OptionsControllerDeps,
+  field: FeatureImageField | undefined,
+): Promise<void> {
+  const { view, imageAssets } = deps;
+  if (!field) {
+    clearFeatureImage(view);
+    return;
+  }
+  if (typeof field.url === 'string') {
+    view.featureImagePreview?.removeAttribute('src');
+    view.featureImagePreview?.setAttribute('hidden', 'true');
+    setFeatureImageStatus(view, `Uses the image URL ${field.url}.`);
+    return;
+  }
+  const assetId = field.assetId ?? '';
+  if (!assetId) {
+    clearFeatureImage(view);
+    return;
+  }
+  if (!imageAssets) {
+    setFeatureImageStatus(view, `Cached photo ${assetId} (storage unavailable here).`);
+    return;
+  }
+  try {
+    const record = await imageAssets.getRecord(assetId);
+    if (!record) {
+      setFeatureImageStatus(
+        view,
+        `Photo ${assetId} is not cached in this browser — pick the image again before applying.`,
+      );
+      return;
+    }
+    setFeatureImagePreview(view, { id: assetId, name: record.name });
+    setFeatureImageStatus(
+      view,
+      `Photo “${record.name}” cached in this browser (${formatBytes(record.data.byteLength)}).`,
+    );
+  } catch (error) {
+    setFeatureImageStatus(
+      view,
+      `Photo ${assetId} could not be read: ${error instanceof Error ? error.message : 'storage error'}`,
+    );
+  }
 }
 
 export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
@@ -193,6 +351,7 @@ export async function refreshList(deps: OptionsControllerDeps): Promise<void> {
     const { row, editBtn, deleteBtn } = renderPresetRow(preset, view.document.createElement);
     editBtn.addEventListener('click', () => {
       fillFormForEdit(view, preset);
+      void refreshFeatureImagePreview(deps, preset.preset.metadata?.featureImage);
       setStatus(view, `Editing "${preset.name}".`);
     });
     deleteBtn.addEventListener('click', () => {
@@ -228,6 +387,11 @@ export function fillFormForEdit(view: OptionsView, item: OptionsPresetView): voi
   view.form.excerptMode.value = preset.metadata?.excerpt?.mode ?? 'only-if-empty';
   view.form.customTemplate.value = preset.metadata?.customTemplate?.value ?? '';
   view.form.customTemplateMode.value = preset.metadata?.customTemplate?.mode ?? 'replace';
+  // Feature image: exactly one of a cached photo or an explicit URL.
+  const featureImage = preset.metadata?.featureImage;
+  view.form.featureImageMode.value = featureImage?.mode ?? 'only-if-empty';
+  view.form.featureImageUrl.value = featureImage?.url ?? '';
+  view.form.featureImageAsset.value = featureImage?.assetId ?? '';
   updateBodyEditor(view);
 }
 
@@ -298,6 +462,16 @@ export function readFormPreset(view: OptionsView): unknown {
     .filter(Boolean);
   if (tagValues.length > 0) {
     metadata['tags'] = { mode: view.form.tagMode.value.trim(), values: tagValues };
+  }
+  // Feature image: a cached photo wins over a typed URL (picking a photo
+  // clears the URL field, so they cannot drift apart silently).
+  const featureImageMode = view.form.featureImageMode.value.trim() || 'only-if-empty';
+  const featureImageAsset = view.form.featureImageAsset.value.trim();
+  const featureImageUrl = view.form.featureImageUrl.value.trim();
+  if (featureImageAsset.length > 0) {
+    metadata['featureImage'] = { mode: featureImageMode, assetId: featureImageAsset };
+  } else if (featureImageUrl.length > 0) {
+    metadata['featureImage'] = { mode: featureImageMode, url: featureImageUrl };
   }
   if (Object.keys(metadata).length > 0) preset['metadata'] = metadata;
   return preset;
@@ -386,6 +560,160 @@ export function setStatus(view: OptionsView, message: string, isError = false): 
 /* ------------------------------------------------------------------ */
 
 /** Wire the options page once the DOM is ready. */
+
+/* ------------------------------------------------------------------ */
+/* Import an existing post (Options-page flow)                         */
+/* ------------------------------------------------------------------ */
+
+/** Fill the source picker: the open editor first, then stored posts/pages. */
+export function renderFromPostSources(
+  view: OptionsFromPostView,
+  entries: readonly CapturableEntry[],
+  includeCurrent: boolean,
+  createEl: (tag: string) => RenderEl,
+): void {
+  view.source.textContent = '';
+  if (includeCurrent) {
+    const option = createEl('option');
+    option.value = FROM_POST_CURRENT;
+    option.textContent = 'The post open in the editor';
+    view.source.appendChild(option);
+  }
+  for (const entry of entries) {
+    const option = createEl('option');
+    option.value = `${entry.resourceType}:${entry.id}`;
+    option.textContent = `${entry.title} (${entry.resourceType}, ${entry.status})`;
+    view.source.appendChild(option);
+  }
+  if (includeCurrent) view.source.value = FROM_POST_CURRENT;
+  else if (entries[0]) view.source.value = `${entries[0].resourceType}:${entries[0].id}`;
+}
+
+/** Value used for the "the post open in the editor" picker entry. */
+export const FROM_POST_CURRENT = 'current';
+
+function setFromPostStatus(
+  view: OptionsView,
+  message: string,
+  tone: 'info' | 'error' = 'info',
+): void {
+  if (!view.fromPost) return;
+  view.fromPost.status.textContent = message;
+  if (tone === 'error') view.fromPost.status.setAttribute('data-tone', 'error');
+  else view.fromPost.status.removeAttribute('data-tone');
+}
+
+function fromPostSelection(
+  view: OptionsFromPostView,
+): { resourceType: 'post' | 'page'; id: string } | null {
+  const value = view.source.value ?? '';
+  if (value.length === 0 || value === FROM_POST_CURRENT) return null;
+  const [resourceType, id] = value.split(':');
+  if (resourceType !== 'post' && resourceType !== 'page') return null;
+  if (!id) return null;
+  return { resourceType, id };
+}
+
+/**
+ * Turn an import failure code into something the owner can act on. The service
+ * worker cannot reach a document that was loaded before the extension was
+ * enabled/reloaded, and Chrome's own wording for that ("Could not establish
+ * connection. Receiving end does not exist.") explains nothing.
+ */
+export function describeImportFailure(error: string | undefined): string {
+  switch (error) {
+    case 'NO_GHOST_TAB':
+      return 'No Ghost Admin tab found. Open your Ghost Admin (and enable the extension for it), then press Refresh post list.';
+    case 'NO_CONTENT_SCRIPT':
+      return 'This Ghost Admin tab is not running the extension yet. Reload the tab (Ctrl/Cmd+R), then press Refresh post list — or enable site access from the Setup page.';
+    case 'CAPTURE_NOT_FOUND':
+      return 'That post no longer exists on this site. Press Refresh post list and pick another.';
+    case 'NO_ADMIN_API_BASE':
+      return 'The Admin API root could not be derived for this tab. Open the post list in Ghost Admin and try again.';
+    case undefined:
+      return 'Import failed for an unknown reason.';
+    default:
+      return `Post list unavailable: ${error}`;
+  }
+}
+
+/** Populate the picker from a granted Ghost Admin tab. */
+export async function refreshFromPostSources(deps: OptionsControllerDeps): Promise<void> {
+  const { view } = deps;
+  if (!view.fromPost) return;
+  const section = view.fromPost;
+  if (!deps.sendImportMessage) {
+    setFromPostStatus(
+      view,
+      'Import needs a Ghost Admin tab: open your Ghost Admin and enable the extension for it, then reload this page.',
+      'error',
+    );
+    renderFromPostSources(section, [], false, (tag) => view.document.createElement(tag));
+    return;
+  }
+  setFromPostStatus(view, 'Reading your posts…');
+  const listed = await listCapturable(deps.sendImportMessage);
+  if (!listed.ok) {
+    renderFromPostSources(section, [], false, (tag) => view.document.createElement(tag));
+    setFromPostStatus(view, describeImportFailure(listed.error), 'error');
+    return;
+  }
+  renderFromPostSources(section, listed.entries, true, (tag) => view.document.createElement(tag));
+  await loadFromPostSource(deps);
+}
+
+/** Read the selected source into capture fields and prefill the name. */
+export async function loadFromPostSource(deps: OptionsControllerDeps): Promise<void> {
+  const { view } = deps;
+  const section = view.fromPost;
+  const send = deps.sendImportMessage;
+  if (!section || !send) return;
+  const selection = fromPostSelection(section);
+  setFromPostStatus(view, 'Reading the post…');
+  const read = selection
+    ? await capturePost(send, selection.resourceType, selection.id)
+    : await captureCurrent(send);
+  if (!read.ok || !read.outcome) {
+    section.captured = null;
+    setFromPostStatus(view, describeImportFailure(read.error), 'error');
+    return;
+  }
+  section.captured = read.outcome;
+  const summary = describeCapture(read.outcome.source, {
+    name: '',
+    includeTitle: section.includeTitle?.checked === true,
+  });
+  section.name.value = defaultImportName(read.outcome.source);
+  const cautions = read.outcome.warnings.length > 0 ? ` — ${read.outcome.warnings.join('; ')}` : '';
+  setFromPostStatus(view, `Ready to import: ${summary.join(', ')}.${cautions}`);
+}
+
+/** Build a preset from the captured post and store it. */
+export async function importFromPost(deps: OptionsControllerDeps): Promise<void> {
+  const { view, rt } = deps;
+  const section = view.fromPost;
+  if (!section) return;
+  const captured = section.captured;
+  if (!captured) {
+    setFromPostStatus(view, 'Pick a post to import first.', 'error');
+    return;
+  }
+  const name = (section.name.value ?? '').trim() || defaultImportName(captured.source);
+  const saved = await saveCapturedPreset(
+    captured,
+    { name, includeTitle: section.includeTitle?.checked === true },
+    { loadPresets: () => rt.loadPresets(), savePreset: (input) => rt.savePreset(input) },
+  );
+  if (!saved.ok || !saved.preset) {
+    setFromPostStatus(view, `Import failed: ${saved.error ?? 'unknown error'}`, 'error');
+    return;
+  }
+  await refreshList(deps);
+  const warnings = saved.warnings.length > 0 ? ` (${saved.warnings.join('; ')})` : '';
+  setFromPostStatus(view, `Saved preset “${saved.preset.name}”${warnings}.`);
+  setStatus(view, `Imported “${saved.preset.name}” as a preset.`);
+}
+
 export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
   const { view } = deps;
   view.form.source.addEventListener('change', () => updateBodyEditor(view));
@@ -401,6 +729,22 @@ export async function initOptions(deps: OptionsControllerDeps): Promise<void> {
   cancelBtn?.addEventListener('click', () => {
     view.resetForm();
     setStatus(view, 'Form cleared.');
+  });
+  if (view.fromPost) {
+    const section = view.fromPost;
+    section.source.addEventListener('change', () => void loadFromPostSource(deps));
+    section.includeTitle?.addEventListener('change', () => {
+      if (section.captured) void loadFromPostSource(deps);
+    });
+    section.save.addEventListener('click', () => void importFromPost(deps));
+    section.refresh?.addEventListener('click', () => void refreshFromPostSources(deps));
+    // A missing transport (no `chrome` in tests) leaves the section inert.
+    if (deps.sendImportMessage) void refreshFromPostSources(deps);
+  }
+  const featureImageClear = view.document.getElementById('opt-feature-image-clear');
+  featureImageClear?.addEventListener('click', () => {
+    clearFeatureImage(view);
+    setStatus(view, 'Feature image cleared.');
   });
   await refreshList(deps);
 }
@@ -436,42 +780,114 @@ if (isBrowserContext()) {
       excerptMode: input('opt-excerpt-mode') as RenderInput,
       customTemplate: input('opt-custom-template') as RenderInput,
       customTemplateMode: input('opt-custom-template-mode') as RenderInput,
+      featureImageMode: input('opt-feature-image-mode') as RenderInput,
+      featureImageUrl: input('opt-feature-image-url') as RenderInput,
+      featureImageAsset: input('opt-feature-image-asset') as RenderInput,
     };
-    void initOptions({
-      rt: createOptionsRuntime(),
-      view: {
-        listEl,
-        statusEl,
-        form,
-        bodyLabel: el('opt-body-label') as RenderEl,
-        bodyHelp: el('opt-body-help') as RenderEl,
-        importArea,
-        exportArea,
-        document: {
-          createElement: (tag: string) => doc.createElement(tag) as unknown as RenderEl,
-          getElementById: (id: string) => el(id),
-        },
-        download: (filename: string, contents: string) => {
-          const blob = new Blob([contents], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = doc.createElement('a');
-          a.href = url;
-          a.download = filename;
-          a.click();
-          URL.revokeObjectURL(url);
-        },
-        resetForm: () => {
-          for (const field of Object.values(form)) {
-            field.value = '';
-            field.removeAttribute('disabled');
-          }
-          form.source.value = 'inline-text';
-          form.mode.value = 'replace';
-          form.tagMode.value = 'merge';
-          form.excerptMode.value = 'only-if-empty';
-          form.customTemplateMode.value = 'replace';
-        },
+    const previewEl = doc.getElementById('opt-feature-image-preview') as HTMLImageElement | null;
+    let previewObjectUrl: string | null = null;
+    const view: OptionsView = {
+      listEl,
+      statusEl,
+      form,
+      bodyLabel: el('opt-body-label') as RenderEl,
+      bodyHelp: el('opt-body-help') as RenderEl,
+      featureImagePreview: el('opt-feature-image-preview') as RenderEl,
+      featureImageStatus: el('opt-feature-image-status') as RenderEl,
+      importArea,
+      exportArea,
+      fromPost: {
+        source: input('opt-frompost-source') as RenderInput,
+        name: input('opt-frompost-name') as RenderInput,
+        includeTitle: input('opt-frompost-title') as RenderInput,
+        save: el('opt-frompost-save') as RenderEl,
+        refresh: el('opt-frompost-refresh') as RenderEl,
+        status: el('opt-frompost-status') as RenderEl,
       },
+      document: {
+        createElement: (tag: string) => doc.createElement(tag) as unknown as RenderEl,
+        getElementById: (id: string) => el(id),
+      },
+      download: (filename: string, contents: string) => {
+        const blob = new Blob([contents], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = doc.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      resetForm: () => {
+        for (const field of Object.values(form)) {
+          field.value = '';
+          field.removeAttribute('disabled');
+        }
+        form.source.value = 'inline-text';
+        form.mode.value = 'replace';
+        form.tagMode.value = 'merge';
+        form.excerptMode.value = 'only-if-empty';
+        form.customTemplateMode.value = 'replace';
+        form.featureImageMode.value = 'only-if-empty';
+        clearFeatureImage(view);
+        if (previewObjectUrl) {
+          URL.revokeObjectURL(previewObjectUrl);
+          previewObjectUrl = null;
+        }
+      },
+    };
+
+    const imageAssets = buildOptionsImageAssets();
+    const deps: OptionsControllerDeps = {
+      rt: createOptionsRuntime(),
+      view,
+      ...(imageAssets ? { imageAssets } : {}),
+      // The import section reads through the service worker, which routes the
+      // operation to a Ghost Admin tab the user has granted.
+      sendImportMessage: (message) =>
+        chrome.runtime.sendMessage({ source: OPTIONS_CAPTURE_SOURCE, ...message }),
+    };
+
+    // The popup's "Import as template" button lands here: bring the section into
+    // view so the owner sees the picker immediately.
+    if (globalThis.location?.hash === '#import') {
+      const section = doc.getElementById('opt-frompost-section');
+      section?.scrollIntoView?.({ block: 'start' });
+      (doc.getElementById('opt-frompost-name') as HTMLInputElement | null)?.focus();
+    }
+
+    const fileInput = doc.getElementById('opt-feature-image-file') as HTMLInputElement | null;
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0] ?? null;
+      void handleFeatureImageFile(deps, file).then(() => {
+        const assetId = form.featureImageAsset.value.trim();
+        if (!assetId || !previewEl || !file) return;
+        // Preview the picked photo from local bytes; the asset store keeps the
+        // real copy, so this object URL is display-only.
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = URL.createObjectURL(file);
+        previewEl.src = previewObjectUrl;
+        previewEl.removeAttribute('hidden');
+      });
     });
+
+    void initOptions(deps);
+  }
+}
+
+/**
+ * Build the options-page image asset store (extension origin). When IndexedDB
+ * is unavailable the picker reports the failure and the preset can still be
+ * saved with a URL instead — the apply path fails closed rather than writing a
+ * post without its image.
+ */
+function buildOptionsImageAssets(): OptionsImageAssets | undefined {
+  try {
+    const store = createImageAssetStore(createIndexedDbAssetBackend());
+    return {
+      putImage: (input) => store.putImage(input),
+      getRecord: (id) => store.getRecord(id),
+    };
+  } catch {
+    return undefined;
   }
 }

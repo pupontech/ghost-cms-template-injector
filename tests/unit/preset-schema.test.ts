@@ -251,3 +251,104 @@ describe('validateImportSize — bounded imports (C5 size limits)', () => {
     expect(() => validateImportSize(oversized)).toThrow(/too large|size/i);
   });
 });
+
+describe('featureImage metadata — a photo the preset carries', () => {
+  const withFeatureImage = (field: unknown): Record<string, unknown> => {
+    const preset = basePreset();
+    return {
+      ...preset,
+      metadata: { ...(preset['metadata'] as Record<string, unknown>), featureImage: field },
+    };
+  };
+
+  it('accepts a root-relative Ghost image URL', () => {
+    const preset = validatePreset(
+      withFeatureImage({ mode: 'only-if-empty', url: '/content/images/2026/09/hero.png' }),
+    );
+    expect(preset.metadata?.featureImage).toEqual({
+      mode: 'only-if-empty',
+      url: '/content/images/2026/09/hero.png',
+    });
+  });
+
+  it('accepts an https URL and a cached-photo asset id', () => {
+    expect(
+      validatePreset(withFeatureImage({ mode: 'replace', url: 'https://cdn.example.com/a.png' }))
+        .metadata?.featureImage?.url,
+    ).toBe('https://cdn.example.com/a.png');
+    expect(
+      validatePreset(withFeatureImage({ mode: 'replace', assetId: 'img_0123456789abcdef' }))
+        .metadata?.featureImage?.assetId,
+    ).toBe('img_0123456789abcdef');
+  });
+
+  it('rejects a field that carries both or neither source (fail closed)', () => {
+    expect(() =>
+      validatePreset(
+        withFeatureImage({
+          mode: 'replace',
+          url: '/content/images/a.png',
+          assetId: 'img_0123456789abcdef',
+        }),
+      ),
+    ).toThrow(/exactly one/i);
+    expect(() => validatePreset(withFeatureImage({ mode: 'replace' }))).toThrow(/exactly one/i);
+  });
+
+  it('rejects URLs a browser could execute or a path that escapes /content/', () => {
+    for (const url of [
+      'data:image/png;base64,AAAA',
+      'blob:http://localhost:2368/abc',
+      'javascript:alert(1)',
+      'file:///etc/passwd',
+      '/content/../../ghost/settings',
+      '/ghost/api/admin/posts',
+      'http://evil.example.com/a.png',
+    ]) {
+      expect(() => validatePreset(withFeatureImage({ mode: 'replace', url }))).toThrow(
+        /metadata.featureImage.url/,
+      );
+    }
+  });
+
+  it('allows plain http only for a local development host', () => {
+    expect(() =>
+      validatePreset(
+        withFeatureImage({ mode: 'replace', url: 'http://localhost:2368/content/a.png' }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a malformed asset id and an unknown feature-image key', () => {
+    expect(() =>
+      validatePreset(withFeatureImage({ mode: 'replace', assetId: 'hero.png' })),
+    ).toThrow(/assetId/);
+    expect(() =>
+      validatePreset(
+        withFeatureImage({ mode: 'replace', url: '/content/images/a.png', caption: 'nope' }),
+      ),
+    ).toThrow(/unknown field/i);
+  });
+
+  it('rejects an unknown mode', () => {
+    expect(() =>
+      validatePreset(withFeatureImage({ mode: 'append', url: '/content/images/a.png' })),
+    ).toThrow(/metadata.featureImage.mode/);
+  });
+
+  it('accepts prompt mode (the owner is asked before the top image changes)', () => {
+    const preset = validatePreset(
+      withFeatureImage({ mode: 'prompt', assetId: 'img_0123456789abcdef' }),
+    );
+    expect(preset.metadata?.featureImage?.mode).toBe('prompt');
+  });
+
+  it('keeps the preset document far below the import bound even with a photo reference', () => {
+    // The photo bytes are NOT in the preset: only a content-addressed id is.
+    const preset = validatePreset(
+      withFeatureImage({ mode: 'replace', assetId: 'img_0123456789abcdef' }),
+    );
+    expect(validateImportSize(JSON.stringify(preset))).toBe(true);
+    expect(JSON.stringify(preset).length).toBeLessThan(2000);
+  });
+});

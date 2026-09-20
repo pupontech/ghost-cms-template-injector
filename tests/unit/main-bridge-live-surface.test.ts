@@ -23,6 +23,7 @@ function serializeRecord(rec: FakeEmberPost): Record<string, unknown> {
     lexical: rec.attrs['lexical'] ?? null,
     custom_excerpt: rec.attrs['customExcerpt'] ?? null,
     custom_template: rec.attrs['customTemplate'] ?? null,
+    feature_image: rec.attrs['featureImage'] ?? null,
     tags: (rec.attrs['tags'] as FakeTag[] | undefined)?.map((t) => t.name) ?? [],
   };
 }
@@ -32,6 +33,7 @@ class FakeEmberPost {
     lexical: BLANK_LEXICAL,
     customExcerpt: null,
     customTemplate: null,
+    featureImage: null,
     tags: [],
   };
   readonly junkSets: string[] = [];
@@ -77,15 +79,16 @@ function makeOwnerHarness(post: FakeEmberPost, storeTags: FakeTag[] = []) {
       return tag;
     },
   };
+  const actions: Record<string, (...args: unknown[]) => unknown> = { save: () => post.save() };
   const ctrl = {
     post,
-    actions: { save: () => {} },
-    send: (action: string) => {
-      // Real Ghost save actions RETURN the save promise (nativeSave awaits it);
-      // `return` (not `void`) lets a rejection propagate to the transaction's
-      // failure path instead of being swallowed into the poll fallback.
-      if (action === 'save') return post.save();
-      return undefined;
+    actions,
+    // Ember's `send(actionName, ...args)` dispatches to `actions` — the save
+    // branch must RETURN the save promise (nativeSave awaits it) so a rejection
+    // reaches the transaction's failure path instead of the poll fallback.
+    send: (action: string, ...args: unknown[]) => {
+      const handler = actions[action];
+      return typeof handler === 'function' ? handler(...args) : undefined;
     },
     save: () => post.save(),
   };
@@ -377,6 +380,163 @@ describe('MAIN bridge live transaction vs real Ghost 6.60 semantics (t_ef2721b1)
       cleanup();
       vi.unstubAllGlobals();
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('MAIN bridge feature image (Ghost top image)', () => {
+  const PHOTO = 'http://localhost:2368/content/images/2026/09/hero.png';
+
+  function featurePlan(value: string): ApplicationPlan {
+    return {
+      presetId: 'with-photo',
+      status: 'ready',
+      actions: [{ field: 'featureImage', op: 'set', status: 'apply', value }],
+      problems: [],
+    } as ApplicationPlan;
+  }
+
+  async function applyFeatureImage(
+    post: FakeEmberPost,
+    value: string,
+    nonce: string,
+    handle: ReturnType<typeof createGhostMainBridge>['handle'] = createGhostMainBridge({
+      afterApply: () => {},
+    }).handle,
+  ) {
+    return handle({
+      v: 1,
+      source: BRIDGE_SOURCE_ID,
+      nonce,
+      op: 'apply',
+      payload: { plan: featurePlan(value) },
+    });
+  }
+
+  it('snapshots the live feature image (so only-if-empty sees the truth)', async () => {
+    const post = new FakeEmberPost();
+    post.attrs['featureImage'] = 'http://localhost:2368/content/images/existing.png';
+    const cleanup = makeOwnerHarness(post);
+    try {
+      const { handle } = createGhostMainBridge();
+      const res = handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-000000000020',
+        op: 'snapshot',
+        payload: {},
+      }) as { ok: boolean; result: { featureImage: string | null } };
+      expect(res.ok).toBe(true);
+      expect(res.result.featureImage).toBe('http://localhost:2368/content/images/existing.png');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('applies the feature image through one native save with no junk attribute writes', async () => {
+    const post = new FakeEmberPost();
+    const cleanup = makeOwnerHarness(post);
+    try {
+      const res = await applyFeatureImage(post, PHOTO, '00000000-0000-4000-8000-000000000021');
+      expect(res.ok).toBe(true);
+      expect(post.junkSets).toEqual([]);
+      expect(post.savedCount).toBe(1);
+      expect(serializeRecord(post)['feature_image']).toBe(PHOTO);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("uses Ghost Admin's own setFeatureImage action when the controller exposes it", async () => {
+    const post = new FakeEmberPost();
+    const cleanup = makeOwnerHarness(post);
+    const calls: string[] = [];
+    try {
+      const owner = (globalThis as Record<string, unknown>)['Ember'] as {
+        Namespace: { NAMESPACES: Array<{ __container__: { lookup: (n: string) => unknown } }> };
+      };
+      const ctrl = owner.Namespace.NAMESPACES[0]!.__container__.lookup(
+        'controller:lexical-editor',
+      ) as { actions: Record<string, unknown>; send: (a: string, ...rest: unknown[]) => unknown };
+      // Ghost 6.x: controllers/lexical-editor.js defines `setFeatureImage(url)`
+      // which does `this.post.set('featureImage', url)`.
+      ctrl.actions['setFeatureImage'] = (url: unknown) => {
+        calls.push(String(url));
+        post.set('featureImage', url);
+      };
+
+      const res = await applyFeatureImage(post, PHOTO, '00000000-0000-4000-8000-000000000022');
+      expect(res.ok).toBe(true);
+      expect(calls).toEqual([PHOTO]);
+      expect(serializeRecord(post)['feature_image']).toBe(PHOTO);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('restores the previous feature image when the save fails (rollback)', async () => {
+    const post = new FakeEmberPost();
+    post.attrs['featureImage'] = 'http://localhost:2368/content/images/previous.png';
+    const cleanup = makeOwnerHarness(post);
+    post.save = () => {
+      post.hasDirtyAttributes = true;
+      throw new Error('save failed');
+    };
+    try {
+      const res = await applyFeatureImage(post, PHOTO, '00000000-0000-4000-8000-000000000023');
+      expect(res.ok).toBe(false);
+      expect(post.attrs['featureImage']).toBe('http://localhost:2368/content/images/previous.png');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('undoes a feature-image apply through the bridge', async () => {
+    const post = new FakeEmberPost();
+    post.attrs['featureImage'] = 'http://localhost:2368/content/images/previous.png';
+    const cleanup = makeOwnerHarness(post);
+    try {
+      // ONE bridge instance owns the successful-apply record that undo targets.
+      const { handle } = createGhostMainBridge({ afterApply: () => {} });
+      const applied = await applyFeatureImage(
+        post,
+        PHOTO,
+        '00000000-0000-4000-8000-000000000024',
+        handle,
+      );
+      expect(applied.ok).toBe(true);
+      expect(post.attrs['featureImage']).toBe(PHOTO);
+
+      const undone = await handle({
+        v: 1,
+        source: BRIDGE_SOURCE_ID,
+        nonce: '00000000-0000-4000-8000-000000000025',
+        op: 'undo',
+        payload: {},
+      });
+      expect(undone).toMatchObject({ ok: true, result: { saved: true } });
+      expect(post.attrs['featureImage']).toBe('http://localhost:2368/content/images/previous.png');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses a feature-image value that is not a usable image URL, before any mutation', async () => {
+    const post = new FakeEmberPost();
+    const cleanup = makeOwnerHarness(post);
+    try {
+      const res = await applyFeatureImage(
+        post,
+        'data:image/png;base64,AAAA',
+        '00000000-0000-4000-8000-000000000026',
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error('expected failure response');
+      expect(res.error).toBe('APPLY_FAILED');
+      expect(post.savedCount).toBe(0);
+      expect(post.attrs['featureImage']).toBeNull();
+    } finally {
+      cleanup();
     }
   });
 });
