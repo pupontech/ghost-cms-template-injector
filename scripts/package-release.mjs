@@ -42,7 +42,6 @@ const REQUIRED = [
   'dist/background.js',
   'dist/content-script.js',
   'dist/popup.js',
-  'dist/toolbar.js',
   'dist/options.js',
   'dist/setup.js',
   'dist/bridge.js',

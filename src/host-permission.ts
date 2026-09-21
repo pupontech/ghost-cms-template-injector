@@ -62,7 +62,7 @@ export interface HostPermissionDeps {
 }
 
 /** Files injected into the matched Ghost Admin pages. */
-export const CONTENT_SCRIPT_FILES = ['dist/content-script.js', 'dist/toolbar.js'] as const;
+export const CONTENT_SCRIPT_FILES = ['dist/content-script.js'] as const;
 
 /** MAIN-world bridge file injected with `world: 'MAIN'` (Ghost internals). */
 export const MAIN_WORLD_BRIDGE_FILE = 'dist/bridge.js';
@@ -178,8 +178,7 @@ export function createHostPermission(deps: HostPermissionDeps): {
     const match = ghostMatchForOrigin(origin);
 
     const current = await status();
-    if (current.enabled) {
-      if (current.origin === origin) return { ok: true, enabled: true, origin };
+    if (current.enabled && current.origin !== origin) {
       return {
         ok: false,
         enabled: true,
@@ -188,18 +187,24 @@ export function createHostPermission(deps: HostPermissionDeps): {
       };
     }
 
-    // Request the exact origin's `/ghost/*` host permission. This is a subset of
-    // the declared `optional_host_permissions` pattern, so Chrome accepts it and
-    // the user is shown their concrete origin (not a wildcard) at the consent
-    // prompt. Nothing is granted until this resolves true.
-    const permissionGranted = await deps.requestPermission([match]);
-    if (!permissionGranted) {
-      return {
-        ok: false,
-        enabled: false,
-        origin: null,
-        error: 'Host permission was not granted.',
-      };
+    // A same-origin enable is an explicit repair/migration action too: it
+    // refreshes the dynamic registration so an extension update can remove a
+    // script that was registered by an older version. Already-enabled origins
+    // do not need another permission prompt.
+    if (!current.enabled) {
+      // Request the exact origin's `/ghost/*` host permission. This is a subset of
+      // the declared `optional_host_permissions` pattern, so Chrome accepts it and
+      // the user is shown their concrete origin (not a wildcard) at the consent
+      // prompt. Nothing is granted until this resolves true.
+      const permissionGranted = await deps.requestPermission([match]);
+      if (!permissionGranted) {
+        return {
+          ok: false,
+          enabled: false,
+          origin: null,
+          error: 'Host permission was not granted.',
+        };
+      }
     }
 
     const registrationIds = [CONTENT_SCRIPT_REGISTRATION_ID, MAIN_WORLD_REGISTRATION_ID];

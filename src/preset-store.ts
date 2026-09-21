@@ -15,7 +15,7 @@
  * SEED-LOADING INVARIANT (release blocker t_f2218c98): the bundled seed array
  * is inlined at build time (`BUNDLED_SEED_PRESETS`, substituted via esbuild
  * `define` in scripts/build.mjs from the real presets/presets.json). A content
- * script (dist/toolbar.js / dist/content-script.js) runs in the page's
+ * script (dist/content-script.js) runs in the page's
  * ISOLATED world; fetching `chrome.runtime.getURL('presets/presets.json')`
  * there is treated by Chromium as a cross-origin web request to the extension
  * origin and is blocked (net::ERR_FAILED / chrome-extension://invalid/) unless

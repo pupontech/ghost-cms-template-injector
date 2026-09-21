@@ -168,7 +168,7 @@ describe('image asset channel — service worker ↔ content script', () => {
     expect(reply?.error).toMatch(/not cached/i);
   });
 
-  it('ignores non-asset messages so the popup/toolbar relay can handle them', () => {
+  it('ignores non-asset messages so the popup relay can handle them', () => {
     const { api } = store();
     const respond = createImageAssetResponder(api);
     expect(respond({ source: 'popup', op: 'discover' })).toBeUndefined();

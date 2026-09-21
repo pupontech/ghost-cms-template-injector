@@ -144,7 +144,7 @@ function recordIdentityToken(rec: GhostModelLike): string {
 /**
  * How long to wait after a successful apply before reloading the Ghost editor.
  * MUST be long enough for the C3 bridge reply to reach the isolated content
- * script (and the popup/toolbar to render "Applied") — a reload that fires
+ * script (and the popup to render "Applied") — a reload that fires
  * before the reply is posted would make the popup report a timeout even though
  * the apply succeeded. A short delay is a small UX cost for correct feedback.
  */
@@ -191,7 +191,7 @@ function defaultAfterApply(resourceType: 'post' | 'page', resourceId: string): (
 /**
  * Build the C3 responder environment that wires the real Ghost surface into the
  * versioned `ghost-state` adapter. Exposed purely as a `handle(message)` so the
- * entry layer (`ui-toolbar-main`/content-script) can install it as the MAIN
+ * (`content-script-main`) can install it as the MAIN
  * bridge responder.
  */
 export function createGhostMainBridge(

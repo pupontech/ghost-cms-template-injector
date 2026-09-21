@@ -293,7 +293,7 @@ describe('importPresets / exportPresets — bounded, validated round-trip', () =
 });
 
 /**
- * REGRESSION (release blocker t_f2218c98): a content script (dist/toolbar.js)
+ * REGRESSION (release blocker t_f2218c98): the content script (dist/content-script.js)
  * runs in the page's ISOLATED world. The original code fetched
  * `chrome.runtime.getURL('presets/presets.json')` at runtime; Chromium blocks
  * that fetch (net::ERR_FAILED / chrome-extension://invalid/) unless the file is

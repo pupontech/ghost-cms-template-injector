@@ -1,9 +1,14 @@
 # Changelog
 
-## 0.5.3 — unreleased
+## 0.5.4 — test prerelease
 
 ### Changed
 
+- **Preset controls now stay in the extension menu.** The optional floating
+  bottom-left toolbar is no longer built or dynamically injected into Ghost
+  Admin. Existing enabled installations refresh their dynamic registration when
+  Enable is run again; reload Ghost Admin after the update so an already-loaded
+  document drops the old surface.
 - **The popup now looks like the rest of the extension's settings.** It was the one surface with its own
   palette: no page background token, no shared radius, a different heading scale. It now uses the same
   design tokens as the Options and Setup pages (page background, card surface, hairline borders, one
@@ -60,10 +65,7 @@
 
 ### Added
 
-- **Import an existing Ghost post as a preset.** The popup gains an **Import a post as a preset**
-  panel: pick the post open in the editor or any post/page from this site (the picker is filled from
-  your own Admin API, newest first), name the preset, optionally capture the title, and import. The
-  generated editor toolbar offers the same thing as a one-click **Save this post as a preset** button.
+- **Import an existing Ghost post as a preset.** The Options page and popup entry point turn an existing post/page into a preset (body, excerpt, tags, custom template, feature image; the title is opt-in), with the same schema validation, bounds, group, and fail-closed rules as hand-authored presets.
 - Captured fields and their default modes: body (`replace`, the post's serialized Lexical), excerpt
   (`only-if-empty`), tags (`merge`), custom template (`only-if-empty`, only `.hbs` values), feature
   image (`only-if-empty`, stored as a portable same-origin `/content/…` path). The **title is not

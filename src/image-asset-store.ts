@@ -347,7 +347,7 @@ export function isImageAssetRequest(value: unknown): value is ImageAssetRequest 
 /**
  * Build the service-worker-side responder for asset requests. Returns
  * `undefined` for anything that is not an asset request so the caller can fall
- * through to the popup/toolbar relay.
+ * through to the popup relay.
  */
 export function createImageAssetResponder(
   store: ImageAssetStore,

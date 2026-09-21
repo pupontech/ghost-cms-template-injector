@@ -25,10 +25,10 @@ createBackground(deps).init();
 /* ------------------------------------------------------------------ */
 /* Phase-5 same-tab relay                                             */
 /* ------------------------------------------------------------------ */
-// The toolbar content script and popup send the fixed popup protocol via
+// The popup sends the fixed popup protocol via
 // `chrome.runtime.sendMessage`. In MV3 that message is delivered to the
 // service worker, NOT directly to the co-resident content script. This relay
-// validates the message against the fixed popup/toolbar schema, derives the
+// validates the message against the fixed popup schema, derives the
 // destination tab from the trusted `sender.tab.id` (the tab that actually sent
 // it), and forwards to that same tab via `chrome.tabs.sendMessage`. The
 // payload `tabId` is intentionally ignored — a sender must not be able to
@@ -102,7 +102,7 @@ const handleOptionsCapture = createOptionsCaptureHandler({
  * opened (rare, but it would otherwise throw at import time and kill the whole
  * worker), fall back to a store that fails every read: a preset carrying a
  * cached photo then blocks with an explicit reason instead of applying without
- * its image — and the popup/toolbar relay keeps working.
+ * its image — and the popup relay keeps working.
  */
 function buildAssetStore(): ImageAssetStore {
   try {
@@ -123,7 +123,7 @@ function buildAssetStore(): ImageAssetStore {
  * ONE runtime message listener for the worker: image-asset requests (from the
  * content script, which cannot reach the extension's IndexedDB) are answered
  * directly; options-page capture requests are routed to a granted Ghost tab;
- * everything else goes to the popup/toolbar relay.
+ * everything else goes to the popup relay.
  */
 const dispatch = createRuntimeMessageDispatcher({
   assetStore: buildAssetStore(),

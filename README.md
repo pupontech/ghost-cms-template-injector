@@ -5,7 +5,7 @@
 TLDR - Gives you full post templates withought touching .hbs files and will apply your tags and excerpts as well in the native ghost editor.
 No credentials are stored!!!
 
-A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management, an optional injected toolbar, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
+A private Manifest V3 Chromium extension for applying validated presets to Ghost Admin posts and pages. It provides local preset management in the extension menu, explicit per-installation host consent, and a narrowly capability-gated MAIN-world bridge for Ghost-native editor updates and saves.
 
 <img width="834" height="1038" alt="Screenshot 2026-08-25 160140" src="https://github.com/user-attachments/assets/654fdc54-071a-4e5b-9a19-44d4afb8d013" />
 <img width="1571" height="1166" alt="Screenshot 2026-08-25 160210" src="https://github.com/user-attachments/assets/f5ae2e79-ee9c-441a-a142-b3b4068d9e77" />
@@ -72,7 +72,7 @@ The extension ships with one bundled default, **Starter Post**. Make it yours:
 2. Under _Presets_, select **Edit** on Starter Post — or start a new preset.
 3. Configure body source, field modes, tags, excerpt, and (when needed) custom-template filename/mode in **Advanced**.
 4. Save the preset.
-5. Open a supported Ghost editor and click the extension toolbar button.
+5. Open a supported Ghost editor, open the extension menu, and select a preset.
 6. Review the read-only field plan, confirm it, and apply the preset.
 7. If a prompt-mode field is returned, answer it in the popup panel.
 8. Use **Undo last apply** before the editor’s automatic refresh if you need to restore the previous fields.
@@ -103,7 +103,7 @@ The default editor refresh is delayed long enough for an explicit Undo and is ca
 ## Import an existing post as a preset
 
 Instead of writing a template by hand, you can turn a post you already published into a preset. The
-import lives in the **Options page**; the toolbar popup carries a single **Import as template** button
+import lives in the **Options page**; the extension popup carries a single **Import as template** button
 that takes you straight to it.
 
 1. Click **Import as template** in the popup (or open the Options page and find **Import a post as a
@@ -128,9 +128,8 @@ What is captured:
 | Title           | `title`                                                      | only when you tick the box |
 
 The captured preset goes through the same schema validation as any other preset, so you can edit its
-modes, photo, name, or group afterwards like anything else. On the editor screen the injected toolbar
-also offers **Save this post as a preset** for a one-click import of the post you are looking at (it
-asks for the name and never captures the title).
+modes, photo, name, or group afterwards like anything else. Presets are deliberately kept out of the
+Ghost editor canvas; use the extension popup or the Options page for preset actions.
 
 Import is **fail-closed**, so a half-understood post never becomes a template:
 
@@ -179,7 +178,7 @@ hairline buttons, one accent colour, dark mode): the popup is meant to read as t
 settings it opens.
 
 - **Popup** — apply a preset to the open editor, undo the last apply, and one **Import as template**
-  button that opens the Options import section. Nothing import-specific lives here.
+  button that opens the Options import section. Preset controls live here rather than in the editor.
 - **Options page** — preset authoring, the import section, Import/Export of preset JSON.
 - **Setup page** — per-site access consent.
 

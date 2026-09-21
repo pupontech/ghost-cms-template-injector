@@ -1,7 +1,7 @@
 /**
  * Isolated-world capability client for the MAIN bridge (C8 revoke hardening).
  *
- * After the extension enables the toolbar, each Ghost Admin document runs this
+ * After the extension enables site access, each Ghost Admin document runs this
  * client from the isolated content script: it mints a fresh unguessable token,
  * posts the one-time ACTIVATION envelope to `window`, and holds the token. The
  * token prevents stale replay but is observable to same-page MAIN-world code;

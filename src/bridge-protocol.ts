@@ -215,7 +215,7 @@ export function validateBridgeResponse<R = unknown>(
  * isolated world to the MAIN bridge. The MAIN bridge is dormant by default and
  * answers NOTHING (not even `discover`) until it receives this activation with
  * the exact per-enable token minted in the extension context. When the user
- * disables the toolbar, a matching DEACTIVATE message (same token) puts the
+ * disables site access, a matching DEACTIVATE message (same token) puts the
  * bridge back to sleep; any other message shape is ignored entirely.
  *
  * The token is scoped per enable cycle: each grant() mints a fresh random

@@ -264,8 +264,7 @@ export async function initPopup(api: PopupChromeApi, view: PopupView): Promise<v
     presets = [];
   }
   // A prompt-mode preset needs explicit user decisions before its fields are
-  // applied. The toolbar contracts a `confirmPrompt` seam for this; the popup
-  // surface gets the same behavior through an injected delegate (defaults to
+  // applied. The popup surface gets this behavior through an injected delegate (defaults to
   // the browser `confirm` dialog) so prompt-mode presets work from BOTH
   // surfaces. The loop collects answers per question, retries apply with them,
   // and stops if the user declines any question.

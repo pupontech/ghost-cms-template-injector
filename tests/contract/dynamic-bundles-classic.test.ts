@@ -3,13 +3,13 @@
  * `chrome.scripting.registerContentScripts` is executed by Chrome as a *classic*
  * script (not a module). If the production build emits ESM-only syntax
  * (`import`/`export`/`import.meta`) into those bundles, Chromium throws a
- * SyntaxError at registration time and the content script, toolbar, and MAIN
- * bridge never start — a release-blocking defect proven by the headed real
+ * SyntaxError at registration time and the content script or MAIN bridge never
+ * starts — a release-blocking defect proven by the headed real
  * browser matrix (t_192ff30d).
  *
  * This contract test builds the production bundle set and asserts that the
- * three dynamically-registered outputs (dist/content-script.js,
- * dist/toolbar.js, dist/bridge.js) are classic-script parseable and contain no
+ * two dynamically-registered outputs (dist/content-script.js,
+ * dist/bridge.js) are classic-script parseable and contain no
  * module-only syntax. The service worker and extension pages may remain ESM as
  * required by their runtimes.
  */
@@ -25,7 +25,7 @@ const ROOT = path.join(DIR, '..', '..');
 const DIST = path.join(ROOT, 'dist');
 
 /** Bundles that `chrome.scripting.registerContentScripts` runs as classic scripts. */
-const CLASSIC_BUNDLES = ['content-script.js', 'toolbar.js', 'bridge.js'] as const;
+const CLASSIC_BUNDLES = ['content-script.js', 'bridge.js'] as const;
 
 /**
  * A SyntaxError emitted by `vm.compileFunction` for top-level module syntax is
@@ -79,6 +79,10 @@ describe('dynamically registered bundles are classic-script parseable', () => {
       assertClassicParseable(file, code);
     });
   }
+
+  it('does not emit the retired floating-toolbar bundle', () => {
+    expect(existsSync(path.join(DIST, 'toolbar.js'))).toBe(false);
+  });
 });
 
 /**
@@ -96,9 +100,9 @@ describe('built classic bundles inline the seed (no content-script fetch)', () =
     execFileSync('npm', ['run', 'build'], { cwd: ROOT, stdio: 'pipe' });
   }, 120_000);
 
-  // Only these classic bundles consume preset-store and therefore must inline
-  // the seed. The MAIN-world bridge (dist/bridge.js) never imports preset-store.
-  const SEED_BUNDLES = ['content-script.js', 'toolbar.js'] as const;
+  // Only the isolated content script consumes preset-store and therefore must
+  // inline the seed. The MAIN-world bridge (dist/bridge.js) never imports it.
+  const SEED_BUNDLES = ['content-script.js'] as const;
 
   for (const file of SEED_BUNDLES) {
     it(`${file} embeds the inlined seed`, () => {

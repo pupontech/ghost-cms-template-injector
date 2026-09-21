@@ -3,7 +3,7 @@
  *
  * Pure, browser-independent URL/hash parsing that classifies the current Ghost
  * Admin location into a small discriminated union: `editor`, `list`, or
- * `unknown`. The popup and injected toolbar both depend only on this module —
+ * `unknown`. The extension popup depends only on this module —
  * they never reach into Ghost DOM or Ember internals for routing.
  *
  * Ghost Admin uses the `trailing-hash` location type, so editor routes live in

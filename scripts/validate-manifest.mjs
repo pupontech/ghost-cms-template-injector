@@ -2,8 +2,8 @@
 // Manifest validation for the Ghost-CMS Template Injector. Enforces the Phase-4
 // security contract: MV3 only, scoped permissions, NO static wildcard content
 // match, consent-gated optional host permissions, and dynamic content-script
-// registration. Built dist artifacts must contain no chrome.tabs (the toolbar
-// is a content script and must use chrome.runtime only) and no static
+// registration. Built dist artifacts must contain no chrome.tabs in the
+// content-script bundles and no static
 // `https://*/ghost/*` injection.
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -127,8 +127,8 @@ check(
   'possible secret-like key found in manifest',
 );
 
-// Built artifacts must exist and contain no secrets, no chrome.tabs (content
-// scripts must use chrome.runtime), and no static wildcard host injection.
+// Built artifacts must exist and contain no secrets, no chrome.tabs in
+// content scripts, and no static wildcard host injection.
 if (!existsSync('dist')) {
   errors.push('dist/ missing — run the production build first');
 } else {
@@ -139,7 +139,6 @@ if (!existsSync('dist')) {
   // already granted, so it is explicitly permitted for the SW bundle.
   const contentScriptBundles = new Set([
     'content-script.js',
-    'toolbar.js',
     'popup.js',
     'options.js',
     'setup.js',

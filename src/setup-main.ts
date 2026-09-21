@@ -116,7 +116,7 @@ export async function handleEnable(deps: SetupControllerDeps): Promise<void> {
     setStatus(view, result.error ?? 'Could not enable access.', true);
     return;
   }
-  setStatus(view, `Enabled for ${result.origin}. Reload Ghost Admin to load the toolbar.`);
+  setStatus(view, `Enabled for ${result.origin}. Reload Ghost Admin to use the extension.`);
 }
 
 export async function handleDisable(deps: SetupControllerDeps): Promise<void> {

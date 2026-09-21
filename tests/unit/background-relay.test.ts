@@ -241,7 +241,7 @@ describe('service worker dispatcher — asset channel vs popup relay', () => {
     expect(String(brokenReply['error'])).toMatch(/indexedDB unavailable/);
   });
 
-  it('still relays the popup/toolbar protocol', async () => {
+  it('still relays the popup protocol', async () => {
     const { dispatch, relayHandler } = makeDispatcher(assetStoreWith(null));
     const reply = await invoke(
       dispatch as RelayHandler,

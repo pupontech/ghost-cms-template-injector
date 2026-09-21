@@ -324,7 +324,7 @@ export function createPopupController(runtime: PopupRuntime): PopupController {
     if (!checked.ok && checked.error === 'NEEDS_PROMPT') {
       // Prompt-mode preset: the content script refused because one or more
       // fields need an explicit user decision. Surface the questions so the
-      // caller (popup UI / toolbar) can collect answers and retry with them.
+      // caller (the popup UI) can collect answers and retry with them.
       const raw = (reply as { result?: unknown } | undefined)?.result;
       const prompts = Array.isArray(raw)
         ? raw

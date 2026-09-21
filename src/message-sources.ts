@@ -6,7 +6,7 @@
  * into their bundles.
  */
 
-/** Identity of popup/toolbar messages relayed to the same tab's content script. */
+/** Identity of popup messages relayed to the same tab's content script. */
 export const POPUP_MESSAGE_SOURCE = 'ghost-cms-template-injector/popup/v1';
 
 /**

@@ -209,7 +209,7 @@ export function pickGhostTab(
  * declared.
  *
  * Returns `null` when the message is not an options-page capture request, so the
- * single dispatcher can fall through to the popup/toolbar relay.
+ * single dispatcher can fall through to the popup relay.
  */
 export function createOptionsCaptureHandler(
   deps: OptionsCaptureDeps,
@@ -289,7 +289,7 @@ export interface RuntimeMessageDispatcherDeps {
       sendResponse: (response: unknown) => void,
     ) => boolean | null;
   };
-  /** Popup/toolbar relay for the fixed popup protocol. */
+  /** Popup relay for the fixed popup protocol. */
   relay: {
     handleMessage: (
       message: unknown,
@@ -305,7 +305,7 @@ export interface RuntimeMessageDispatcherDeps {
  * Two message families arrive here and they must not race for the same
  * response channel (registering two listeners would let the relay answer an
  * asset request with a schema rejection). Asset requests are answered first
- * and only then does everything else fall through to the popup/toolbar relay.
+ * and only then does everything else fall through to the popup relay.
  *
  * Asset messages are only deliverable by this extension's own contexts: no
  * `externally_connectable` is declared, so a web page cannot send them.
@@ -333,11 +333,11 @@ export function createRuntimeMessageDispatcher(
 }
 
 /**
- * Build the service-worker relay. The toolbar content script and popup use
+ * Build the service-worker relay. The popup uses
  * `chrome.runtime.sendMessage` with the fixed popup `source`. In MV3 that
  * message is delivered to the service worker, NOT directly to the co-resident
  * content script. This relay validates the message against the fixed
- * popup/toolbar schema, derives the destination tab from the trusted
+ * popup schema, derives the destination tab from the trusted
  * `sender.tab.id` (the tab that actually sent it), and forwards to that same
  * tab via `chrome.tabs.sendMessage`. The payload `tabId` is intentionally
  * ignored — a sender must not be able to redirect the relay to another tab.

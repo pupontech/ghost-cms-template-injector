@@ -117,17 +117,23 @@ describe('createHostPermission — consent flow', () => {
     }>;
     expect(registered[0]?.id).toBe(CONTENT_SCRIPT_REGISTRATION_ID);
     expect(registered[0]?.matches).toEqual(['https://ghost.example.com/ghost/*']);
-    expect(registered[0]?.js).toEqual(['dist/content-script.js', 'dist/toolbar.js']);
+    expect(registered[0]?.js).toEqual(['dist/content-script.js']);
     expect(result.ok).toBe(true);
     expect(result.enabled).toBe(true);
     expect(result.origin).toBe('https://ghost.example.com');
   });
 
-  it('treats granting the already-enabled installation as an idempotent success', async () => {
+  it('refreshes script registration when the same installation is already enabled', async () => {
     const { deps, calls } = makeDeps({
       getAllPermissions: vi.fn().mockResolvedValue({
         origins: ['https://ghost.example.com/ghost/*'],
       }),
+      getRegisteredContentScripts: vi
+        .fn()
+        .mockResolvedValue([
+          { id: CONTENT_SCRIPT_REGISTRATION_ID },
+          { id: MAIN_WORLD_REGISTRATION_ID },
+        ]),
     });
     calls.storageGet.mockResolvedValue({
       origin: 'https://ghost.example.com',
@@ -139,7 +145,16 @@ describe('createHostPermission — consent flow', () => {
 
     expect(result).toEqual({ ok: true, enabled: true, origin: 'https://ghost.example.com' });
     expect(calls.requestPermission).not.toHaveBeenCalled();
-    expect(calls.registerContentScripts).not.toHaveBeenCalled();
+    expect(calls.unregisterContentScripts).toHaveBeenCalledWith([
+      CONTENT_SCRIPT_REGISTRATION_ID,
+      MAIN_WORLD_REGISTRATION_ID,
+    ]);
+    expect(calls.registerContentScripts).toHaveBeenCalledTimes(1);
+    const registered = calls.registerContentScripts.mock.calls[0]?.[0] as Array<{
+      id: string;
+      js: string[];
+    }>;
+    expect(registered[0]?.js).toEqual(['dist/content-script.js']);
   });
 
   it('does not register when the user denies consent (M3)', async () => {

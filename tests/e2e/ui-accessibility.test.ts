@@ -18,13 +18,14 @@ describe('Phase-4 UI accessibility and permission contracts', () => {
     expect(read('src/ui-popup-main.ts')).toContain("button.setAttribute('type', 'button')");
   });
 
-  it('keeps toolbar semantics and polite apply feedback in the injected surface', () => {
-    const source = read('src/ui-toolbar-main.ts');
-    expect(source).toContain("root.setAttribute('role', 'toolbar')");
-    expect(source).toContain("statusEl.setAttribute('role', 'status')");
-    expect(source).toContain("statusEl.setAttribute('aria-live', 'polite')");
-    expect(source).toContain("button.setAttribute('aria-label', preset.name)");
-    expect(source).toContain("button.setAttribute('type', 'button')");
+  it('keeps presets in the extension menu instead of injecting a bottom-left toolbar', () => {
+    const hostPermission = read('src/host-permission.ts');
+    expect(hostPermission).toContain("['dist/content-script.js']");
+    expect(hostPermission).not.toContain('dist/toolbar.js');
+    const build = read('scripts/build.mjs');
+    expect(build).not.toContain('src/ui-toolbar-main.ts');
+    expect(build).not.toContain('dist/toolbar.js');
+    expect(read('popup/popup.html')).toContain('<ul id="gcti-preset-list"></ul>');
   });
 
   it('keeps options form labels, status semantics, and untrusted text rendering', () => {

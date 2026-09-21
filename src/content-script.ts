@@ -2,7 +2,7 @@
  * Phase-5 content-script orchestration (owns this module + content-script-main).
  *
  * The content script is the long-lived, isolated-world owner of the apply
- * The popup and toolbar delegate `preview`, `apply`, and `undo` here (via
+ * transaction. The popup delegates `preview`, `apply`, and `undo` here (via
  * `chrome.runtime.sendMessage` with the fixed popup `source`), so closing either
  * surface mid-apply never aborts the transaction (the content script owns the
  * apply lifecycle through the MAIN-world bridge + one native save, per the
@@ -100,7 +100,7 @@ export interface CaptureOutcome {
   siteOrigin: string | null;
 }
 
-/** Reply shape handed back to the popup / toolbar. */
+/** Reply shape handed back to the popup. */
 export interface ApplyReply {
   source: string;
   ok: boolean;
@@ -512,7 +512,7 @@ export function createContentScript(deps: ContentScriptDeps): ContentScriptHandl
       return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'INVALID_MESSAGE' };
     }
     const msg = message as Record<string, unknown>;
-    // Accept only the popup/toolbar protocol with the fixed source identity.
+    // Accept only the popup protocol with the fixed source identity.
     if (msg['source'] !== POPUP_MESSAGE_SOURCE) {
       return { source: POPUP_MESSAGE_SOURCE, ok: false, error: 'SOURCE_MISMATCH' };
     }

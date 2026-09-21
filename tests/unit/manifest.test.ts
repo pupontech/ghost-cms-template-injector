@@ -56,10 +56,10 @@ describe('manifest.json (MV3 baseline)', () => {
     const asText = JSON.stringify(manifest);
     expect(asText.includes('<all_urls>')).toBe(false);
     expect(asText.includes('*://')).toBe(false);
-    // No static content_scripts are shipped; the injected toolbar/popup are
-    // registered at runtime via chrome.scripting.registerContentScripts for the
-    // user's exact, consent-granted origin. This is the security gate (no
-    // broad host access, no hosted logic) for the injected surface.
+    // No static content_scripts are shipped; the content script and MAIN-world
+    // bridge are registered at runtime via chrome.scripting.registerContentScripts for the
+    // user's exact, consent-granted origin. Preset controls stay in the extension popup;
+    // no floating editor toolbar is injected.
     expect(manifest.content_scripts ?? []).toEqual([]);
   });
 

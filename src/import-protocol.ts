@@ -1,7 +1,7 @@
 /**
  * Options-page capture protocol.
  *
- * The options page owns the import UI (per the owner's workflow: the toolbar
+ * The options page owns the import UI (per the owner's workflow: the extension
  * popup carries one button that lands here), but it has no content script of
  * its own — an extension page cannot read the Ghost Admin API with the site's
  * session cookie, and it cannot touch the live editor record. So it asks the

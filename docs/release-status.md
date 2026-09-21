@@ -1,5 +1,12 @@
 # Release status — v0.3.0 owner acceptance pending
 
+## Current UX change — popup-only preset controls
+
+The floating bottom-left preset toolbar is no longer built or dynamically registered. Presets remain
+available from the extension popup, while post import remains in the Options page. Re-run **Enable**
+for an already-enabled installation to refresh its dynamic registration, then reload Ghost Admin so an
+old document drops any toolbar that was already evaluated.
+
 ## v0.5.1 (unreleased) — import moved into the Options page
 
 Per the owner's workflow, the popup carries a single **Import as template** button that opens the
@@ -10,8 +17,8 @@ live proof asserts the delivered section is live and refuses to store anything b
 
 ## v0.5.0 — import a Ghost post as a preset
 
-Branch `feat/feature-image` (now carrying both features) adds post import on top of v0.4.0: the popup
-panel and the toolbar button turn an existing post/page into a preset (body, excerpt, tags, custom
+Branch `feat/feature-image` (now carrying both features) adds post import on top of v0.4.0: the Options
+page and popup entry point turn an existing post/page into a preset (body, excerpt, tags, custom
 template, feature image; the title is opt-in), with the same schema validation, bounds, group, and
 fail-closed rules as hand-authored presets. The live proof in `evidence/post-import-live-proof.md`
 captures a real post through the production capture modules, and applies the captured preset to a
